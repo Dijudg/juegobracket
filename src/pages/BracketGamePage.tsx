@@ -1,5 +1,6 @@
 ﻿import { Crown, ChevronDown, CalendarDays } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import Header from "../components/header";
 import Footer from "../components/Footer";
 import { AnimatePresence, motion } from "motion/react";
@@ -83,7 +84,97 @@ const LS_INTERCONTINENTAL = "fm-repechaje-intercontinental";
 const LS_UEFA = "fm-repechaje-uefa";
 const LS_TEAMS = "fm-teams";
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+
+type ShareTeamInfo = {
+  name: string;
+  escudo?: string;
+};
+
+type ShareCardPayload = {
+  champion: ShareTeamInfo;
+  runnerUp: ShareTeamInfo;
+  third: ShareTeamInfo;
+  shareUrl: string;
+};
+
+type ShareCardProps = {
+  coverUrl: string;
+  champion: ShareTeamInfo;
+  runnerUp: ShareTeamInfo;
+  third: ShareTeamInfo;
+  shareUrl: string;
+};
+
+const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl }: ShareCardProps) => {
+  return (
+    <div className="share-card">
+      <div className="share-card__header">
+        {coverUrl && (
+          <img
+            className="share-card__cover"
+            src={coverUrl}
+            crossOrigin="anonymous"
+            alt="Portada"
+          />
+        )}
+        {champion.escudo ? (
+          <img
+            className="share-card__champion"
+            src={champion.escudo}
+            crossOrigin="anonymous"
+            alt={champion.name}
+          />
+        ) : (
+          <div className="share-card__champion share-card__champion--fallback">N/A</div>
+        )}
+      </div>
+      <div className="share-card__body">
+        <div className="share-card__title">
+          <div className="share-card__title-name">{champion.name}</div>
+          <div className="share-card__title-label">Campeón</div>
+        </div>
+        <div className="share-card__podium">
+          <div className="share-card__podium-item">
+            {runnerUp.escudo ? (
+              <img
+                className="share-card__podium-flag"
+                src={runnerUp.escudo}
+                crossOrigin="anonymous"
+                alt={runnerUp.name}
+              />
+            ) : (
+              <div className="share-card__podium-flag share-card__podium-flag--fallback">N/A</div>
+            )}
+            <div className="share-card__podium-text">
+              <div className="share-card__podium-name">{runnerUp.name}</div>
+              <div className="share-card__podium-label share-card__podium-label--second">Segundo lugar</div>
+            </div>
+          </div>
+          <div className="share-card__podium-item">
+            {third.escudo ? (
+              <img
+                className="share-card__podium-flag"
+                src={third.escudo}
+                crossOrigin="anonymous"
+                alt={third.name}
+              />
+            ) : (
+              <div className="share-card__podium-flag share-card__podium-flag--fallback">N/A</div>
+            )}
+            <div className="share-card__podium-text">
+              <div className="share-card__podium-name">{third.name}</div>
+              <div className="share-card__podium-label share-card__podium-label--third">Tercer lugar</div>
+            </div>
+          </div>
+        </div>
+        <div className="share-card__cta">
+          <div className="share-card__cta-text">Ver mi pronóstico</div>
+        </div>
+        <div className="share-card__link">{shareUrl}</div>
+      </div>
+    </div>
+  );
+};
 
 const INTERCONTINENTAL_KEYS = [
   {
@@ -405,7 +496,7 @@ export default function BracketGamePage() {
   const [showNewGamePrompt, setShowNewGamePrompt] = useState(false);
   const { width, height } = useWindowSize();
   const [, setShareInfo] = useState<string | null>(null);
-  const [captureCode, setCaptureCode] = useState<string | null>(null);
+  const [activeShareCard, setActiveShareCard] = useState<ShareCardPayload | null>(null);
   const [phaseBlock, setPhaseBlock] = useState<{ title: string; missing: string[] } | null>(null);
   const phaseBlockBannerPick = useMemo(() => pickStopBanner(), [!!phaseBlock]);
   const r32BannerPick = useMemo(() => pickStopBanner(), [showR32Warning]);
@@ -414,6 +505,7 @@ export default function BracketGamePage() {
   const progressThirdsRef = useRef<HTMLDivElement>(null);
   const progressBracketRef = useRef<HTMLDivElement>(null);
   const progressR32Ref = useRef<HTMLDivElement>(null);
+  const shareCardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isViewOnly) return;
     setShowRulesModal(false);
@@ -601,41 +693,11 @@ export default function BracketGamePage() {
     },
     [resolveTeamForGroup],
   );
-  const apiRequest = useCallback(
-    async (path: string, options: RequestInit = {}) => {
-      const token = authSession?.access_token;
-      if (!token) throw new Error("Necesitas iniciar sesión.");
-      const headers = new Headers(options.headers || {});
-      headers.set("Authorization", `Bearer ${token}`);
-      if (!headers.has("Content-Type") && options.body) {
-        headers.set("Content-Type", "application/json");
-      }
-      const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        data = null;
-      }
-      return { ok: res.ok, status: res.status, data };
-    },
-    [authSession?.access_token],
-  );
-
-  const publicRequest = useCallback(async (path: string, options: RequestInit = {}) => {
-    const headers = new Headers(options.headers || {});
-    if (!headers.has("Content-Type") && options.body) {
-      headers.set("Content-Type", "application/json");
-    }
-    const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-    let data: any = null;
-    try {
-      data = await res.json();
-    } catch {
-      data = null;
-    }
-    return { ok: res.ok, status: res.status, data };
-  }, []);
+  const requireAuthUserId = useCallback(() => {
+    const userId = authSession?.user?.id;
+    if (!userId) throw new Error("Necesitas iniciar sesión.");
+    return userId;
+  }, [authSession?.user?.id]);
 
   const buildSavePayload = useCallback((): BracketSavePayload => {
     const selectionPayload: BracketSavePayload["selections"] = {};
@@ -679,93 +741,101 @@ export default function BracketGamePage() {
 
   const loadSavedBrackets = useCallback(async () => {
     try {
-      const res = await apiRequest("/api/brackets", { method: "GET" });
-      if (!res.ok) {
-        throw new Error(res.data?.error || "No pudimos cargar tus brackets.");
+      if (!authSession?.user?.id) {
+        setSavedBrackets([]);
+        return [] as SavedBracketMeta[];
       }
-      const items = (res.data?.items || []) as SavedBracketMeta[];
+      const { data, error } = await supabase
+        .from("bracket_saves")
+        .select("id,name,created_at,updated_at")
+        .eq("user_id", authSession.user.id)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      const items = (data || []) as SavedBracketMeta[];
       setSavedBrackets(items);
       return items;
     } catch {
       setSavedBrackets([]);
       return [] as SavedBracketMeta[];
     }
-  }, [apiRequest]);
+  }, [authSession?.user?.id]);
 
-    const loadLatestBracket = useCallback(async () => {
-      try {
-        const request = isViewOnly ? publicRequest : apiRequest;
-        const path = isViewOnly
-          ? viewBracketId
-            ? `/api/brackets/public/${viewBracketId}`
-            : null
-          : "/api/brackets/latest";
-        if (!path) return;
-        let res = await request(path, { method: "GET" });
-        if (!res.ok && isViewOnly && authSession?.access_token && viewBracketId) {
-          res = await apiRequest(`/api/brackets/${viewBracketId}`, { method: "GET" });
-        }
-        if (!res.ok) return;
-        const item = res.data?.item as
-          | { id: string; name?: string; data?: BracketSavePayload | string }
-          | null;
-        let payload: BracketSavePayload | null = null;
-        if (item?.data) {
-          if (typeof item.data === "string") {
-            try {
-              payload = JSON.parse(item.data) as BracketSavePayload;
-            } catch {
-              payload = null;
-            }
-          } else {
-            payload = item.data as BracketSavePayload;
-          }
-        }
-        if (payload) {
-          setCurrentSaveId(item.id);
-          setCurrentSaveName(item.name || "Mi bracket");
-          if (teams.length > 0) {
-            applySavedBracket(payload);
-          } else {
-            pendingLoadRef.current = payload;
-          }
-          setSaveNotice("Cargamos tu ultimo bracket guardado.");
-          if (isViewOnly) {
-            setIsLocked(true);
-          }
-          if (
-            hasBracketProgress(item.data) &&
-            !newGamePromptShownRef.current &&
-            !pageParams?.resetGame &&
-            !isViewOnly
-          ) {
-            newGamePromptShownRef.current = true;
-            suspendAutoAdvanceRef.current = true;
-            setShowNewGamePrompt(true);
-            setActiveTab("repechajes");
-            setShowRulesModal(false);
-            setShowThirdsModal(false);
-            setShowR32Warning(false);
-            setShowChampionModal(false);
-            setShowIntercontinentalModal(false);
-            setShowSaveModal(false);
-            setShowAuthModal(false);
-            setShowFixturesGroup(undefined);
-            setPhaseBlock(null);
-          }
-        }
-      } catch {
-        // ignore
+  const loadLatestBracket = useCallback(async () => {
+    try {
+      let data: { id: string; name?: string; data?: BracketSavePayload | string } | null = null;
+      if (isViewOnly) {
+        if (!viewBracketId) return;
+        const { data: viewData, error } = await supabase
+          .from("bracket_saves")
+          .select("id,name,data,created_at,updated_at")
+          .eq("id", viewBracketId)
+          .maybeSingle();
+        if (error || !viewData) return;
+        data = viewData as { id: string; name?: string; data?: BracketSavePayload | string };
+      } else {
+        if (!authSession?.user?.id) return;
+        const { data: latest, error } = await supabase
+          .from("bracket_saves")
+          .select("id,name,data,created_at,updated_at")
+          .eq("user_id", authSession.user.id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error || !latest) return;
+        data = latest as { id: string; name?: string; data?: BracketSavePayload | string };
       }
-    }, [
-      apiRequest,
-      publicRequest,
-      applySavedBracket,
-      teams.length,
-      pageParams?.resetGame,
-      isViewOnly,
-      viewBracketId,
-    ]);
+
+      if (!data) return;
+
+      let payload: BracketSavePayload | null = null;
+      if (data.data) {
+        if (typeof data.data === "string") {
+          try {
+            payload = JSON.parse(data.data) as BracketSavePayload;
+          } catch {
+            payload = null;
+          }
+        } else {
+          payload = data.data as BracketSavePayload;
+        }
+      }
+      if (payload) {
+        setCurrentSaveId(data.id);
+        setCurrentSaveName(data.name || "Mi bracket");
+        if (teams.length > 0) {
+          applySavedBracket(payload);
+        } else {
+          pendingLoadRef.current = payload;
+        }
+        setSaveNotice("Cargamos tu ultimo bracket guardado.");
+        if (isViewOnly) {
+          setIsLocked(true);
+        }
+        if (
+          hasBracketProgress(data.data) &&
+          !newGamePromptShownRef.current &&
+          !pageParams?.resetGame &&
+          !isViewOnly
+        ) {
+          newGamePromptShownRef.current = true;
+          suspendAutoAdvanceRef.current = true;
+          setShowNewGamePrompt(true);
+          setActiveTab("repechajes");
+          setShowRulesModal(false);
+          setShowThirdsModal(false);
+          setShowR32Warning(false);
+          setShowChampionModal(false);
+          setShowIntercontinentalModal(false);
+          setShowSaveModal(false);
+          setShowAuthModal(false);
+          setShowFixturesGroup(undefined);
+          setPhaseBlock(null);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [applySavedBracket, authSession?.user?.id, isViewOnly, pageParams?.resetGame, teams.length, viewBracketId]);
 
   const openAuthModal = (mode: "login" | "signup") => {
     setAuthMode(mode);
@@ -889,26 +959,52 @@ export default function BracketGamePage() {
         setSaveBusy(false);
         return;
       }
-      const res = await apiRequest("/api/brackets", {
-        method: "POST",
-        body: JSON.stringify({ id: idToUse, name, data: payload }),
-      });
-      if (!res.ok) {
-        if (res.status === 409) {
+      const userId = requireAuthUserId();
+      if (!idToUse) {
+        const { count, error: countError } = await supabase
+          .from("bracket_saves")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId);
+        if (countError) throw countError;
+        if ((count || 0) >= 3) {
           const items = await loadSavedBrackets();
           setSaveMode("overwrite");
           setSelectedOverwriteId(items[0]?.id ?? null);
           setSaveError("Llegaste al limite de 3 brackets. Elige uno para sobrescribir.");
-        } else {
-          setSaveError(res.data?.error || "No pudimos guardar el bracket.");
+          setSaveBusy(false);
+          return;
         }
-        setSaveBusy(false);
-        return;
       }
-      const item = res.data?.item as { id: string; name?: string } | null;
-      if (item?.id) {
-        setCurrentSaveId(item.id);
-        setCurrentSaveName(item.name || name);
+
+      let saved: { id: string; name?: string } | null = null;
+      if (idToUse) {
+        const { data, error } = await supabase
+          .from("bracket_saves")
+          .update({ user_id: userId, name, data: payload, is_public: true })
+          .eq("id", idToUse)
+          .eq("user_id", userId)
+          .select("id,name")
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          setSaveError("No pudimos encontrar el bracket para actualizar.");
+          setSaveBusy(false);
+          return;
+        }
+        saved = data as { id: string; name?: string };
+      } else {
+        const { data, error } = await supabase
+          .from("bracket_saves")
+          .insert([{ user_id: userId, name, data: payload, is_public: true }])
+          .select("id,name")
+          .maybeSingle();
+        if (error) throw error;
+        saved = data as { id: string; name?: string } | null;
+      }
+
+      if (saved?.id) {
+        setCurrentSaveId(saved.id);
+        setCurrentSaveName(saved.name || name);
       }
       await loadSavedBrackets();
       setShowSaveModal(false);
@@ -1930,137 +2026,168 @@ const scheduleByMatch = useMemo(() => {
     applyWinner(matchId, team);
   };
 
-  const captureElementToFile = async (el: HTMLElement | null, fileName: string) => {
-    if (!el) return null;
-    const h2c = await ensureHtml2Canvas();
-    if (!h2c) throw new Error("html2canvas no disponible");
-    const canvas = await h2c(el, { scale: 2, useCORS: true, backgroundColor: "#000000" });
-    const blob: Blob = await new Promise((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("No se pudo crear blob"))), "image/png"),
-    );
-    return new File([blob], `${fileName}.png`, { type: "image/png" });
-  };
-
   const generateUniqueCode = () =>
     `FM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
   const buildFileNameWithCode = (base: string, code?: string | null) => (code ? `${base}-${code}` : base);
 
-  const tryCopyImageToClipboard = async (file: File) => {
-    try {
-      const ClipboardItemCtor = (window as any).ClipboardItem;
-      if (!ClipboardItemCtor || !navigator.clipboard?.write) return false;
-      const item = new ClipboardItemCtor({ [file.type]: file });
-      await navigator.clipboard.write([item]);
-      return true;
-    } catch {
-      return false;
-    }
+  const waitForShareCardImages = async (target: HTMLElement) => {
+    const images = Array.from(target.querySelectorAll("img"));
+    if (!images.length) return;
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete) {
+              resolve();
+              return;
+            }
+            const onDone = () => {
+              img.removeEventListener("load", onDone);
+              img.removeEventListener("error", onDone);
+              resolve();
+            };
+            img.addEventListener("load", onDone, { once: true });
+            img.addEventListener("error", onDone, { once: true });
+          }),
+      ),
+    );
+  };
+
+  const captureShareCardBlob = async (payload: ShareCardPayload) => {
+    flushSync(() => setActiveShareCard(payload));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const target = shareCardRef.current || document.getElementById("share-card-capture");
+    if (!target) throw new Error("No se encontró la tarjeta para compartir");
+    await waitForShareCardImages(target);
+    const h2c = await ensureHtml2Canvas();
+    if (!h2c) throw new Error("html2canvas no disponible");
+    const canvas = await h2c(target, { scale: 2, useCORS: true, backgroundColor: "#1d1d1b" });
+    const blob: Blob = await new Promise((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("No se pudo crear imagen"))), "image/png"),
+    );
+    return blob;
   };
 
   const shareCaptures = async (
     platform: "whatsapp" | "facebook" | "instagram" | "tiktok" | "x",
     champion?: Team,
   ) => {
-    const url = typeof window !== "undefined" ? window.location.href : "https://eltelegrafo.com.ec";
-    const championName = champion?.nombre || championTeam?.nombre || "por definir";
-    const runnerUpName = runnerUpTeam?.nombre || "por definir";
-    const thirdName = thirdPlaceWinner?.nombre || "por definir";
-    const summary = `Mi pronostico Mundialista: campeón ${championName}, vicecampeón ${runnerUpName}, tercer puesto ${thirdName}.`;
-    const message = `${summary} Mira mi cuadro completo aquí: ${url}`;
+    const shareUrl = typeof window !== "undefined" ? window.location.href : DEFAULT_HOME_URL;
+    const championPick = champion || championTeam;
+    const payload: ShareCardPayload = {
+      champion: {
+        name: championPick?.nombre || "Por definir",
+        escudo: getTeamEscudo(championPick),
+      },
+      runnerUp: {
+        name: runnerUpTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(runnerUpTeam),
+      },
+      third: {
+        name: thirdPlaceWinner?.nombre || "Por definir",
+        escudo: getTeamEscudo(thirdPlaceWinner),
+      },
+      shareUrl,
+    };
+    const messageParts = [
+      `Mi pronóstico Mundialista: campeón ${payload.champion.name}.`,
+      payload.runnerUp.name !== "Por definir" ? `Segundo: ${payload.runnerUp.name}.` : "",
+      payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
+      `Mira mi cuadro aquí: ${payload.shareUrl}`,
+    ].filter(Boolean);
+    const message = messageParts.join(" ");
+    const shareTitle = "Mi pronóstico Mundialista";
 
     try {
-      const files: File[] = [];
+      const blob = await captureShareCardBlob(payload);
       const code = generateUniqueCode();
-      setCaptureCode(code);
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const bracketFile = await captureElementToFile(
-        bracketCaptureRef.current,
-        buildFileNameWithCode("Fanatico-Mundialista-Pronostico", code),
-      );
-      if (!bracketFile) {
-        setCaptureCode(null);
-        return;
-      }
-      files.push(bracketFile);
-
-      const shareData = { files, text: message, title: "Fanatico Mundialista" };
-      if (typeof navigator !== "undefined" && navigator.share && navigator.canShare?.(shareData)) {
-        await navigator.share(shareData);
-        setCaptureCode(null);
+      const fileName = buildFileNameWithCode("Fanatico-Mundialista-Pronostico", code);
+      const file = new File([blob], `${fileName}.png`, { type: "image/png" });
+      const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+      if (canShareFile && navigator.share) {
+        await navigator.share({ files: [file], title: shareTitle, text: message, url: payload.shareUrl });
         return;
       }
 
-      let clipboardCopied = false;
-      if (typeof window !== "undefined") {
-        clipboardCopied = await tryCopyImageToClipboard(bracketFile);
-      }
-
-      if (typeof navigator !== "undefined" && navigator.share) {
-        try {
-          await navigator.share({ title: "Fanatico Mundialista", text: message, url });
-        } catch {
-          // ignore share cancel/failure and continue with URL fallbacks
-        }
-      }
+      const objectUrl = URL.createObjectURL(blob);
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
 
       if (platform === "whatsapp") {
-        const shareUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-        window.open(shareUrl, "_blank", "noopener,noreferrer");
-      } else if (platform === "facebook") {
-        const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(message)}`;
-        window.open(shareUrl, "_blank", "noopener,noreferrer");
-      } else if (platform === "x") {
-        const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`;
-        window.open(shareUrl, "_blank", "noopener,noreferrer");
+        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (platform === "facebook") {
+        const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+          payload.shareUrl,
+        )}&quote=${encodeURIComponent(message)}`;
+        window.open(fbUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (platform === "x") {
+        window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (platform === "instagram" || platform === "tiktok") {
+        try {
+          await navigator.clipboard.writeText(message);
+        } catch {
+          // ignore
+        }
+        window.open(
+          platform === "instagram" ? "https://www.instagram.com/" : "https://www.tiktok.com/",
+          "_blank",
+          "noopener,noreferrer",
+        );
       } else {
-        setShareInfo("Copia el mensaje y sube la imagen a Instagram/TikTok junto con tu captura.");
+        setShareInfo("Copia el mensaje y sube la imagen a la plataforma.");
       }
-
-      files.forEach((file) => {
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(file);
-        link.download = file.name;
-        link.click();
-        URL.revokeObjectURL(link.href);
-      });
-      if (clipboardCopied) {
-        setShareInfo("Copiamos y descargamos la imagen; pégala o súbela en la plataforma que se abrió.");
-      }
-      setCaptureCode(null);
     } catch (err) {
       setShareInfo("No pudimos preparar la captura para compartir. Intenta de nuevo o haz captura manual.");
-      setCaptureCode(null);
       // eslint-disable-next-line no-console
       console.error(err);
+    } finally {
+      setActiveShareCard(null);
     }
   };
 
   const downloadBracketImage = async () => {
-    const code = generateUniqueCode();
-    setCaptureCode(code);
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const shareUrl = typeof window !== "undefined" ? window.location.href : DEFAULT_HOME_URL;
+    const payload: ShareCardPayload = {
+      champion: {
+        name: championTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(championTeam),
+      },
+      runnerUp: {
+        name: runnerUpTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(runnerUpTeam),
+      },
+      third: {
+        name: thirdPlaceWinner?.nombre || "Por definir",
+        escudo: getTeamEscudo(thirdPlaceWinner),
+      },
+      shareUrl,
+    };
+
     try {
-      const file = await captureElementToFile(
-        bracketCaptureRef.current,
-        buildFileNameWithCode("Fanatico-Mundialista-Pronostico", code),
-      );
-      if (!file) {
-        setShareInfo("No pudimos generar la imagen del bracket.");
-        setCaptureCode(null);
-        return;
-      }
+      const blob = await captureShareCardBlob(payload);
+      const code = generateUniqueCode();
+      const fileName = buildFileNameWithCode("Fanatico-Mundialista-Pronostico", code);
+      const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(file);
-      link.download = file.name;
+      link.href = objectUrl;
+      link.download = `${fileName}.png`;
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(link.href);
-      setCaptureCode(null);
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
     } catch (err) {
-      setShareInfo("No pudimos generar la imagen del bracket. Intenta de nuevo.");
-      setCaptureCode(null);
+      setShareInfo("No pudimos generar la imagen para descargar. Intenta de nuevo.");
       // eslint-disable-next-line no-console
       console.error(err);
+    } finally {
+      setActiveShareCard(null);
     }
   };
 
@@ -3460,7 +3587,6 @@ const scheduleByMatch = useMemo(() => {
                   seedLabel={getSeedLabel}
                   schedule={scheduleByMatch}
                   captureRef={bracketCaptureRef}
-                  captureCode={captureCode}
                   lockFinalSelection={!picks["third-103"]}
                   locked={isLocked}
                   navTarget={bracketNavTarget}
@@ -3478,6 +3604,19 @@ const scheduleByMatch = useMemo(() => {
           </AnimatePresence>
         </div>
       </main>
+      {activeShareCard && (
+        <div className="share-card-host" aria-hidden="true">
+          <div id="share-card-capture" ref={shareCardRef}>
+            <ShareCard
+              coverUrl={championBanner}
+              champion={activeShareCard.champion}
+              runnerUp={activeShareCard.runnerUp}
+              third={activeShareCard.third}
+              shareUrl={activeShareCard.shareUrl}
+            />
+          </div>
+        </div>
+      )}
       {!isViewOnly && <Footer />}
         <NewGamePromptModal
           open={showNewGamePrompt && !isViewOnly}

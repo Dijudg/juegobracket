@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
@@ -6,7 +7,22 @@ import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, ".env") });
+const envName = process.env.NODE_ENV || "development";
+const envCandidates = [];
+
+if (process.env.DOTENV_CONFIG_PATH) {
+  envCandidates.push(process.env.DOTENV_CONFIG_PATH);
+}
+
+envCandidates.push(path.join(__dirname, `.env.${envName}`));
+envCandidates.push(path.join(__dirname, ".env"));
+
+for (const envPath of envCandidates) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath, override: false });
+    break;
+  }
+}
 
 const app = express();
 

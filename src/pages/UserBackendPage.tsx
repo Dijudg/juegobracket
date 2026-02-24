@@ -28,7 +28,6 @@ declare global {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 const AVATAR_BUCKET = import.meta.env.VITE_SUPABASE_AVATAR_BUCKET || "avatars";
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
 const MAX_THIRD = 8;
@@ -567,56 +566,50 @@ export default function UserBackendPage() {
     }
   }, [user?.id]);
 
-  const apiRequest = useCallback(
-    async (path: string, options: RequestInit = {}) => {
-      const headers = new Headers(options.headers);
-      headers.set("Content-Type", "application/json");
-      if (session?.access_token) {
-        headers.set("Authorization", `Bearer ${session.access_token}`);
-      }
-      const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-      const contentType = res.headers.get("content-type") || "";
-      const payload = contentType.includes("application/json") ? await res.json().catch(() => null) : null;
-      if (!res.ok) {
-        throw new Error(payload?.error || `Error ${res.status}`);
-      }
-      return payload;
-    },
-    [session?.access_token],
-  );
-
   const loadBrackets = useCallback(async () => {
-    if (!session?.access_token) return;
+    if (!user?.id) return;
     setLoading(true);
     setError(null);
     try {
-      const res = (await apiRequest("/api/brackets", { method: "GET" })) as { items?: BracketMeta[] };
-      setItems(res.items ?? []);
+      const { data, error: fetchError } = await supabase
+        .from("bracket_saves")
+        .select("id,name,created_at,updated_at")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false });
+      if (fetchError) throw fetchError;
+      setItems((data || []) as BracketMeta[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No pudimos cargar los brackets.");
     } finally {
       setLoading(false);
     }
-  }, [apiRequest, session?.access_token]);
+  }, [user?.id]);
 
   useEffect(() => {
-    if (session?.access_token) {
+    if (user?.id) {
       void loadBrackets();
     }
-  }, [loadBrackets, session?.access_token]);
+  }, [loadBrackets, user?.id]);
 
   const getBracketDetails = useCallback(
     async (id: string) => {
+      if (!user?.id) return null;
       const cached = detailsMap[id];
       if (cached) return cached;
-      const res = (await apiRequest(`/api/brackets/${id}`, { method: "GET" })) as { item?: BracketItem | null };
-      if (res.item) {
-        setDetailsMap((prev) => ({ ...prev, [id]: res.item as BracketItem }));
-        return res.item as BracketItem;
+      const { data, error: fetchError } = await supabase
+        .from("bracket_saves")
+        .select("id,name,data,created_at,updated_at")
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+      if (data) {
+        setDetailsMap((prev) => ({ ...prev, [id]: data as BracketItem }));
+        return data as BracketItem;
       }
       return null;
     },
-    [apiRequest, detailsMap],
+    [detailsMap, user?.id],
   );
 
 
@@ -1139,18 +1132,19 @@ const sharePronostico = useCallback(
     }
   };
   const handleDeleteAccount = async () => {
-    if (!session?.access_token) {
-      setDeleteError("Inicia sesión para dar de baja tu cuenta.");
+    if (!user?.id) {
+      setDeleteError("Inicia sesión para eliminar tus datos.");
       return;
     }
     const confirmDelete = window.confirm(
-      "Esta acción eliminará tu cuenta y tus brackets guardados. ¿Deseas continuar?",
+      "Esta acción eliminará tus brackets guardados. Tu cuenta de acceso permanecerá activa. ¿Deseas continuar?",
     );
     if (!confirmDelete) return;
     setDeleteBusy(true);
     setDeleteError(null);
     try {
-      await apiRequest("/api/account", { method: "DELETE" });
+      const { error: deleteError } = await supabase.from("bracket_saves").delete().eq("user_id", user.id);
+      if (deleteError) throw deleteError;
       await supabase.auth.signOut();
       setUser(null);
       setSession(null);
@@ -1159,7 +1153,7 @@ const sharePronostico = useCallback(
       setSelectedId(null);
       setActiveTab("profile");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "No pudimos dar de baja tu cuenta.");
+      setDeleteError(err instanceof Error ? err.message : "No pudimos eliminar tus datos.");
     } finally {
       setDeleteBusy(false);
     }
@@ -1175,7 +1169,7 @@ const sharePronostico = useCallback(
               <div>
                 <h1 className="text-3xl md:text-4xl font-black">Panel de usuario</h1>
                 <p className="text-sm text-gray-400">
-                  Consulta lo que se guarda en el backend y descarga tus pronósticos.
+                  Consulta lo que se guarda en la base de datos y descarga tus pronósticos.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1568,7 +1562,7 @@ const sharePronostico = useCallback(
                     ) : (
                     !detailsBusy && (
                       <p className="mt-2 text-sm text-gray-400 text-center py-2">
-                        Selecciona un bracket para ver los datos que se guardan en el backend.
+                        Selecciona un bracket para ver los datos que se guardan en la base de datos.
                       </p>
                     )
                   )}
@@ -1815,7 +1809,7 @@ const sharePronostico = useCallback(
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h2 className="text-xl font-semibold">Cuenta</h2>
-                      <p className="text-xs text-gray-400">Gestiona tu sesi?n o da de baja la cuenta.</p>
+                      <p className="text-xs text-gray-400">Gestiona tu sesi?n o elimina tus datos guardados.</p>
                     </div>
                     {!session && !loading && (
                       <button
@@ -1845,7 +1839,7 @@ const sharePronostico = useCallback(
                         disabled={deleteBusy}
                         className="px-3 py-2 rounded-md border border-red-700 text-xs font-semibold text-red-300 hover:border-red-500 disabled:opacity-60"
                       >
-                        {deleteBusy ? "Procesando..." : "Dar de baja"}
+                        {deleteBusy ? "Procesando..." : "Eliminar datos"}
                       </button>
                     </div>
                   )}
