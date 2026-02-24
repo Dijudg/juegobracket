@@ -1,6 +1,9 @@
 ﻿import { Crown, ChevronDown, CalendarDays } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
+import { captureShareCard } from "../utils/shareCardCapture";
+import { buildSharePageUrl, uploadShareCardImage } from "../utils/shareCardApi";
 import Header from "../components/header";
 import Footer from "../components/Footer";
 import { AnimatePresence, motion } from "motion/react";
@@ -56,12 +59,6 @@ import { useHoloPointer } from "../features/bracket/hooks/useHoloPointer";
 import { useNavigation } from "../contexts/NavigationContext";
 import { AuthModal } from "../components/AuthModal";
 
-declare global {
-  interface Window {
-    html2canvas?: any;
-  }
-}
-
 
 // Normaliza ids de partido para mapear contra el sheet (quita P/p y ceros a la izquierda)
 const normalizeMatchKey = (val?: string) => {
@@ -69,6 +66,13 @@ const normalizeMatchKey = (val?: string) => {
   const cleaned = val.toString().trim().replace(/^P/i, "");
   const noZeros = cleaned.replace(/^0+/, "");
   return noZeros || cleaned;
+};
+
+const formatViewDate = (value?: string) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("es-EC", { dateStyle: "medium", timeStyle: "short" });
 };
 
 const seleccionesUrl =
@@ -85,95 +89,11 @@ const LS_UEFA = "fm-repechaje-uefa";
 const LS_TEAMS = "fm-teams";
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
 
-type ShareTeamInfo = {
-  name: string;
-  escudo?: string;
-};
-
 type ShareCardPayload = {
-  champion: ShareTeamInfo;
-  runnerUp: ShareTeamInfo;
-  third: ShareTeamInfo;
+  champion: ShareCardTeam;
+  runnerUp: ShareCardTeam;
+  third: ShareCardTeam;
   shareUrl: string;
-};
-
-type ShareCardProps = {
-  coverUrl: string;
-  champion: ShareTeamInfo;
-  runnerUp: ShareTeamInfo;
-  third: ShareTeamInfo;
-  shareUrl: string;
-};
-
-const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl }: ShareCardProps) => {
-  return (
-    <div className="share-card">
-      <div className="share-card__header">
-        {coverUrl && (
-          <img
-            className="share-card__cover"
-            src={coverUrl}
-            crossOrigin="anonymous"
-            alt="Portada"
-          />
-        )}
-        {champion.escudo ? (
-          <img
-            className="share-card__champion"
-            src={champion.escudo}
-            crossOrigin="anonymous"
-            alt={champion.name}
-          />
-        ) : (
-          <div className="share-card__champion share-card__champion--fallback">N/A</div>
-        )}
-      </div>
-      <div className="share-card__body">
-        <div className="share-card__title">
-          <div className="share-card__title-name">{champion.name}</div>
-          <div className="share-card__title-label">Campeón</div>
-        </div>
-        <div className="share-card__podium">
-          <div className="share-card__podium-item">
-            {runnerUp.escudo ? (
-              <img
-                className="share-card__podium-flag"
-                src={runnerUp.escudo}
-                crossOrigin="anonymous"
-                alt={runnerUp.name}
-              />
-            ) : (
-              <div className="share-card__podium-flag share-card__podium-flag--fallback">N/A</div>
-            )}
-            <div className="share-card__podium-text">
-              <div className="share-card__podium-name">{runnerUp.name}</div>
-              <div className="share-card__podium-label share-card__podium-label--second">Segundo lugar</div>
-            </div>
-          </div>
-          <div className="share-card__podium-item">
-            {third.escudo ? (
-              <img
-                className="share-card__podium-flag"
-                src={third.escudo}
-                crossOrigin="anonymous"
-                alt={third.name}
-              />
-            ) : (
-              <div className="share-card__podium-flag share-card__podium-flag--fallback">N/A</div>
-            )}
-            <div className="share-card__podium-text">
-              <div className="share-card__podium-name">{third.name}</div>
-              <div className="share-card__podium-label share-card__podium-label--third">Tercer lugar</div>
-            </div>
-          </div>
-        </div>
-        <div className="share-card__cta">
-          <div className="share-card__cta-text">Ver mi pronóstico</div>
-        </div>
-        <div className="share-card__link">{shareUrl}</div>
-      </div>
-    </div>
-  );
 };
 
 const INTERCONTINENTAL_KEYS = [
@@ -497,6 +417,8 @@ export default function BracketGamePage() {
   const { width, height } = useWindowSize();
   const [, setShareInfo] = useState<string | null>(null);
   const [activeShareCard, setActiveShareCard] = useState<ShareCardPayload | null>(null);
+  const [viewSharedBy, setViewSharedBy] = useState<BracketSavePayload["sharedBy"] | null>(null);
+  const [viewBracketMeta, setViewBracketMeta] = useState<{ name?: string; updatedAt?: string } | null>(null);
   const [phaseBlock, setPhaseBlock] = useState<{ title: string; missing: string[] } | null>(null);
   const phaseBlockBannerPick = useMemo(() => pickStopBanner(), [!!phaseBlock]);
   const r32BannerPick = useMemo(() => pickStopBanner(), [showR32Warning]);
@@ -545,7 +467,6 @@ export default function BracketGamePage() {
   >(null);
   const championModalRef = useRef<HTMLDivElement>(null);
   const championHolo = useHoloPointer();
-  const html2CanvasPromiseRef = useRef<Promise<any> | null>(null);
   const autoSwitchedPlayoffRef = useRef(false);
   const autoSwitchTimeoutRef = useRef<number | null>(null);
   const [autoSwitchNotice, setAutoSwitchNotice] = useState(false);
@@ -597,22 +518,6 @@ export default function BracketGamePage() {
     },
     [allTeamsIndex],
   );
-
-  const ensureHtml2Canvas = () => {
-    if (typeof window === "undefined") return Promise.resolve(null);
-    if (window.html2canvas) return Promise.resolve(window.html2canvas);
-    if (!html2CanvasPromiseRef.current) {
-      html2CanvasPromiseRef.current = new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
-        script.async = true;
-        script.onload = () => resolve(window.html2canvas);
-        script.onerror = (err) => reject(err);
-        document.body.appendChild(script);
-      });
-    }
-    return html2CanvasPromiseRef.current;
-  };
 
   const reset = () => {
     setSelections({});
@@ -699,6 +604,33 @@ export default function BracketGamePage() {
     return userId;
   }, [authSession?.user?.id]);
 
+  const buildShareUrl = useCallback(
+    (targetId?: string) => {
+      if (typeof window === "undefined") return DEFAULT_HOME_URL;
+      const baseUrl = import.meta.env.VITE_BRACKET_HOME_URL || DEFAULT_HOME_URL || window.location.origin;
+      const resolvedId = targetId || currentSaveId;
+      if (!resolvedId) return window.location.href || baseUrl;
+      const url = new URL(baseUrl, window.location.origin);
+      url.searchParams.set("view", "1");
+      url.searchParams.set("bracketId", resolvedId);
+      return url.toString();
+    },
+    [currentSaveId],
+  );
+
+  const uploadShareCard = useCallback(
+    async (blob: Blob, bracketId: string) => {
+      if (!authSession?.access_token) return null;
+      return uploadShareCardImage({
+        apiBaseUrl: API_BASE_URL || undefined,
+        bracketId,
+        token: authSession.access_token,
+        blob,
+      });
+    },
+    [authSession?.access_token],
+  );
+
   const buildSavePayload = useCallback((): BracketSavePayload => {
     const selectionPayload: BracketSavePayload["selections"] = {};
     Object.entries(selections).forEach(([group, pick]) => {
@@ -708,6 +640,15 @@ export default function BracketGamePage() {
         terceroId: pick.tercero?.id,
       };
     });
+    const meta = (authUser?.user_metadata || {}) as Record<string, any>;
+    const sharedBy = authUser
+      ? {
+          name: meta.alias || meta.nickname || meta.full_name || meta.name || authUser.email || "Usuario",
+          alias: meta.alias || meta.nickname || "",
+          avatarUrl: meta.avatar_url || meta.picture || meta.avatar || "",
+          userId: authUser.id,
+        }
+      : undefined;
     return {
       version: 1,
       selections: selectionPayload,
@@ -716,8 +657,9 @@ export default function BracketGamePage() {
       intercontinentalPicks,
       uefaPicks,
       isLocked,
+      sharedBy,
     };
-  }, [selections, bestThirdIds, picks, intercontinentalPicks, uefaPicks, isLocked]);
+  }, [selections, bestThirdIds, picks, intercontinentalPicks, uefaPicks, isLocked, authUser]);
 
   const applySavedBracket = useCallback(
     (payload: BracketSavePayload) => {
@@ -810,6 +752,11 @@ export default function BracketGamePage() {
         setSaveNotice("Cargamos tu ultimo bracket guardado.");
         if (isViewOnly) {
           setIsLocked(true);
+          setViewSharedBy(payload.sharedBy ?? null);
+          setViewBracketMeta({
+            name: data.name || "Pronóstico compartido",
+            updatedAt: (data as any).updated_at || (data as any).created_at,
+          });
         }
         if (
           hasBracketProgress(data.data) &&
@@ -831,6 +778,9 @@ export default function BracketGamePage() {
           setShowFixturesGroup(undefined);
           setPhaseBlock(null);
         }
+      } else if (isViewOnly) {
+        setViewSharedBy(null);
+        setViewBracketMeta(null);
       }
     } catch {
       // ignore
@@ -1968,8 +1918,81 @@ const scheduleByMatch = useMemo(() => {
   }, [r32]);
   const runnerUpTeam = final[0]?.perdedor;
   const thirdPlaceWinner = thirdPlace[0]?.ganador;
+  const shareCardUploadKeyRef = useRef<string | null>(null);
+  const viewSharePayload = useMemo(() => {
+    const shareUrl = buildShareUrl(viewBracketId || undefined);
+    return {
+      champion: {
+        name: championTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(championTeam),
+      },
+      runnerUp: {
+        name: runnerUpTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(runnerUpTeam),
+      },
+      third: {
+        name: thirdPlaceWinner?.nombre || "Por definir",
+        escudo: getTeamEscudo(thirdPlaceWinner),
+      },
+      shareUrl,
+    };
+  }, [buildShareUrl, championTeam, runnerUpTeam, thirdPlaceWinner, viewBracketId]);
+
+  useEffect(() => {
+    if (isViewOnly || !currentSaveId || !authSession?.access_token) return;
+    if (!championTeam) return;
+    const signature = [
+      currentSaveId,
+      championTeam?.id || "",
+      runnerUpTeam?.id || "",
+      thirdPlaceWinner?.id || "",
+    ].join("|");
+    if (shareCardUploadKeyRef.current === signature) return;
+    shareCardUploadKeyRef.current = signature;
+    const payload: ShareCardPayload = {
+      champion: {
+        name: championTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(championTeam),
+      },
+      runnerUp: {
+        name: runnerUpTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(runnerUpTeam),
+      },
+      third: {
+        name: thirdPlaceWinner?.nombre || "Por definir",
+        escudo: getTeamEscudo(thirdPlaceWinner),
+      },
+      shareUrl: buildShareUrl(currentSaveId),
+    };
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const blob = await captureShareCardBlob(payload);
+        if (cancelled) return;
+        await uploadShareCard(blob, currentSaveId);
+      } catch {
+        // ignore
+      } finally {
+        // no-op
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isViewOnly,
+    currentSaveId,
+    authSession?.access_token,
+    championTeam,
+    runnerUpTeam,
+    thirdPlaceWinner,
+    buildShareUrl,
+    uploadShareCard,
+  ]);
 
   const applyWinner = (matchId: string, team?: Team) => {
+    if (isViewOnly) return;
     if (isLocked) return;
     if (!team) return;
     if (picks[matchId]) return;
@@ -2031,49 +2054,28 @@ const scheduleByMatch = useMemo(() => {
 
   const buildFileNameWithCode = (base: string, code?: string | null) => (code ? `${base}-${code}` : base);
 
-  const waitForShareCardImages = async (target: HTMLElement) => {
-    const images = Array.from(target.querySelectorAll("img"));
-    if (!images.length) return;
-    await Promise.all(
-      images.map(
-        (img) =>
-          new Promise<void>((resolve) => {
-            if (img.complete) {
-              resolve();
-              return;
-            }
-            const onDone = () => {
-              img.removeEventListener("load", onDone);
-              img.removeEventListener("error", onDone);
-              resolve();
-            };
-            img.addEventListener("load", onDone, { once: true });
-            img.addEventListener("error", onDone, { once: true });
-          }),
-      ),
-    );
-  };
-
   const captureShareCardBlob = async (payload: ShareCardPayload) => {
     flushSync(() => setActiveShareCard(payload));
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const target = shareCardRef.current || document.getElementById("share-card-capture");
     if (!target) throw new Error("No se encontró la tarjeta para compartir");
-    await waitForShareCardImages(target);
-    const h2c = await ensureHtml2Canvas();
-    if (!h2c) throw new Error("html2canvas no disponible");
-    const canvas = await h2c(target, { scale: 2, useCORS: true, backgroundColor: "#1d1d1b" });
-    const blob: Blob = await new Promise((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("No se pudo crear imagen"))), "image/png"),
-    );
-    return blob;
+    return captureShareCard(target, "#1d1d1b");
   };
 
   const shareCaptures = async (
     platform: "whatsapp" | "facebook" | "instagram" | "tiktok" | "x",
     champion?: Team,
   ) => {
-    const shareUrl = typeof window !== "undefined" ? window.location.href : DEFAULT_HOME_URL;
+    if (!isViewOnly && !currentSaveId) {
+      setShareInfo("Guarda tu pronóstico para poder compartirlo.");
+      void handleSaveClick();
+      return;
+    }
+    const viewUrl = buildShareUrl(isViewOnly ? viewBracketId : currentSaveId);
+    const sharePageUrl =
+      isViewOnly || !currentSaveId
+        ? buildSharePageUrl(viewBracketId || currentSaveId || "", API_BASE_URL || undefined)
+        : buildSharePageUrl(currentSaveId, API_BASE_URL || undefined);
     const championPick = champion || championTeam;
     const payload: ShareCardPayload = {
       champion: {
@@ -2088,7 +2090,7 @@ const scheduleByMatch = useMemo(() => {
         name: thirdPlaceWinner?.nombre || "Por definir",
         escudo: getTeamEscudo(thirdPlaceWinner),
       },
-      shareUrl,
+      shareUrl: viewUrl,
     };
     const messageParts = [
       `Mi pronóstico Mundialista: campeón ${payload.champion.name}.`,
@@ -2096,52 +2098,58 @@ const scheduleByMatch = useMemo(() => {
       payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
       `Mira mi cuadro aquí: ${payload.shareUrl}`,
     ].filter(Boolean);
-    const message = messageParts.join(" ");
+    const baseMessage = messageParts.join(" ");
     const shareTitle = "Mi pronóstico Mundialista";
+    const openShareUrl = (url: string) => {
+      const next = window.open(url, "_blank", "noopener,noreferrer");
+      if (!next) window.location.href = url;
+    };
 
     try {
       const blob = await captureShareCardBlob(payload);
+      let finalSharePageUrl = sharePageUrl || payload.shareUrl;
+      if (!isViewOnly && currentSaveId) {
+        try {
+          const uploaded = await uploadShareCard(blob, currentSaveId);
+          if (uploaded?.sharePageUrl) finalSharePageUrl = uploaded.sharePageUrl;
+        } catch {
+          // ignore upload failures and continue with local URL
+        }
+      }
+      const finalMessage = baseMessage.replace(payload.shareUrl, finalSharePageUrl || payload.shareUrl);
       const code = generateUniqueCode();
       const fileName = buildFileNameWithCode("Fanatico-Mundialista-Pronostico", code);
       const file = new File([blob], `${fileName}.png`, { type: "image/png" });
       const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
       if (canShareFile && navigator.share) {
-        await navigator.share({ files: [file], title: shareTitle, text: message, url: payload.shareUrl });
+        await navigator.share({ files: [file], title: shareTitle, text: finalMessage, url: finalSharePageUrl });
         return;
       }
 
       const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `${fileName}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
 
-      if (platform === "whatsapp") {
-        window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-        return;
-      }
-      if (platform === "facebook") {
-        const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-          payload.shareUrl,
-        )}&quote=${encodeURIComponent(message)}`;
-        window.open(fbUrl, "_blank", "noopener,noreferrer");
-        return;
-      }
-      if (platform === "x") {
-        window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-        return;
-      }
-      if (platform === "instagram" || platform === "tiktok") {
-        try {
-          await navigator.clipboard.writeText(message);
-        } catch {
-          // ignore
+      if (typeof window !== "undefined") {
+        const shareTarget = finalSharePageUrl || payload.shareUrl;
+        if (platform === "whatsapp") {
+          openShareUrl(`https://wa.me/?text=${encodeURIComponent(finalMessage)}`);
+        } else if (platform === "facebook") {
+          const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+            shareTarget,
+          )}&quote=${encodeURIComponent(finalMessage)}`;
+          openShareUrl(fbUrl);
+        } else if (platform === "x") {
+          openShareUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(finalMessage)}`);
+        } else if (platform === "instagram" || platform === "tiktok") {
+          navigator.clipboard?.writeText(finalMessage).catch(() => null);
+          openShareUrl(platform === "instagram" ? "https://www.instagram.com/" : "https://www.tiktok.com/");
         }
-        window.open(
-          platform === "instagram" ? "https://www.instagram.com/" : "https://www.tiktok.com/",
-          "_blank",
-          "noopener,noreferrer",
-        );
-      } else {
-        setShareInfo("Copia el mensaje y sube la imagen a la plataforma.");
       }
     } catch (err) {
       setShareInfo("No pudimos preparar la captura para compartir. Intenta de nuevo o haz captura manual.");
@@ -2153,7 +2161,12 @@ const scheduleByMatch = useMemo(() => {
   };
 
   const downloadBracketImage = async () => {
-    const shareUrl = typeof window !== "undefined" ? window.location.href : DEFAULT_HOME_URL;
+    if (!isViewOnly && !currentSaveId) {
+      setShareInfo("Guarda tu pronóstico para poder compartirlo.");
+      void handleSaveClick();
+      return;
+    }
+    const shareUrl = buildShareUrl(isViewOnly ? viewBracketId : currentSaveId);
     const payload: ShareCardPayload = {
       champion: {
         name: championTeam?.nombre || "Por definir",
@@ -2169,7 +2182,6 @@ const scheduleByMatch = useMemo(() => {
       },
       shareUrl,
     };
-
     try {
       const blob = await captureShareCardBlob(payload);
       const code = generateUniqueCode();
@@ -2584,10 +2596,6 @@ const scheduleByMatch = useMemo(() => {
     return;
   }, [showChampionModal, championTeam]);
 
-  // Precarga librerías en segundo plano para evitar fallos por red lenta
-  useEffect(() => {
-    ensureHtml2Canvas().catch(() => null);  }, []);
-
   const RulesModal = ({
     open,
     onClose,
@@ -2983,6 +2991,50 @@ const scheduleByMatch = useMemo(() => {
       {!isViewOnly && <Header authSlot={authSlot} showNav={false} showSearch={false} />}
       <main className="max-w-7xl px-2 sm:px-6 lg:px-10 xl:px-16">
           <div className="max-w-7xl mx-auto">
+            {isViewOnly && (
+              <div className="mb-6 flex flex-col lg:flex-row gap-4 items-start">
+                <div className="flex-1 rounded-lg border border-neutral-800 bg-black/40 p-4">
+                  <p className="text-xs text-gray-400 uppercase tracking-wide">Pronóstico compartido</p>
+                  <h1 className="mt-1 text-2xl md:text-3xl font-black text-white">
+                    {viewBracketMeta?.name || "Pronóstico compartido"}
+                  </h1>
+                  <div className="mt-3 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-neutral-800 overflow-hidden flex items-center justify-center text-sm font-bold text-gray-200">
+                      {viewSharedBy?.avatarUrl ? (
+                        <img
+                          src={viewSharedBy.avatarUrl}
+                          alt={viewSharedBy.alias || viewSharedBy.name || "Usuario"}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span>{(viewSharedBy?.alias || viewSharedBy?.name || "U").trim().charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-gray-400">Compartido por</span>
+                      <span className="text-base font-semibold text-gray-100">
+                        {viewSharedBy?.alias || viewSharedBy?.name || "Usuario"}
+                      </span>
+                      {viewBracketMeta?.updatedAt && (
+                        <span className="text-xs text-gray-500">
+                          Actualizado: {formatViewDate(viewBracketMeta.updatedAt)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="w-full lg:w-auto flex justify-center">
+                  <ShareCard
+                    coverUrl={championBanner}
+                    champion={viewSharePayload.champion}
+                    runnerUp={viewSharePayload.runnerUp}
+                    third={viewSharePayload.third}
+                    shareUrl={viewSharePayload.shareUrl}
+                  />
+                </div>
+              </div>
+            )}
+            <div className={isViewOnly ? "pointer-events-none select-none" : ""}>
             {!isViewOnly && (
               <>
                 <div className="md:hidden flex justify-end mb-3">{authSlotMobile}</div>
@@ -3602,6 +3654,7 @@ const scheduleByMatch = useMemo(() => {
             </motion.div>
           )}
           </AnimatePresence>
+        </div>
         </div>
       </main>
       {activeShareCard && (

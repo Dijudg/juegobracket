@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { flushSync } from "react-dom";
 import type { Session, User } from "@supabase/supabase-js";
 import Header from "../components/header";
 import Footer from "../components/Footer";
@@ -21,12 +22,9 @@ import winnerCardBg from "../assets/final.jpg";
 import facebookIcon from "../assets/facebook.svg";
 import instagramIcon from "../assets/instagram.svg";
 import whatsappIcon from "../assets/whatsapp.svg";
-
-declare global {
-  interface Window {
-    html2canvas?: any;
-  }
-}
+import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
+import { captureShareCard } from "../utils/shareCardCapture";
+import { buildSharePageUrl, uploadShareCardImage } from "../utils/shareCardApi";
 
 const AVATAR_BUCKET = import.meta.env.VITE_SUPABASE_AVATAR_BUCKET || "avatars";
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
@@ -43,10 +41,7 @@ type BracketItem = BracketMeta & {
   data: unknown;
 };
 
-type ShareTeamInfo = {
-  name: string;
-  escudo?: string;
-};
+type ShareTeamInfo = ShareCardTeam;
 
 type PodiumResult = {
   champion?: Team;
@@ -283,84 +278,6 @@ const buildNextRounds = (
   return { final, thirdPlace };
 };
 
-type ShareCardProps = {
-  coverUrl: string;
-  champion: ShareTeamInfo;
-  runnerUp: ShareTeamInfo;
-  third: ShareTeamInfo;
-  shareUrl: string;
-};
-
-const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl }: ShareCardProps) => {
-  return (
-    <div className="share-card">
-      <div className="share-card__header">
-        {coverUrl && (
-          <img
-            className="share-card__cover"
-            src={coverUrl}
-            crossOrigin="anonymous"
-            alt="Portada"
-          />
-        )}
-        {champion.escudo ? (
-          <img
-            className="share-card__champion"
-            src={champion.escudo}
-            crossOrigin="anonymous"
-            alt={champion.name}
-          />
-        ) : (
-          <div className="share-card__champion share-card__champion--fallback">N/A</div>
-        )}
-      </div>
-      <div className="share-card__body">
-        <div className="share-card__title">
-          <div className="share-card__title-name">{champion.name}</div>
-          <div className="share-card__title-label">Campeón</div>
-        </div>
-        <div className="share-card__podium">
-          <div className="share-card__podium-item">
-            {runnerUp.escudo ? (
-              <img
-                className="share-card__podium-flag"
-                src={runnerUp.escudo}
-                crossOrigin="anonymous"
-                alt={runnerUp.name}
-              />
-            ) : (
-              <div className="share-card__podium-flag share-card__podium-flag--fallback">N/A</div>
-            )}
-            <div className="share-card__podium-text">
-              <div className="share-card__podium-name">{runnerUp.name}</div>
-              <div className="share-card__podium-label share-card__podium-label--second">Segundo lugar</div>
-            </div>
-          </div>
-          <div className="share-card__podium-item">
-            {third.escudo ? (
-              <img
-                className="share-card__podium-flag"
-                src={third.escudo}
-                crossOrigin="anonymous"
-                alt={third.name}
-              />
-            ) : (
-              <div className="share-card__podium-flag share-card__podium-flag--fallback">N/A</div>
-            )}
-            <div className="share-card__podium-text">
-              <div className="share-card__podium-name">{third.name}</div>
-              <div className="share-card__podium-label share-card__podium-label--third">Tercer lugar</div>
-            </div>
-          </div>
-        </div>
-        <div className="share-card__cta">
-          <div className="share-card__cta-text">Ver mi pronóstico</div>
-        </div>
-        <div className="share-card__link">{shareUrl}</div>
-      </div>
-    </div>
-  );
-};
 
 const readTeamsFromStorage = () => {
   if (typeof window === "undefined") return [] as Team[];
@@ -387,7 +304,7 @@ export default function UserBackendPage() {
   const [detailsBusy, setDetailsBusy] = useState(false);
   const [viewerId, setViewerId] = useState<string | null>(null);
   const viewerFrameRef = useRef<HTMLIFrameElement>(null);
-  const html2CanvasPromiseRef = useRef<Promise<any> | null>(null);
+  const shareCardRef = useRef<HTMLDivElement>(null);
   const [shareBusyId, setShareBusyId] = useState<string | null>(null);
   const [shareCoverOverride, setShareCoverOverride] = useState<string | null>(null);
   const [activeShareCard, setActiveShareCard] = useState<{
@@ -749,22 +666,7 @@ export default function UserBackendPage() {
 
   const shareCoverUrl = useMemo(() => shareCoverOverride || coverUrl || winnerCardBg, [shareCoverOverride, coverUrl]);
 
-  const ensureHtml2Canvas = useCallback(() => {
-    if (typeof window === "undefined") return Promise.resolve(null);
-    if (window.html2canvas) return Promise.resolve(window.html2canvas);
-    if (!html2CanvasPromiseRef.current) {
-      html2CanvasPromiseRef.current = new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
-        script.async = true;
-        script.onload = () => resolve(window.html2canvas);
-        script.onerror = (err) => reject(err);
-        document.body.appendChild(script);
-      });
-    }
-    return html2CanvasPromiseRef.current;
-  }, []);
-const sharePronostico = useCallback(
+  const sharePronostico = useCallback(
     async (
       platform: "facebook" | "instagram" | "whatsapp",
       payload: {
@@ -782,34 +684,32 @@ const sharePronostico = useCallback(
         payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
         `Mira mi cuadro aquí: ${payload.shareUrl}`,
       ].filter(Boolean);
-      const message = messageParts.join(" ");
+      const baseMessage = messageParts.join(" ");
       const shareTitle = "Mi pronóstico Mundialista";
       setShareBusyId(payload.id);
-      setActiveShareCard(payload);
+      flushSync(() => setActiveShareCard(payload));
       let coverFallbackApplied = false;
+      const openShareUrl = (url: string) => {
+        const next = window.open(url, "_blank", "noopener,noreferrer");
+        if (!next) window.location.href = url;
+      };
 
       const capture = async () => {
-        const h2c = await ensureHtml2Canvas();
-        if (!h2c) throw new Error("html2canvas no disponible");
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        const target = document.getElementById("share-card-capture");
+        const target = shareCardRef.current || document.getElementById("share-card-capture");
         if (!target) throw new Error("No se encontró la tarjeta para compartir");
-        const canvas = await h2c(target, { scale: 2, useCORS: true, backgroundColor: "#1d1d1b" });
-        const blob: Blob = await new Promise((resolve, reject) =>
-          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("No se pudo crear imagen"))), "image/png"),
-        );
-        return { canvas, blob };
+        const blob = await captureShareCard(target, "#1d1d1b");
+        return { blob };
       };
 
       try {
-        let result: { canvas: HTMLCanvasElement; blob: Blob } | null = null;
+        let result: { blob: Blob } | null = null;
         try {
           result = await capture();
         } catch (err) {
           if (coverUrl && !shareCoverOverride) {
-            setShareCoverOverride(winnerCardBg);
+            flushSync(() => setShareCoverOverride(winnerCardBg));
             coverFallbackApplied = true;
-            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             result = await capture();
           } else {
             throw err;
@@ -817,35 +717,49 @@ const sharePronostico = useCallback(
         }
         if (!result) return;
 
+        let finalSharePageUrl = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
+        if (session?.access_token) {
+          try {
+            const uploaded = await uploadShareCardImage({
+              apiBaseUrl: API_BASE_URL || undefined,
+              bracketId: payload.id,
+              token: session.access_token,
+              blob: result.blob,
+            });
+            if (uploaded?.sharePageUrl) finalSharePageUrl = uploaded.sharePageUrl;
+          } catch {
+            // ignore upload errors
+          }
+        }
+        const finalMessage = baseMessage.replace(payload.shareUrl, finalSharePageUrl || payload.shareUrl);
+
         const file = new File([result.blob], `pronostico-${payload.id}.png`, { type: "image/png" });
         const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
         if (canShareFile && navigator.share) {
-          await navigator.share({ files: [file], title: shareTitle, text: message, url: payload.shareUrl });
+          await navigator.share({ files: [file], title: shareTitle, text: finalMessage, url: finalSharePageUrl });
           return;
         }
 
         const objectUrl = URL.createObjectURL(result.blob);
-        window.open(objectUrl, "_blank", "noopener,noreferrer");
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = `pronostico-${payload.id}.png`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
 
+        const shareTarget = finalSharePageUrl || payload.shareUrl;
         if (platform === "whatsapp") {
-          window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-          return;
-        }
-        if (platform === "facebook") {
+          openShareUrl(`https://wa.me/?text=${encodeURIComponent(finalMessage)}`);
+        } else if (platform === "facebook") {
           const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-            payload.shareUrl,
-          )}&quote=${encodeURIComponent(message)}`;
-          window.open(url, "_blank", "noopener,noreferrer");
-          return;
-        }
-        if (platform === "instagram") {
-          try {
-            await navigator.clipboard.writeText(message);
-          } catch {
-            // ignore
-          }
-          window.open("https://www.instagram.com/", "_blank", "noopener,noreferrer");
+            shareTarget,
+          )}&quote=${encodeURIComponent(finalMessage)}`;
+          openShareUrl(url);
+        } else if (platform === "instagram") {
+          navigator.clipboard?.writeText(finalMessage).catch(() => null);
+          openShareUrl("https://www.instagram.com/");
         }
       } catch {
         // ignore
@@ -855,7 +769,7 @@ const sharePronostico = useCallback(
         setActiveShareCard(null);
       }
     },
-    [coverUrl, ensureHtml2Canvas, shareCoverOverride],
+    [coverUrl, shareCoverOverride, session?.access_token],
   );
   const canEdit = !!session?.access_token;
   const avatarInitial = useMemo(() => {
@@ -1176,9 +1090,9 @@ const sharePronostico = useCallback(
                   <button
                     type="button"
                     onClick={() => navigateTo("home", { resetGame: Date.now() })}
-                    className="px-3 py-2 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                    className="px-3 py-2 rounded-md border uppercase border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
                   >
-                    Volver al juego
+                     Volver al juego
                   </button>
               </div>
             </div>
@@ -1415,7 +1329,7 @@ const sharePronostico = useCallback(
 
                   {activeShareCard && (
                     <div className="share-card-host" aria-hidden="true">
-                      <div id="share-card-capture">
+                      <div id="share-card-capture" ref={shareCardRef}>
                         <ShareCard
                           coverUrl={shareCoverUrl}
                           champion={activeShareCard.champion}

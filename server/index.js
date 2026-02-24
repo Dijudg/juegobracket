@@ -35,6 +35,9 @@ app.use(express.json({ limit: "1mb" }));
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const shareCardBucket = process.env.SHARE_CARD_BUCKET || "share-cards";
+const bracketHomeUrl = process.env.BRACKET_HOME_URL || process.env.PUBLIC_BASE_URL || "";
+const shareCardFallbackUrl = process.env.SHARE_CARD_FALLBACK_URL || "";
 
 if (!supabaseUrl || !supabaseServiceKey) {
   // eslint-disable-next-line no-console
@@ -212,6 +215,79 @@ app.post("/api/brackets", requireAuth, async (req, res) => {
   return res.json({ item: saved ? mapBracketItem(saved) : null });
 });
 
+app.post(
+  "/api/brackets/:id/share-card",
+  requireAuth,
+  express.raw({ type: "image/png", limit: "5mb" }),
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ error: "Missing bracket id" });
+      if (!req.body || !Buffer.isBuffer(req.body)) {
+        return res.status(400).json({ error: "Missing image body" });
+      }
+
+      const { data: existing, error: existingErr } = await supabase
+        .from("bracket_saves")
+        .select("id,user_id,data")
+        .eq("id", id)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (existingErr) {
+        logSupabaseError("brackets.share.verify", existingErr);
+        return res.status(500).json({ error: existingErr.message });
+      }
+      if (!existing) return res.status(404).json({ error: "Bracket not found" });
+
+      const fileName = `${Date.now()}.png`;
+      const filePath = `${id}/${fileName}`;
+      const { error: uploadError } = await supabase.storage
+        .from(shareCardBucket)
+        .upload(filePath, req.body, { contentType: "image/png", upsert: true, cacheControl: "3600" });
+
+      if (uploadError) {
+        logSupabaseError("brackets.share.upload", uploadError);
+        return res.status(500).json({ error: uploadError.message });
+      }
+
+      const { data: publicData } = supabase.storage.from(shareCardBucket).getPublicUrl(filePath);
+      const shareCardUrl = publicData?.publicUrl;
+
+      let nextData = existing.data;
+      if (typeof nextData === "string") {
+        try {
+          nextData = JSON.parse(nextData);
+        } catch {
+          nextData = { data: existing.data };
+        }
+      }
+      const updatedPayload = {
+        ...(nextData || {}),
+        shareCardUrl,
+        shareCardUpdatedAt: new Date().toISOString(),
+      };
+
+      const { error: updateError } = await supabase
+        .from("bracket_saves")
+        .update({ data: updatedPayload })
+        .eq("id", id)
+        .eq("user_id", userId);
+
+      if (updateError) {
+        logSupabaseError("brackets.share.update", updateError);
+      }
+
+      const sharePageUrl = `${req.protocol}://${req.get("host")}/share/${id}`;
+      return res.json({ shareCardUrl, sharePageUrl });
+    } catch (err) {
+      console.error("[brackets.share] unexpected error", err);
+      return res.status(500).json({ error: "Share card upload failed" });
+    }
+  },
+);
+
 app.delete("/api/brackets/:id", requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { id } = req.params;
@@ -236,6 +312,60 @@ app.delete("/api/account", requireAuth, async (req, res) => {
     return res.status(500).json({ error: error.message, details: error.details, hint: error.hint });
   }
   return res.json({ ok: true });
+});
+
+app.get("/share/:id", async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabase
+    .from("bracket_saves")
+    .select("id,name,data,created_at,updated_at")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    logSupabaseError("share.og", error);
+    return res.status(500).send("Error");
+  }
+  if (!data) return res.status(404).send("Not found");
+
+  let payload = data.data;
+  if (typeof payload === "string") {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      payload = {};
+    }
+  }
+  const shareCardUrl = payload?.shareCardUrl || shareCardFallbackUrl;
+  const title = data.name || "Pronóstico Mundialista";
+  const viewUrlBase =
+    bracketHomeUrl || `${req.protocol}://${req.get("host")}`;
+  const viewUrl = `${viewUrlBase}?view=1&bracketId=${id}`;
+  const description = "Mira el pronóstico completo del Mundial.";
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(`<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="x-ua-compatible" content="ie=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${title}" />
+    <meta property="og:description" content="${description}" />
+    ${shareCardUrl ? `<meta property="og:image" content="${shareCardUrl}" />` : ""}
+    <meta property="og:url" content="${req.protocol}://${req.get("host")}/share/${id}" />
+    <meta name="twitter:card" content="${shareCardUrl ? "summary_large_image" : "summary"}" />
+    ${shareCardUrl ? `<meta name="twitter:image" content="${shareCardUrl}" />` : ""}
+    <meta http-equiv="refresh" content="0; url=${viewUrl}" />
+  </head>
+  <body>
+    <p>Redirigiendo a tu pronóstico...</p>
+    <p><a href="${viewUrl}">Abrir pronóstico</a></p>
+    <script>window.location.replace(${JSON.stringify(viewUrl)});</script>
+  </body>
+</html>`);
 });
 
 const port = Number(process.env.PORT || 4000);

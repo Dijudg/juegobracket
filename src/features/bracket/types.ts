@@ -76,6 +76,14 @@ export type BracketSavePayload = {
   intercontinentalPicks: PlayoffPickState;
   uefaPicks: PlayoffPickState;
   isLocked: boolean;
+  shareCardUrl?: string;
+  shareCardUpdatedAt?: string;
+  sharedBy?: {
+    name?: string;
+    alias?: string;
+    avatarUrl?: string;
+    userId?: string;
+  };
 };
 
 export type PlayoffMatchData = {
