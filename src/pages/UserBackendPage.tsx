@@ -686,13 +686,14 @@ export default function UserBackendPage() {
       ].filter(Boolean);
       const baseMessage = messageParts.join(" ");
       const shareTitle = "Mi pronóstico Mundialista";
-      setShareBusyId(payload.id);
-      flushSync(() => setActiveShareCard(payload));
-      let coverFallbackApplied = false;
-      const openShareUrl = (url: string) => {
+      const shareTarget = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
+      const openShareTarget = (url: string) => {
         const next = window.open(url, "_blank", "noopener,noreferrer");
         if (!next) window.location.href = url;
       };
+      setShareBusyId(payload.id);
+      flushSync(() => setActiveShareCard(payload));
+      let coverFallbackApplied = false;
 
       const capture = async () => {
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -717,7 +718,7 @@ export default function UserBackendPage() {
         }
         if (!result) return;
 
-        let finalSharePageUrl = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
+        let finalSharePageUrl = shareTarget;
         if (session?.access_token) {
           try {
             const uploaded = await uploadShareCardImage({
@@ -731,7 +732,7 @@ export default function UserBackendPage() {
             // ignore upload errors
           }
         }
-        const finalMessage = baseMessage.replace(payload.shareUrl, finalSharePageUrl || payload.shareUrl);
+        const finalMessage = baseMessage.replace(shareTarget, finalSharePageUrl || shareTarget);
 
         const file = new File([result.blob], `pronostico-${payload.id}.png`, { type: "image/png" });
         const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
@@ -749,20 +750,29 @@ export default function UserBackendPage() {
         link.remove();
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
 
-        const shareTarget = finalSharePageUrl || payload.shareUrl;
         if (platform === "whatsapp") {
-          openShareUrl(`https://wa.me/?text=${encodeURIComponent(finalMessage)}`);
+          openShareTarget(`https://wa.me/?text=${encodeURIComponent(finalMessage)}`);
+        } else if (platform === "facebook") {
+          const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+            finalSharePageUrl || shareTarget,
+          )}&quote=${encodeURIComponent(finalMessage)}`;
+          openShareTarget(url);
+        } else if (platform === "instagram") {
+          navigator.clipboard?.writeText(finalMessage).catch(() => null);
+          openShareTarget("https://www.instagram.com/");
+        }
+      } catch {
+        if (platform === "whatsapp") {
+          openShareTarget(`https://wa.me/?text=${encodeURIComponent(baseMessage)}`);
         } else if (platform === "facebook") {
           const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
             shareTarget,
-          )}&quote=${encodeURIComponent(finalMessage)}`;
-          openShareUrl(url);
+          )}&quote=${encodeURIComponent(baseMessage)}`;
+          openShareTarget(url);
         } else if (platform === "instagram") {
-          navigator.clipboard?.writeText(finalMessage).catch(() => null);
-          openShareUrl("https://www.instagram.com/");
+          navigator.clipboard?.writeText(baseMessage).catch(() => null);
+          openShareTarget("https://www.instagram.com/");
         }
-      } catch {
-        // ignore
       } finally {
         if (coverFallbackApplied) setShareCoverOverride(null);
         setShareBusyId(null);

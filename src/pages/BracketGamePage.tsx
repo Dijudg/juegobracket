@@ -88,6 +88,7 @@ const LS_INTERCONTINENTAL = "fm-repechaje-intercontinental";
 const LS_UEFA = "fm-repechaje-uefa";
 const LS_TEAMS = "fm-teams";
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
@@ -930,7 +931,7 @@ export default function BracketGamePage() {
       if (idToUse) {
         const { data, error } = await supabase
           .from("bracket_saves")
-          .update({ user_id: userId, name, data: payload, is_public: true })
+          .update({ user_id: userId, name, data: payload })
           .eq("id", idToUse)
           .eq("user_id", userId)
           .select("id,name")
@@ -945,7 +946,7 @@ export default function BracketGamePage() {
       } else {
         const { data, error } = await supabase
           .from("bracket_saves")
-          .insert([{ user_id: userId, name, data: payload, is_public: true }])
+          .insert([{ user_id: userId, name, data: payload }])
           .select("id,name")
           .maybeSingle();
         if (error) throw error;
@@ -2096,18 +2097,35 @@ const scheduleByMatch = useMemo(() => {
       `Mi pronóstico Mundialista: campeón ${payload.champion.name}.`,
       payload.runnerUp.name !== "Por definir" ? `Segundo: ${payload.runnerUp.name}.` : "",
       payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
-      `Mira mi cuadro aquí: ${payload.shareUrl}`,
+      `Mira mi cuadro aquí: ${sharePageUrl || payload.shareUrl}`,
     ].filter(Boolean);
     const baseMessage = messageParts.join(" ");
     const shareTitle = "Mi pronóstico Mundialista";
-    const openShareUrl = (url: string) => {
+    const shareTarget = sharePageUrl || payload.shareUrl;
+    const openShareTarget = (url: string) => {
       const next = window.open(url, "_blank", "noopener,noreferrer");
       if (!next) window.location.href = url;
     };
 
+    if (typeof window !== "undefined") {
+      if (platform === "whatsapp") {
+        openShareTarget(`https://wa.me/?text=${encodeURIComponent(baseMessage)}`);
+      } else if (platform === "facebook") {
+        const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+          shareTarget,
+        )}&quote=${encodeURIComponent(baseMessage)}`;
+        openShareTarget(fbUrl);
+      } else if (platform === "x") {
+        openShareTarget(`https://twitter.com/intent/tweet?text=${encodeURIComponent(baseMessage)}`);
+      } else if (platform === "instagram" || platform === "tiktok") {
+        navigator.clipboard?.writeText(baseMessage).catch(() => null);
+        openShareTarget(platform === "instagram" ? "https://www.instagram.com/" : "https://www.tiktok.com/");
+      }
+    }
+
     try {
       const blob = await captureShareCardBlob(payload);
-      let finalSharePageUrl = sharePageUrl || payload.shareUrl;
+      let finalSharePageUrl = shareTarget;
       if (!isViewOnly && currentSaveId) {
         try {
           const uploaded = await uploadShareCard(blob, currentSaveId);
@@ -2116,7 +2134,7 @@ const scheduleByMatch = useMemo(() => {
           // ignore upload failures and continue with local URL
         }
       }
-      const finalMessage = baseMessage.replace(payload.shareUrl, finalSharePageUrl || payload.shareUrl);
+      const finalMessage = baseMessage.replace(shareTarget, finalSharePageUrl || shareTarget);
       const code = generateUniqueCode();
       const fileName = buildFileNameWithCode("Fanatico-Mundialista-Pronostico", code);
       const file = new File([blob], `${fileName}.png`, { type: "image/png" });
@@ -2134,23 +2152,6 @@ const scheduleByMatch = useMemo(() => {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
-
-      if (typeof window !== "undefined") {
-        const shareTarget = finalSharePageUrl || payload.shareUrl;
-        if (platform === "whatsapp") {
-          openShareUrl(`https://wa.me/?text=${encodeURIComponent(finalMessage)}`);
-        } else if (platform === "facebook") {
-          const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-            shareTarget,
-          )}&quote=${encodeURIComponent(finalMessage)}`;
-          openShareUrl(fbUrl);
-        } else if (platform === "x") {
-          openShareUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(finalMessage)}`);
-        } else if (platform === "instagram" || platform === "tiktok") {
-          navigator.clipboard?.writeText(finalMessage).catch(() => null);
-          openShareUrl(platform === "instagram" ? "https://www.instagram.com/" : "https://www.tiktok.com/");
-        }
-      }
     } catch (err) {
       setShareInfo("No pudimos preparar la captura para compartir. Intenta de nuevo o haz captura manual.");
       // eslint-disable-next-line no-console
@@ -2161,11 +2162,6 @@ const scheduleByMatch = useMemo(() => {
   };
 
   const downloadBracketImage = async () => {
-    if (!isViewOnly && !currentSaveId) {
-      setShareInfo("Guarda tu pronóstico para poder compartirlo.");
-      void handleSaveClick();
-      return;
-    }
     const shareUrl = buildShareUrl(isViewOnly ? viewBracketId : currentSaveId);
     const payload: ShareCardPayload = {
       champion: {
