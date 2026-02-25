@@ -368,6 +368,19 @@ app.get("/share/:id", async (req, res) => {
 </html>`);
 });
 
+const clientDistPath = path.resolve(__dirname, "..", "dist");
+const clientIndexPath = path.join(clientDistPath, "index.html");
+
+if (fs.existsSync(clientIndexPath)) {
+  app.use(express.static(clientDistPath));
+  app.get("*", (req, res) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/share")) {
+      return res.status(404).send("Not found");
+    }
+    return res.sendFile(clientIndexPath);
+  });
+}
+
 const port = Number(process.env.PORT || 4000);
 app.listen(port, () => {
   // eslint-disable-next-line no-console

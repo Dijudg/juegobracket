@@ -1,0 +1,5 @@
+{
+  "rewrites": [
+    { "source": "/((?!api(?:/|$)|share(?:/|$)).*)", "destination": "/index.html" }
+  ]
+}

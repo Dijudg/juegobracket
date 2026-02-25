@@ -11,9 +11,15 @@ type AuthModalProps = {
   authBusy: boolean;
   authError: string | null;
   authSuccess: string | null;
+  consentMarketing: boolean;
+  consentNews: boolean;
+  consentUpdates: boolean;
   onModeChange: (mode: "login" | "signup") => void;
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
+  onConsentMarketingChange: (value: boolean) => void;
+  onConsentNewsChange: (value: boolean) => void;
+  onConsentUpdatesChange: (value: boolean) => void;
   onSubmit: () => void;
   onOAuth: (provider: "google" | "facebook") => void;
 };
@@ -27,9 +33,15 @@ export const AuthModal = ({
   authBusy,
   authError,
   authSuccess,
+  consentMarketing,
+  consentNews,
+  consentUpdates,
   onModeChange,
   onEmailChange,
   onPasswordChange,
+  onConsentMarketingChange,
+  onConsentNewsChange,
+  onConsentUpdatesChange,
   onSubmit,
   onOAuth,
 }: AuthModalProps) => {
@@ -136,6 +148,41 @@ export const AuthModal = ({
               placeholder="********"
             />
           </div>
+
+          {authMode === "signup" && (
+            <div className="mt-4 space-y-2 text-xs text-gray-300">
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={consentUpdates}
+                  onChange={(e) => onConsentUpdatesChange(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>Quiero recibir informativos y actualizaciones del producto.</span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={consentNews}
+                  onChange={(e) => onConsentNewsChange(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>Quiero recibir noticias relevantes por correo.</span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={consentMarketing}
+                  onChange={(e) => onConsentMarketingChange(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>Acepto recibir publicidad y promociones.</span>
+              </label>
+              <p className="text-[10px] text-gray-500">
+                Puedes cambiar estas preferencias cuando quieras.
+              </p>
+            </div>
+          )}
 
           {authError && <p className="text-xs text-red-400 mt-3">{authError}</p>}
           {authSuccess && <p className="text-xs text-green-400 mt-3">{authSuccess}</p>}

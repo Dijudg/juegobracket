@@ -58,6 +58,12 @@ import { BestThirdsModal } from "../features/bracket/components/BestThirdsModal"
 import { useHoloPointer } from "../features/bracket/hooks/useHoloPointer";
 import { useNavigation } from "../contexts/NavigationContext";
 import { AuthModal } from "../components/AuthModal";
+import {
+  buildConsentPayload,
+  clearPendingConsent,
+  readPendingConsent,
+  storePendingConsent,
+} from "../utils/authConsent";
 
 
 // Normaliza ids de partido para mapear contra el sheet (quita P/p y ceros a la izquierda)
@@ -488,6 +494,9 @@ export default function BracketGamePage() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+  const [consentMarketing, setConsentMarketing] = useState(false);
+  const [consentNews, setConsentNews] = useState(false);
+  const [consentUpdates, setConsentUpdates] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveName, setSaveName] = useState("Mi bracket");
   const [saveMode, setSaveMode] = useState<"new" | "overwrite" | "update">("new");
@@ -792,6 +801,11 @@ export default function BracketGamePage() {
     setAuthMode(mode);
     setAuthError(null);
     setAuthSuccess(null);
+    if (mode === "signup") {
+      setConsentMarketing(false);
+      setConsentNews(false);
+      setConsentUpdates(false);
+    }
     setShowAuthModal(true);
   };
 
@@ -799,6 +813,11 @@ export default function BracketGamePage() {
     setAuthMode(mode);
     setAuthError(null);
     setAuthSuccess(null);
+    if (mode === "signup") {
+      setConsentMarketing(false);
+      setConsentNews(false);
+      setConsentUpdates(false);
+    }
   };
 
   const closeAuthModal = () => {
@@ -823,11 +842,18 @@ export default function BracketGamePage() {
     setAuthSuccess(null);
     try {
       if (authMode === "signup") {
+        const consentPayload = buildConsentPayload({
+          marketing: consentMarketing,
+          news: consentNews,
+          updates: consentUpdates,
+          source: "signup-email",
+        });
         const { error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
           options: {
             emailRedirectTo: window.location.origin,
+            data: consentPayload,
           },
         });
         if (error) throw error;
@@ -851,6 +877,15 @@ export default function BracketGamePage() {
     setAuthBusy(true);
     setAuthError(null);
     try {
+      if (authMode === "signup") {
+        const consentPayload = buildConsentPayload({
+          marketing: consentMarketing,
+          news: consentNews,
+          updates: consentUpdates,
+          source: `signup-oauth:${provider}`,
+        });
+        storePendingConsent(consentPayload);
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: { redirectTo: window.location.href },
@@ -970,18 +1005,32 @@ export default function BracketGamePage() {
     if (authInitRef.current) return;
     authInitRef.current = true;
     let mounted = true;
+    const applyPendingConsent = async (session?: Session | null) => {
+      if (!session?.user) return;
+      const pending = readPendingConsent();
+      if (!pending) return;
+      try {
+        await supabase.auth.updateUser({ data: pending });
+      } catch {
+        // ignore
+      } finally {
+        clearPendingConsent();
+      }
+    };
     supabase.auth
       .getSession()
       .then(({ data }) => {
         if (!mounted) return;
         setAuthSession(data.session ?? null);
         setAuthUser(data.session?.user ?? null);
+        void applyPendingConsent(data.session);
       })
       .catch(() => null);
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthSession(session ?? null);
       setAuthUser(session?.user ?? null);
+      void applyPendingConsent(session);
       if (!session) {
         setCurrentSaveId(null);
         setSavedBrackets([]);
@@ -2104,7 +2153,9 @@ const scheduleByMatch = useMemo(() => {
     const shareTarget = sharePageUrl || payload.shareUrl;
     const openShareTarget = (url: string) => {
       const next = window.open(url, "_blank", "noopener,noreferrer");
-      if (!next) window.location.href = url;
+      if (!next) {
+        setShareInfo("Permite ventanas emergentes para abrir el enlace de compartir.");
+      }
     };
 
     if (typeof window !== "undefined") {
@@ -3710,9 +3761,15 @@ const scheduleByMatch = useMemo(() => {
           authBusy={authBusy}
           authError={authError}
           authSuccess={authSuccess}
+          consentMarketing={consentMarketing}
+          consentNews={consentNews}
+          consentUpdates={consentUpdates}
           onModeChange={handleAuthModeChange}
           onEmailChange={setAuthEmail}
           onPasswordChange={setAuthPassword}
+          onConsentMarketingChange={setConsentMarketing}
+          onConsentNewsChange={setConsentNews}
+          onConsentUpdatesChange={setConsentUpdates}
           onSubmit={handleAuthSubmit}
           onOAuth={handleOAuthSignIn}
         />

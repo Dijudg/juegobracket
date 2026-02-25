@@ -6,6 +6,12 @@ import Footer from "../components/Footer";
 import { supabase } from "../utils/supabaseClient";
 import { useNavigation } from "../contexts/NavigationContext";
 import { AuthModal } from "../components/AuthModal";
+import {
+  buildConsentPayload,
+  clearPendingConsent,
+  readPendingConsent,
+  storePendingConsent,
+} from "../utils/authConsent";
 import { fetchFanaticoData } from "../utils/fanaticoApi";
 import type { BracketSavePayload, GroupSelections, Match, Seeds, Team } from "../features/bracket/types";
 import {
@@ -27,6 +33,7 @@ import { captureShareCard } from "../utils/shareCardCapture";
 import { buildSharePageUrl, uploadShareCardImage } from "../utils/shareCardApi";
 
 const AVATAR_BUCKET = import.meta.env.VITE_SUPABASE_AVATAR_BUCKET || "avatars";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
 const MAX_THIRD = 8;
 
@@ -323,6 +330,9 @@ export default function UserBackendPage() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+  const [consentMarketing, setConsentMarketing] = useState(false);
+  const [consentNews, setConsentNews] = useState(false);
+  const [consentUpdates, setConsentUpdates] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [profileAlias, setProfileAlias] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -348,6 +358,18 @@ export default function UserBackendPage() {
 
   useEffect(() => {
     let mounted = true;
+    const applyPendingConsent = async (session?: Session | null) => {
+      if (!session?.user) return;
+      const pending = readPendingConsent();
+      if (!pending) return;
+      try {
+        await supabase.auth.updateUser({ data: pending });
+      } catch {
+        // ignore
+      } finally {
+        clearPendingConsent();
+      }
+    };
     supabase.auth
       .getSession()
       .then(({ data }) => {
@@ -355,12 +377,14 @@ export default function UserBackendPage() {
         setSession(data.session ?? null);
         setUser(data.session?.user ?? null);
         setLoading(false);
+        void applyPendingConsent(data.session);
       })
       .catch(() => setLoading(false));
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession ?? null);
       setUser(nextSession?.user ?? null);
+      void applyPendingConsent(nextSession);
     });
 
     return () => {
@@ -689,7 +713,9 @@ export default function UserBackendPage() {
       const shareTarget = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
       const openShareTarget = (url: string) => {
         const next = window.open(url, "_blank", "noopener,noreferrer");
-        if (!next) window.location.href = url;
+        if (!next) {
+          // Popup bloqueado: no redirigimos para no perder la pagina actual.
+        }
       };
       setShareBusyId(payload.id);
       flushSync(() => setActiveShareCard(payload));
@@ -833,6 +859,11 @@ export default function UserBackendPage() {
     setAuthMode(mode);
     setAuthError(null);
     setAuthSuccess(null);
+    if (mode === "signup") {
+      setConsentMarketing(false);
+      setConsentNews(false);
+      setConsentUpdates(false);
+    }
     setShowAuthModal(true);
   };
 
@@ -840,6 +871,11 @@ export default function UserBackendPage() {
     setAuthMode(mode);
     setAuthError(null);
     setAuthSuccess(null);
+    if (mode === "signup") {
+      setConsentMarketing(false);
+      setConsentNews(false);
+      setConsentUpdates(false);
+    }
   };
 
   const closeAuthModal = () => {
@@ -859,10 +895,16 @@ export default function UserBackendPage() {
     setAuthSuccess(null);
     try {
       if (authMode === "signup") {
+        const consentPayload = buildConsentPayload({
+          marketing: consentMarketing,
+          news: consentNews,
+          updates: consentUpdates,
+          source: "signup-email",
+        });
         const { error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: window.location.origin, data: consentPayload },
         });
         if (error) throw error;
         setAuthSuccess("Cuenta creada. Revisa tu correo para confirmar.");
@@ -885,6 +927,15 @@ export default function UserBackendPage() {
     setAuthBusy(true);
     setAuthError(null);
     try {
+      if (authMode === "signup") {
+        const consentPayload = buildConsentPayload({
+          marketing: consentMarketing,
+          news: consentNews,
+          updates: consentUpdates,
+          source: `signup-oauth:${provider}`,
+        });
+        storePendingConsent(consentPayload);
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: { redirectTo: window.location.href },
@@ -1785,9 +1836,15 @@ export default function UserBackendPage() {
         authBusy={authBusy}
         authError={authError}
         authSuccess={authSuccess}
+        consentMarketing={consentMarketing}
+        consentNews={consentNews}
+        consentUpdates={consentUpdates}
         onModeChange={handleAuthModeChange}
         onEmailChange={setAuthEmail}
         onPasswordChange={setAuthPassword}
+        onConsentMarketingChange={setConsentMarketing}
+        onConsentNewsChange={setConsentNews}
+        onConsentUpdatesChange={setConsentUpdates}
         onSubmit={handleAuthSubmit}
         onOAuth={handleOAuthSignIn}
       />
