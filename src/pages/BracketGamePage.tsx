@@ -1,4 +1,4 @@
-﻿import { Crown, ChevronDown, CalendarDays } from "lucide-react";
+import { Crown, ChevronDown, CalendarDays } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
@@ -375,6 +375,11 @@ export default function BracketGamePage() {
       if (typeof window === "undefined") return null;
       return new URLSearchParams(window.location.search);
     }, []);
+    const sharePathId = useMemo(() => {
+      if (typeof window === "undefined") return "";
+      const match = window.location.pathname.match(/^\/share\/([^/]+)/);
+      return match ? match[1] : "";
+    }, []);
     const isEmbedded = useMemo(() => {
       if (typeof window === "undefined") return false;
       try {
@@ -383,8 +388,9 @@ export default function BracketGamePage() {
         return true;
       }
     }, []);
-    const isViewOnly = viewParams?.get("view") === "1" || isEmbedded;
-    const viewBracketId = viewParams?.get("bracketId") || "";
+    const isSharePath = !!sharePathId;
+    const isViewOnly = viewParams?.get("view") === "1" || isEmbedded || isSharePath;
+    const viewBracketId = viewParams?.get("bracketId") || sharePathId || "";
   useEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
@@ -4094,49 +4100,3 @@ const scheduleByMatch = useMemo(() => {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
