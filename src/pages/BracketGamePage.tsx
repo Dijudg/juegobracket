@@ -1071,12 +1071,18 @@ export default function BracketGamePage() {
   }, [authUser?.id]);
 
     useEffect(() => {
+      if (isViewOnly) {
+        if (!skipAutoLoadRef.current) {
+          loadLatestBracket();
+        }
+        return;
+      }
       if (!authSession?.access_token) return;
       if (!pageParams?.resetGame && !skipAutoLoadRef.current) {
         loadLatestBracket();
       }
       loadSavedBrackets();
-    }, [authSession?.access_token, pageParams?.resetGame, loadLatestBracket, loadSavedBrackets]);
+    }, [isViewOnly, authSession?.access_token, pageParams?.resetGame, loadLatestBracket, loadSavedBrackets]);
 
     useEffect(() => {
       if (teams.length === 0) return;
