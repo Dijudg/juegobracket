@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/((?!api(?:/|$)|share(?:/|$)).*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
