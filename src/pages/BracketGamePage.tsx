@@ -1,9 +1,9 @@
-import { Crown, ChevronDown, CalendarDays } from "lucide-react";
+﻿import { Crown, ChevronDown, CalendarDays } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
 import { captureShareCard } from "../utils/shareCardCapture";
-import { buildSharePageUrl, uploadShareCardImage } from "../utils/shareCardApi";
+import { buildSharePageUrl, createGuestShare, uploadShareCardImage } from "../utils/shareCardApi";
 import Header from "../components/header";
 import Footer from "../components/Footer";
 import { AnimatePresence, motion } from "motion/react";
@@ -93,6 +93,8 @@ const MAX_RESET_ATTEMPTS = 4;
 const LS_INTERCONTINENTAL = "fm-repechaje-intercontinental";
 const LS_UEFA = "fm-repechaje-uefa";
 const LS_TEAMS = "fm-teams";
+const LS_GUEST_BRACKET = "fm-guest-bracket";
+const GUEST_SAVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -101,6 +103,188 @@ type ShareCardPayload = {
   runnerUp: ShareCardTeam;
   third: ShareCardTeam;
   shareUrl: string;
+};
+
+type GuestBracketSave = {
+  name: string;
+  data: BracketSavePayload;
+  updatedAt: string;
+  shortCode?: string;
+  shareId?: string;
+  shareUrl?: string;
+};
+
+type SaveModalProps = {
+  open: boolean;
+  onClose: () => void;
+  saveName: string;
+  onSaveNameChange: (value: string) => void;
+  saveMode: "new" | "overwrite" | "update";
+  onSaveModeChange: (value: "new" | "overwrite" | "update") => void;
+  currentSaveId: string | null;
+  savedBrackets: SavedBracketMeta[];
+  selectedOverwriteId: string | null;
+  onSelectOverwriteId: (value: string) => void;
+  saveError: string | null;
+  saveBusy: boolean;
+  onConfirm: () => void;
+  isAuthed: boolean;
+  guestShortCode?: string | null;
+  allowOverwrite?: boolean;
+};
+
+const SaveModal = ({
+  open,
+  onClose,
+  saveName,
+  onSaveNameChange,
+  saveMode,
+  onSaveModeChange,
+  currentSaveId,
+  savedBrackets,
+  selectedOverwriteId,
+  onSelectOverwriteId,
+  saveError,
+  saveBusy,
+  onConfirm,
+  isAuthed,
+  guestShortCode,
+  allowOverwrite = true,
+}: SaveModalProps) => {
+  if (!open) return null;
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const limitReached = savedBrackets.length >= 3;
+  const showOverwrite = allowOverwrite && savedBrackets.length > 0;
+  const showUpdate = allowOverwrite && !!currentSaveId;
+  return (
+    <div
+      ref={overlayRef}
+      onClick={(e) => {
+        if (e.target === overlayRef.current) onClose();
+      }}
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center px-4"
+    >
+      <ModalFlipFrame className="bg-neutral-900 border border-neutral-700 rounded-lg w-full md:w-1/2 max-w-lg shadow-lg flex flex-col overflow-hidden modal-glow">
+        <div className="w-full overflow-hidden border-b border-neutral-700" style={{ aspectRatio: "16 / 9" }}>
+          <img src={saveBanner} alt="Guardar" className="w-full h-full object-cover" />
+        </div>
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-[#c6f600]">Guardar bracket</h3>
+            <button onClick={onClose} className="text-sm text-gray-400 hover:text-white">
+              X
+            </button>
+          </div>
+
+          <label className="text-xs text-gray-400">Nombre</label>
+          <input
+            type="text"
+            value={saveName}
+            onChange={(e) => onSaveNameChange(e.target.value)}
+            className="mt-1 mb-3 w-full rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-white"
+            placeholder="Mi bracket"
+          />
+
+          <div className="flex flex-col gap-2 text-sm text-gray-200">
+            {showUpdate && (
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="saveMode"
+                  checked={saveMode === "update"}
+                  onChange={() => onSaveModeChange("update")}
+                />
+                Actualizar este bracket
+              </label>
+            )}
+            {!limitReached && (
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="saveMode"
+                  checked={saveMode === "new"}
+                  onChange={() => onSaveModeChange("new")}
+                />
+                Guardar como nuevo
+              </label>
+            )}
+            {showOverwrite && (
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="saveMode"
+                  checked={saveMode === "overwrite"}
+                  onChange={() => onSaveModeChange("overwrite")}
+                />
+                Sobrescribir existente
+              </label>
+            )}
+          </div>
+
+          {limitReached && (
+            <p className="mt-2 text-xs text-yellow-400">
+              Límite de 3 brackets alcanzado. Debes sobrescribir uno.
+            </p>
+          )}
+
+          {!isAuthed && (
+            <p className="mt-2 text-xs text-gray-400">
+              Se guardará 1 semana en este dispositivo. Inicia sesión para guardar en la nube.
+            </p>
+          )}
+
+          {!isAuthed && guestShortCode && (
+            <p className="mt-2 text-xs text-gray-300">
+              Tu código: <span className="font-semibold text-[#c6f600]">{guestShortCode}</span>
+            </p>
+          )}
+
+          {saveMode === "overwrite" && showOverwrite && (
+            <div className="mt-3 flex flex-col gap-2 max-h-40 overflow-y-auto">
+              {savedBrackets.map((item) => (
+                <label key={item.id} className="flex items-center gap-2 text-sm text-gray-200">
+                  <input
+                    type="radio"
+                    name="overwriteId"
+                    checked={selectedOverwriteId === item.id}
+                    onChange={() => onSelectOverwriteId(item.id)}
+                  />
+                  <div className="flex flex-col">
+                    <span className="font-semibold">{item.name || "Mi bracket"}</span>
+                    <span className="text-[11px] text-gray-500">
+                      {new Date(item.updated_at).toLocaleDateString("es-ES")}
+                    </span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+
+          {saveError && <p className="text-xs text-red-400 mt-3">{saveError}</p>}
+
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-2 rounded-md border border-neutral-700 text-xs text-gray-300 hover:border-[#c6f600]"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={saveBusy}
+              className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                saveBusy ? "bg-neutral-700 text-gray-400" : "bg-[#c6f600] text-black hover:brightness-95"
+              }`}
+            >
+              {saveBusy ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </div>
+      </ModalFlipFrame>
+    </div>
+  );
 };
 
 const INTERCONTINENTAL_KEYS = [
@@ -177,16 +361,6 @@ const parseCSVLine = (line: string): string[] => {
 };
 
 const parseTSVLine = (line: string): string[] => line.split("\t").map((t) => t.trim());
-const hasBracketProgress = (payload?: BracketSavePayload | null) => {
-  if (!payload) return false;
-  if (payload.bestThirdIds && payload.bestThirdIds.length > 0) return true;
-  if (payload.selections && Object.keys(payload.selections).length > 0) return true;
-  if (payload.picks && Object.keys(payload.picks).length > 0) return true;
-  if (payload.intercontinentalPicks && Object.keys(payload.intercontinentalPicks).length > 0) return true;
-  if (payload.uefaPicks && Object.keys(payload.uefaPicks).length > 0) return true;
-  return false;
-};
-
 const buildSeedsFromSelections = (selections: GroupSelections): Seeds => {
   const firsts: Record<string, Team | undefined> = {};
   const seconds: Record<string, Team | undefined> = {};
@@ -514,7 +688,9 @@ export default function BracketGamePage() {
   const [currentSaveId, setCurrentSaveId] = useState<string | null>(null);
   const [currentSaveName, setCurrentSaveName] = useState<string>("Mi bracket");
   const pendingLoadRef = useRef<BracketSavePayload | null>(null);
+  const guestSaveMetaRef = useRef<{ name: string; updatedAt: string; shortCode?: string } | null>(null);
   const authInitRef = useRef(false);
+  const [guestShortCode, setGuestShortCode] = useState<string | null>(null);
 
   const allTeamsIndex = useMemo(() => {
     const map = new Map<string, Team>();
@@ -721,27 +897,15 @@ export default function BracketGamePage() {
   const loadLatestBracket = useCallback(async () => {
     try {
       let data: { id: string; name?: string; data?: BracketSavePayload | string } | null = null;
-      if (isViewOnly) {
-        if (!viewBracketId) return;
-        const { data: viewData, error } = await supabase
-          .from("bracket_saves")
-          .select("id,name,data,created_at,updated_at")
-          .eq("id", viewBracketId)
-          .maybeSingle();
-        if (error || !viewData) return;
-        data = viewData as { id: string; name?: string; data?: BracketSavePayload | string };
-      } else {
-        if (!authSession?.user?.id) return;
-        const { data: latest, error } = await supabase
-          .from("bracket_saves")
-          .select("id,name,data,created_at,updated_at")
-          .eq("user_id", authSession.user.id)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (error || !latest) return;
-        data = latest as { id: string; name?: string; data?: BracketSavePayload | string };
-      }
+      if (!isViewOnly) return;
+      if (!viewBracketId) return;
+      const { data: viewData, error } = await supabase
+        .from("bracket_saves")
+        .select("id,name,data,created_at,updated_at")
+        .eq("id", viewBracketId)
+        .maybeSingle();
+      if (error || !viewData) return;
+      data = viewData as { id: string; name?: string; data?: BracketSavePayload | string };
 
       if (!data) return;
 
@@ -765,7 +929,6 @@ export default function BracketGamePage() {
         } else {
           pendingLoadRef.current = payload;
         }
-        setSaveNotice("Cargamos tu ultimo bracket guardado.");
         if (isViewOnly) {
           setIsLocked(true);
           setViewSharedBy(payload.sharedBy ?? null);
@@ -774,26 +937,6 @@ export default function BracketGamePage() {
             updatedAt: (data as any).updated_at || (data as any).created_at,
           });
         }
-        if (
-          hasBracketProgress(data.data) &&
-          !newGamePromptShownRef.current &&
-          !pageParams?.resetGame &&
-          !isViewOnly
-        ) {
-          newGamePromptShownRef.current = true;
-          suspendAutoAdvanceRef.current = true;
-          setShowNewGamePrompt(true);
-          setActiveTab("repechajes");
-          setShowRulesModal(false);
-          setShowThirdsModal(false);
-          setShowR32Warning(false);
-          setShowChampionModal(false);
-          setShowIntercontinentalModal(false);
-          setShowSaveModal(false);
-          setShowAuthModal(false);
-          setShowFixturesGroup(undefined);
-          setPhaseBlock(null);
-        }
       } else if (isViewOnly) {
         setViewSharedBy(null);
         setViewBracketMeta(null);
@@ -801,7 +944,48 @@ export default function BracketGamePage() {
     } catch {
       // ignore
     }
-  }, [applySavedBracket, authSession?.user?.id, isViewOnly, pageParams?.resetGame, teams.length, viewBracketId]);
+  }, [applySavedBracket, isViewOnly, teams.length, viewBracketId]);
+
+  const readGuestSave = useCallback((): GuestBracketSave | null => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(LS_GUEST_BRACKET);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as GuestBracketSave;
+      if (!parsed?.data) return null;
+      const updatedAt = Date.parse(parsed.updatedAt);
+      if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > GUEST_SAVE_TTL_MS) {
+        window.localStorage.removeItem(LS_GUEST_BRACKET);
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const persistGuestSave = useCallback(
+    (
+      payload: BracketSavePayload,
+      name: string,
+      meta?: { shortCode?: string; shareId?: string; shareUrl?: string },
+    ) => {
+    if (typeof window === "undefined") return null;
+    const record: GuestBracketSave = {
+      name,
+      data: payload,
+      updatedAt: new Date().toISOString(),
+      shortCode: meta?.shortCode,
+      shareId: meta?.shareId,
+      shareUrl: meta?.shareUrl,
+    };
+    try {
+      window.localStorage.setItem(LS_GUEST_BRACKET, JSON.stringify(record));
+      return record;
+    } catch {
+      return null;
+    }
+  }, []);
 
   const openAuthModal = (mode: "login" | "signup") => {
     setAuthMode(mode);
@@ -913,92 +1097,95 @@ export default function BracketGamePage() {
   };
 
   const handleSaveClick = async () => {
+    setSaveError(null);
     if (!authSession?.access_token) {
       setShowChampionModal(false);
-      openAuthModal("login");
+      const existing = readGuestSave();
+      if (existing) {
+        guestSaveMetaRef.current = {
+          name: existing.name,
+          updatedAt: existing.updatedAt,
+          shortCode: existing.shortCode,
+        };
+        setGuestShortCode(existing.shortCode ?? null);
+      } else {
+        setGuestShortCode(null);
+      }
+      const fallbackName = existing?.name || guestSaveMetaRef.current?.name || "Mi bracket";
+      setSaveMode("new");
+      setSaveName(fallbackName);
+      setSelectedOverwriteId(null);
+      setShowSaveModal(true);
       return;
     }
-    setSaveError(null);
-    const items = await loadSavedBrackets();
-    const limitReached = items.length >= 3;
-    if (currentSaveId) {
-      setSaveMode("update");
-      setSaveName(currentSaveName || "Mi bracket");
-      setSelectedOverwriteId(currentSaveId);
-    } else {
-      setSaveMode(limitReached ? "overwrite" : "new");
-      setSaveName("Mi bracket");
-      setSelectedOverwriteId(items[0]?.id ?? null);
-    }
+    setSaveMode("new");
+    setSaveName("Mi bracket");
+    setSelectedOverwriteId(null);
     setShowSaveModal(true);
   };
 
   const handleConfirmSave = async () => {
-    if (!authSession?.access_token) return;
     setSaveBusy(true);
     setSaveError(null);
     try {
       const payload = buildSavePayload();
       const name = saveName.trim() || "Mi bracket";
-      const idToUse =
-        saveMode === "overwrite"
-          ? selectedOverwriteId
-          : saveMode === "update"
-            ? currentSaveId
-            : undefined;
-      if (saveMode === "overwrite" && !idToUse) {
-        setSaveError("Selecciona un bracket para sobrescribir.");
-        setSaveBusy(false);
+      if (!authSession?.access_token) {
+        let shortCode = "";
+        let shareId = "";
+        let shareUrl = "";
+        try {
+          const guestShare = await createGuestShare({
+            apiBaseUrl: API_BASE_URL || undefined,
+            name,
+            data: payload,
+          });
+          if (!guestShare?.id || !guestShare?.shortCode) {
+            throw new Error("No se pudo generar el código.");
+          }
+          shortCode = guestShare.shortCode.toUpperCase();
+          shareId = guestShare.id;
+          shareUrl = guestShare.sharePageUrl || "";
+        } catch (err) {
+          setSaveError(err instanceof Error ? err.message : "No pudimos generar el código de invitado.");
+          setSaveBusy(false);
+          return;
+        }
+        const stored = persistGuestSave(payload, name, { shortCode, shareId, shareUrl });
+        guestSaveMetaRef.current = {
+          name: stored?.name || name,
+          updatedAt: stored?.updatedAt || new Date().toISOString(),
+          shortCode,
+        };
+        setGuestShortCode(shortCode);
+        setShowSaveModal(false);
+        setSaveNotice(`Bracket guardado. Código: ${shortCode}`);
         return;
       }
       const userId = requireAuthUserId();
-      if (!idToUse) {
-        const { count, error: countError } = await supabase
-          .from("bracket_saves")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId);
-        if (countError) throw countError;
-        if ((count || 0) >= 3) {
-          const items = await loadSavedBrackets();
-          setSaveMode("overwrite");
-          setSelectedOverwriteId(items[0]?.id ?? null);
-          setSaveError("Llegaste al limite de 3 brackets. Elige uno para sobrescribir.");
-          setSaveBusy(false);
-          return;
-        }
+      const { count, error: countError } = await supabase
+        .from("bracket_saves")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId);
+      if (countError) throw countError;
+      if ((count || 0) >= 3) {
+        setSaveError("Llegaste al límite de 3 brackets. Adminístralos en /user.");
+        setSaveBusy(false);
+        return;
       }
 
-      let saved: { id: string; name?: string } | null = null;
-      if (idToUse) {
-        const { data, error } = await supabase
-          .from("bracket_saves")
-          .update({ user_id: userId, name, data: payload })
-          .eq("id", idToUse)
-          .eq("user_id", userId)
-          .select("id,name")
-          .maybeSingle();
-        if (error) throw error;
-        if (!data) {
-          setSaveError("No pudimos encontrar el bracket para actualizar.");
-          setSaveBusy(false);
-          return;
-        }
-        saved = data as { id: string; name?: string };
-      } else {
-        const { data, error } = await supabase
-          .from("bracket_saves")
-          .insert([{ user_id: userId, name, data: payload }])
-          .select("id,name")
-          .maybeSingle();
-        if (error) throw error;
-        saved = data as { id: string; name?: string } | null;
-      }
+      const { data, error } = await supabase
+        .from("bracket_saves")
+        .insert([{ user_id: userId, name, data: payload }])
+        .select("id,name")
+        .maybeSingle();
+      if (error) throw error;
+      const saved = data as { id: string; name?: string } | null;
 
       if (saved?.id) {
         setCurrentSaveId(saved.id);
         setCurrentSaveName(saved.name || name);
       }
-      await loadSavedBrackets();
       setShowSaveModal(false);
       setSaveNotice("Bracket guardado correctamente.");
     } catch (err) {
@@ -1083,6 +1270,12 @@ export default function BracketGamePage() {
       }
       loadSavedBrackets();
     }, [isViewOnly, authSession?.access_token, pageParams?.resetGame, loadLatestBracket, loadSavedBrackets]);
+  useEffect(() => {
+    if (!isViewOnly) return;
+    if (!skipAutoLoadRef.current) {
+      loadLatestBracket();
+    }
+  }, [isViewOnly, loadLatestBracket]);
 
     useEffect(() => {
       if (teams.length === 0) return;
@@ -2128,16 +2321,49 @@ const scheduleByMatch = useMemo(() => {
     platform: "whatsapp" | "facebook" | "instagram" | "tiktok" | "x",
     champion?: Team,
   ) => {
-    if (!isViewOnly && !currentSaveId) {
-      setShareInfo("Guarda tu pronóstico para poder compartirlo.");
-      void handleSaveClick();
-      return;
-    }
-    const viewUrl = buildShareUrl(isViewOnly ? viewBracketId : currentSaveId);
-    const sharePageUrl =
+    let sharePageUrl =
       isViewOnly || !currentSaveId
         ? buildSharePageUrl(viewBracketId || currentSaveId || "", API_BASE_URL || undefined)
         : buildSharePageUrl(currentSaveId, API_BASE_URL || undefined);
+    let viewUrl = buildShareUrl(isViewOnly ? viewBracketId : currentSaveId);
+
+    if (!isViewOnly && !currentSaveId) {
+      if (authSession?.access_token) {
+        setShareInfo("Guarda tu pronóstico para poder compartirlo.");
+        void handleSaveClick();
+        return;
+      }
+      const payload = buildSavePayload();
+      const fallbackName = saveName.trim() || guestSaveMetaRef.current?.name || "Mi bracket";
+      try {
+        const guestShare = await createGuestShare({
+          apiBaseUrl: API_BASE_URL || undefined,
+          name: fallbackName,
+          data: payload,
+        });
+        if (!guestShare?.id) {
+          setShareInfo("No pudimos crear el enlace de invitado. Intenta de nuevo.");
+          return;
+        }
+        const shortCode = guestShare.shortCode ? guestShare.shortCode.toUpperCase() : "";
+        const stored = persistGuestSave(payload, fallbackName, {
+          shortCode,
+          shareId: guestShare.id,
+          shareUrl: guestShare.sharePageUrl,
+        });
+        guestSaveMetaRef.current = {
+          name: stored?.name || fallbackName,
+          updatedAt: stored?.updatedAt || new Date().toISOString(),
+          shortCode,
+        };
+        setGuestShortCode(shortCode || null);
+        sharePageUrl = guestShare.sharePageUrl || buildSharePageUrl(guestShare.id, API_BASE_URL || undefined);
+        viewUrl = sharePageUrl || viewUrl;
+      } catch (err) {
+        setShareInfo(err instanceof Error ? err.message : "No pudimos crear el enlace de invitado.");
+        return;
+      }
+    }
     const championPick = champion || championTeam;
     const payload: ShareCardPayload = {
       champion: {
@@ -2152,7 +2378,7 @@ const scheduleByMatch = useMemo(() => {
         name: thirdPlaceWinner?.nombre || "Por definir",
         escudo: getTeamEscudo(thirdPlaceWinner),
       },
-      shareUrl: viewUrl,
+      shareUrl: sharePageUrl || viewUrl,
     };
     const messageParts = [
       `Mi pronóstico Mundialista: campeón ${payload.champion.name}.`,
@@ -2847,132 +3073,6 @@ const scheduleByMatch = useMemo(() => {
     );
   };
 
-  const SaveModal = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
-    if (!open) return null;
-    const overlayRef = useRef<HTMLDivElement>(null);
-    const limitReached = savedBrackets.length >= 3;
-    const showOverwrite = savedBrackets.length > 0;
-    return (
-      <div
-        ref={overlayRef}
-        onClick={(e) => {
-          if (e.target === overlayRef.current) onClose();
-        }}
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center px-4"
-      >
-      <ModalFlipFrame className="bg-neutral-900 border border-neutral-700 rounded-lg w-full md:w-1/2 max-w-lg shadow-lg flex flex-col overflow-hidden modal-glow">
-        <div className="w-full overflow-hidden border-b border-neutral-700" style={{ aspectRatio: "16 / 9" }}>
-          <img src={saveBanner} alt="Guardar" className="w-full h-full object-cover" />
-        </div>
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-[#c6f600]">Guardar bracket</h3>
-            <button onClick={onClose} className="text-sm text-gray-400 hover:text-white">
-              X
-            </button>
-          </div>
-
-          <label className="text-xs text-gray-400">Nombre</label>
-          <input
-            type="text"
-            value={saveName}
-            onChange={(e) => setSaveName(e.target.value)}
-            className="mt-1 mb-3 w-full rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-white"
-            placeholder="Mi bracket"
-          />
-
-          <div className="flex flex-col gap-2 text-sm text-gray-200">
-            {currentSaveId && (
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="saveMode"
-                  checked={saveMode === "update"}
-                  onChange={() => setSaveMode("update")}
-                />
-                Actualizar este bracket
-              </label>
-            )}
-            {!limitReached && (
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="saveMode"
-                  checked={saveMode === "new"}
-                  onChange={() => setSaveMode("new")}
-                />
-                Guardar como nuevo
-              </label>
-            )}
-            {showOverwrite && (
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="saveMode"
-                  checked={saveMode === "overwrite"}
-                  onChange={() => setSaveMode("overwrite")}
-                />
-                Sobrescribir existente
-              </label>
-            )}
-          </div>
-
-          {limitReached && (
-            <p className="mt-2 text-xs text-yellow-400">
-              Límite de 3 brackets alcanzado. Debes sobrescribir uno.
-            </p>
-          )}
-
-          {saveMode === "overwrite" && showOverwrite && (
-            <div className="mt-3 flex flex-col gap-2 max-h-40 overflow-y-auto">
-              {savedBrackets.map((item) => (
-                <label key={item.id} className="flex items-center gap-2 text-sm text-gray-200">
-                  <input
-                    type="radio"
-                    name="overwriteId"
-                    checked={selectedOverwriteId === item.id}
-                    onChange={() => setSelectedOverwriteId(item.id)}
-                  />
-                  <div className="flex flex-col">
-                    <span className="font-semibold">{item.name || "Mi bracket"}</span>
-                    <span className="text-[11px] text-gray-500">
-                      {new Date(item.updated_at).toLocaleDateString("es-ES")}
-                    </span>
-                  </div>
-                </label>
-              ))}
-            </div>
-          )}
-
-          {saveError && <p className="text-xs text-red-400 mt-3">{saveError}</p>}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-2 rounded-md border border-neutral-700 text-xs text-gray-300 hover:border-[#c6f600]"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirmSave}
-              disabled={saveBusy}
-              className={`px-3 py-2 rounded-md text-xs font-semibold ${
-                saveBusy
-                  ? "bg-neutral-700 text-gray-400"
-                  : "bg-[#c6f600] text-black hover:brightness-95"
-              }`}
-            >
-              {saveBusy ? "Guardando..." : "Guardar"}
-            </button>
-          </div>
-        </div>
-      </ModalFlipFrame>
-      </div>
-    );
-  };
-
   const NewGamePromptModal = ({
     open,
     onConfirm,
@@ -3118,13 +3218,13 @@ const scheduleByMatch = useMemo(() => {
             )}
 
           {!isViewOnly && (
-            <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="flex flex-wrap items-center mb-4">
             <button
               type="button"
               onClick={() => setActiveTab("repechajes")}
               className={`px-4 py-2 rounded-md border text-sm font-semibold transition ${
                 activeTab === "repechajes"
-                  ? "bg-[#c6f600] text-black border-[#c6f600]"
+                  ? "bg-[#c6f600] text-black "
                   : "border-neutral-700 text-gray-400 hover:text-white"
               }`}
             >
@@ -3785,7 +3885,24 @@ const scheduleByMatch = useMemo(() => {
           onSubmit={handleAuthSubmit}
           onOAuth={handleOAuthSignIn}
         />
-        <SaveModal open={showSaveModal && !showNewGamePrompt && !isViewOnly} onClose={closeSaveModal} />
+        <SaveModal
+          open={showSaveModal && !showNewGamePrompt && !isViewOnly}
+          onClose={closeSaveModal}
+          saveName={saveName}
+          onSaveNameChange={setSaveName}
+          saveMode={saveMode}
+          onSaveModeChange={setSaveMode}
+          currentSaveId={currentSaveId}
+          savedBrackets={savedBrackets}
+          selectedOverwriteId={selectedOverwriteId}
+          onSelectOverwriteId={setSelectedOverwriteId}
+          saveError={saveError}
+          saveBusy={saveBusy}
+          onConfirm={handleConfirmSave}
+          isAuthed={!!authSession?.access_token}
+          guestShortCode={guestShortCode}
+          allowOverwrite={false}
+        />
         <PhaseBlockModal
           open={!!phaseBlock && !showNewGamePrompt && !isViewOnly}
           title={phaseBlock?.title || ""}

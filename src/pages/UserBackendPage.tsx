@@ -355,6 +355,10 @@ export default function UserBackendPage() {
   const [activeTab, setActiveTab] = useState<"profile" | "settings">("profile");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [claimCode, setClaimCode] = useState("");
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [claimSuccess, setClaimSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -470,6 +474,10 @@ export default function UserBackendPage() {
       setItems([]);
       setDetailsMap({});
       setSelectedId(null);
+      setClaimCode("");
+      setClaimBusy(false);
+      setClaimError(null);
+      setClaimSuccess(null);
     }
   }, [session?.access_token]);
 
@@ -853,6 +861,53 @@ export default function UserBackendPage() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleClaimBracket = async () => {
+    if (!session?.access_token) {
+      setClaimError("Inicia sesión para agregar un Pronóstico.");
+      setClaimSuccess(null);
+      return;
+    }
+    const shortCode = claimCode.trim().toUpperCase();
+    if (!shortCode) {
+      setClaimError("Ingresa el código del Pronóstico.");
+      setClaimSuccess(null);
+      return;
+    }
+    setClaimBusy(true);
+    setClaimError(null);
+    setClaimSuccess(null);
+    try {
+      const baseUrl = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "");
+      if (!baseUrl) throw new Error("No se pudo conectar al servidor.");
+      const res = await fetch(`${baseUrl}/api/guest-brackets/claim`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ shortCode }),
+      });
+      if (!res.ok) {
+        let message = "No pudimos agregar el bracket.";
+        try {
+          const payload = (await res.json()) as { error?: string };
+          if (payload?.error) message = payload.error;
+        } catch {
+          const text = await res.text().catch(() => "");
+          if (text) message = text;
+        }
+        throw new Error(message);
+      }
+      setClaimSuccess("Bracket agregado a tu cuenta.");
+      setClaimCode("");
+      await loadBrackets();
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : "No pudimos agregar el bracket.");
+    } finally {
+      setClaimBusy(false);
+    }
   };
 
   const openAuthModal = (mode: "login" | "signup") => {
@@ -1259,6 +1314,44 @@ export default function UserBackendPage() {
                   <div className="flex items-center justify-center py-4  bg-black">
                     <h2 className="text-4xl font-semibold items-center justify-center">Tus Pronósticos</h2>
                   </div>
+                  {session?.access_token && (
+                    <div className="mt-4 rounded-lg border border-neutral-800 bg-black/40 p-4">
+                      <div>
+                        <h3 className="text-lg font-semibold">Agregar bracket</h3>
+                        <p className="text-xs text-gray-400">
+                          Ingresa el código corto que te dimos cuando guardaste como invitado. Expira en 7 días.
+                        </p>
+                      </div>
+                      <div className="mt-3 flex flex-col md:flex-row gap-2">
+                        <input
+                          type="text"
+                          value={claimCode}
+                          onChange={(e) => {
+                            const next = e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                            setClaimCode(next);
+                            setClaimError(null);
+                            setClaimSuccess(null);
+                          }}
+                          placeholder="Ej: AB12CD"
+                          className="flex-1 rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleClaimBracket}
+                          disabled={claimBusy}
+                          className={`px-4 py-2 rounded-md text-xs font-semibold ${
+                            claimBusy
+                              ? "bg-neutral-700 text-gray-400"
+                              : "bg-[#c6f600] text-black hover:brightness-95"
+                          }`}
+                        >
+                          {claimBusy ? "Agregando..." : "Agregar bracket"}
+                        </button>
+                      </div>
+                      {claimError && <p className="mt-2 text-xs text-red-400">{claimError}</p>}
+                      {claimSuccess && <p className="mt-2 text-xs text-green-400">{claimSuccess}</p>}
+                    </div>
+                  )}
                   {!session?.access_token ? (
                     <div className="mt-3 rounded-lg border border-neutral-800 bg-black/40 p-4 text-sm text-gray-300">
                       Inicia sesión para ver tus juegos activos.

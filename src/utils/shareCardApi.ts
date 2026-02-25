@@ -1,6 +1,15 @@
+import type { BracketSavePayload } from "../features/bracket/types";
+
 type ShareCardUploadResult = {
   shareCardUrl: string;
   sharePageUrl: string;
+};
+
+type GuestShareResult = {
+  id: string;
+  sharePageUrl: string;
+  expiresAt?: string;
+  shortCode?: string;
 };
 
 const resolveApiBase = (apiBaseUrl?: string) => {
@@ -37,4 +46,23 @@ export const buildSharePageUrl = (bracketId: string, apiBaseUrl?: string) => {
   if (!baseUrl) return "";
   const url = new URL(`/share/${bracketId}`, baseUrl);
   return url.toString();
+};
+
+export const createGuestShare = async (params: {
+  apiBaseUrl?: string;
+  name?: string;
+  data: BracketSavePayload;
+}): Promise<GuestShareResult | null> => {
+  const baseUrl = resolveApiBase(params.apiBaseUrl);
+  if (!baseUrl) return null;
+  const res = await fetch(`${baseUrl}/api/guest-brackets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: params.name, data: params.data }),
+  });
+  if (!res.ok) {
+    const message = await res.text().catch(() => "No se pudo crear el enlace.");
+    throw new Error(message || "No se pudo crear el enlace.");
+  }
+  return (await res.json()) as GuestShareResult;
 };

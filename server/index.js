@@ -38,6 +38,9 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const shareCardBucket = process.env.SHARE_CARD_BUCKET || "share-cards";
 const bracketHomeUrl = process.env.BRACKET_HOME_URL || process.env.PUBLIC_BASE_URL || "";
 const shareCardFallbackUrl = process.env.SHARE_CARD_FALLBACK_URL || "";
+const guestBracketUserId = process.env.GUEST_BRACKET_USER_ID || "00000000-0000-0000-0000-000000000000";
+const guestBracketTtlDays = Number(process.env.GUEST_BRACKET_TTL_DAYS || 7);
+const guestBracketCodeLength = Number(process.env.GUEST_BRACKET_CODE_LENGTH || 6);
 
 if (!supabaseUrl || !supabaseServiceKey) {
   // eslint-disable-next-line no-console
@@ -69,6 +72,28 @@ const mapBracketItem = (row) => ({
   ...mapBracketMeta(row),
   data: row.data ?? null,
 });
+
+const SHORT_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const generateShortCode = (length = 6) => {
+  const size = Math.max(4, Math.floor(length || 6));
+  let out = "";
+  for (let i = 0; i < size; i += 1) {
+    out += SHORT_CODE_ALPHABET[Math.floor(Math.random() * SHORT_CODE_ALPHABET.length)];
+  }
+  return out;
+};
+
+const createUniqueShortCode = async (maxAttempts = 6) => {
+  for (let i = 0; i < maxAttempts; i += 1) {
+    const code = generateShortCode(guestBracketCodeLength);
+    const { count, error } = await supabase
+      .from("bracket_saves")
+      .select("id", { count: "exact", head: true })
+      .eq("short_code", code);
+    if (!error && (count || 0) === 0) return code;
+  }
+  return null;
+};
 
 const requireAuth = async (req, res, next) => {
   try {
@@ -127,10 +152,13 @@ app.get("/api/brackets/latest", requireAuth, async (req, res) => {
 
 app.get("/api/brackets/public/:id", async (req, res) => {
   const { id } = req.params;
+  const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from("bracket_saves")
     .select("id,name,data,created_at,updated_at")
     .eq("id", id)
+    .eq("is_public", true)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .maybeSingle();
 
   if (error) {
@@ -213,6 +241,130 @@ app.post("/api/brackets", requireAuth, async (req, res) => {
     return res.status(500).json({ error: error.message, details: error.details, hint: error.hint });
   }
   return res.json({ item: saved ? mapBracketItem(saved) : null });
+});
+
+app.post("/api/guest-brackets", async (req, res) => {
+  try {
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return res.status(500).json({ error: "Server not configured for guest shares" });
+    }
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    const rawData = req.body?.data ?? req.body?.bracket;
+    if (!rawData) return res.status(400).json({ error: "Missing bracket data" });
+
+    let payload = rawData;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        // keep original string
+      }
+    }
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      if (!payload.sharedBy) {
+        payload = { ...payload, sharedBy: { name: "Invitado", alias: "", avatarUrl: "" } };
+      }
+    }
+
+    const ttlMs = Number.isFinite(guestBracketTtlDays) && guestBracketTtlDays > 0 ? guestBracketTtlDays : 7;
+    const expiresAt = new Date(Date.now() + ttlMs * 24 * 60 * 60 * 1000).toISOString();
+    const safeName = name || "Mi bracket";
+    const shortCode = await createUniqueShortCode();
+    if (!shortCode) {
+      return res.status(500).json({ error: "No se pudo generar el codigo corto" });
+    }
+
+    const { data, error } = await supabase
+      .from("bracket_saves")
+      .insert([
+        {
+          user_id: guestBracketUserId,
+          name: safeName,
+          data: payload,
+          is_public: true,
+          short_code: shortCode,
+          expires_at: expiresAt,
+        },
+      ])
+      .select("id,expires_at,short_code")
+      .maybeSingle();
+
+    if (error || !data) {
+      logSupabaseError("guest.brackets.insert", error);
+      return res.status(500).json({ error: error?.message || "Guest share failed" });
+    }
+
+    // Limpia registros expirados en background (best-effort)
+    try {
+      await supabase.from("bracket_saves").delete().lt("expires_at", new Date().toISOString());
+    } catch {
+      // ignore cleanup errors
+    }
+
+    const viewBase = bracketHomeUrl || `${req.protocol}://${req.get("host")}`;
+    const sharePageUrl = new URL(`/share/${data.id}`, viewBase).toString();
+    return res.json({
+      id: data.id,
+      sharePageUrl,
+      expiresAt: data.expires_at || expiresAt,
+      shortCode: data.short_code || shortCode,
+    });
+  } catch (err) {
+    console.error("[guest.brackets] unexpected error", err);
+    return res.status(500).json({ error: "Guest share failed" });
+  }
+});
+
+app.post("/api/guest-brackets/claim", requireAuth, async (req, res) => {
+  try {
+    const shortCode = typeof req.body?.shortCode === "string" ? req.body.shortCode.trim().toUpperCase() : "";
+    if (!shortCode) return res.status(400).json({ error: "Missing short code" });
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("bracket_saves")
+      .select("id,expires_at,short_code")
+      .eq("short_code", shortCode)
+      .eq("user_id", guestBracketUserId)
+      .eq("is_public", true)
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+      .maybeSingle();
+
+    if (error) {
+      logSupabaseError("guest.brackets.claim.fetch", error);
+      return res.status(500).json({ error: error.message });
+    }
+    if (!data) return res.status(404).json({ error: "Bracket not found" });
+
+    const { count, error: countError } = await supabase
+      .from("bracket_saves")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", req.user.id);
+    if (countError) {
+      logSupabaseError("guest.brackets.claim.count", countError);
+      return res.status(500).json({ error: countError.message });
+    }
+    if ((count || 0) >= 3) {
+      return res.status(409).json({ error: "Limit reached (max 3 brackets)" });
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from("bracket_saves")
+      .update({ user_id: req.user.id, expires_at: null })
+      .eq("id", data.id)
+      .eq("user_id", guestBracketUserId)
+      .select("id,name,updated_at")
+      .maybeSingle();
+
+    if (updateError || !updated) {
+      logSupabaseError("guest.brackets.claim.update", updateError);
+      return res.status(500).json({ error: updateError?.message || "Claim failed" });
+    }
+
+    return res.json({ id: updated.id, name: updated.name, updatedAt: updated.updated_at });
+  } catch (err) {
+    console.error("[guest.brackets.claim] unexpected error", err);
+    return res.status(500).json({ error: "Claim failed" });
+  }
 });
 
 app.post(
@@ -316,10 +468,13 @@ app.delete("/api/account", requireAuth, async (req, res) => {
 
 app.get("/share/:id", async (req, res) => {
   const { id } = req.params;
+  const nowIso = new Date().toISOString();
   const { data, error } = await supabase
     .from("bracket_saves")
     .select("id,name,data,created_at,updated_at")
     .eq("id", id)
+    .eq("is_public", true)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .maybeSingle();
 
   if (error) {

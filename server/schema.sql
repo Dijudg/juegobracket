@@ -6,6 +6,8 @@ create table if not exists public.bracket_saves (
   name text not null default 'Mi bracket',
   data jsonb not null,
   is_public boolean not null default true,
+  short_code text,
+  expires_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -13,7 +15,17 @@ create table if not exists public.bracket_saves (
 alter table public.bracket_saves
   add column if not exists is_public boolean not null default true;
 
+alter table public.bracket_saves
+  add column if not exists expires_at timestamptz;
+
+alter table public.bracket_saves
+  add column if not exists short_code text;
+
 create index if not exists bracket_saves_user_id_idx on public.bracket_saves (user_id);
+create index if not exists bracket_saves_expires_at_idx on public.bracket_saves (expires_at);
+create unique index if not exists bracket_saves_short_code_uidx
+  on public.bracket_saves (short_code)
+  where short_code is not null;
 
 create or replace function public.set_updated_at()
 returns trigger as $$
@@ -40,13 +52,13 @@ create policy bracket_saves_select_public
 on public.bracket_saves
 for select
 to anon
-using (is_public = true);
+using (is_public = true and (expires_at is null or expires_at > now()));
 
 create policy bracket_saves_select_own
 on public.bracket_saves
 for select
 to authenticated
-using (auth.uid() = user_id or is_public = true);
+using (auth.uid() = user_id or (is_public = true and (expires_at is null or expires_at > now())));
 
 create policy bracket_saves_insert_own
 on public.bracket_saves
