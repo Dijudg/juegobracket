@@ -525,8 +525,9 @@ app.get("/share/:id", async (req, res) => {
 
 const clientDistPath = path.resolve(__dirname, "..", "dist");
 const clientIndexPath = path.join(clientDistPath, "index.html");
+const serveClient = process.env.SERVE_CLIENT === "true";
 
-if (fs.existsSync(clientIndexPath)) {
+if (serveClient && fs.existsSync(clientIndexPath)) {
   app.use(express.static(clientDistPath));
   app.get("*", (req, res) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/share")) {
