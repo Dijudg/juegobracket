@@ -61,6 +61,33 @@ const logSupabaseError = (context, error) => {
   });
 };
 
+let shareBucketReady = false;
+const ensureShareBucket = async () => {
+  if (shareBucketReady || !supabaseUrl || !supabaseServiceKey) return;
+  try {
+    const { data, error } = await supabase.storage.getBucket(shareCardBucket);
+    if (!error && data) {
+      shareBucketReady = true;
+      return;
+    }
+    const status = error?.statusCode || error?.status || 0;
+    if (status === 404 || /bucket/i.test(error?.message || "")) {
+      const { error: createError } = await supabase.storage.createBucket(shareCardBucket, { public: true });
+      if (createError) {
+        logSupabaseError("share.bucket.create", createError);
+        return;
+      }
+      shareBucketReady = true;
+      return;
+    }
+    if (error) {
+      logSupabaseError("share.bucket.get", error);
+    }
+  } catch (err) {
+    console.error("[share.bucket.ensure] unexpected error", err);
+  }
+};
+
 const mapBracketMeta = (row) => ({
   id: row.id,
   name: row.name ?? "Mi bracket",
@@ -373,6 +400,7 @@ app.post(
   express.raw({ type: "image/png", limit: "5mb" }),
   async (req, res) => {
     try {
+      await ensureShareBucket();
       const userId = req.user.id;
       const { id } = req.params;
       if (!id) return res.status(400).json({ error: "Missing bracket id" });

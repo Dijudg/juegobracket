@@ -25,7 +25,24 @@ const waitForImages = async (target: HTMLElement) => {
 
 export const captureShareCard = async (target: HTMLElement, backgroundColor = "#1d1d1b") => {
   await waitForImages(target);
-  const canvas = await html2canvas(target, { scale: 2, useCORS: true, backgroundColor });
+  if (typeof document !== "undefined") {
+    try {
+      await (document as any).fonts?.ready;
+    } catch {
+      // ignore font loading errors
+    }
+  }
+  const rect = target.getBoundingClientRect();
+  if (!rect.width || !rect.height) {
+    throw new Error("La tarjeta para compartir no tiene tamaño.");
+  }
+  const canvas = await html2canvas(target, {
+    scale: Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 2),
+    useCORS: true,
+    backgroundColor,
+    imageTimeout: 15000,
+    logging: false,
+  });
   const blob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("No se pudo crear imagen"))), "image/png"),
   );

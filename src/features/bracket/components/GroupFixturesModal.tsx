@@ -46,7 +46,7 @@ export const GroupFixturesModal = ({
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center px-4"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
     >
       <ModalFlipFrame className="bg-neutral-900 border border-neutral-700 rounded-lg w-full md:w-1/2 max-w-3xl shadow-lg max-h-[80vh] flex flex-col overflow-hidden modal-glow">
         <div className="w-full overflow-hidden border-b border-neutral-700" style={{ aspectRatio: "16 / 9" }}>

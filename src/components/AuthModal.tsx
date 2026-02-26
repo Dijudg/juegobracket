@@ -53,7 +53,7 @@ export const AuthModal = ({
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-10 flex items-center justify-center px-4"
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-10 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
     >
       <ModalFlipFrame
         disableFlip

@@ -31,6 +31,7 @@ import whatsappIcon from "../assets/whatsapp.svg";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
 import { captureShareCard } from "../utils/shareCardCapture";
 import { buildSharePageUrl, uploadShareCardImage } from "../utils/shareCardApi";
+import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 
 const AVATAR_BUCKET = import.meta.env.VITE_SUPABASE_AVATAR_BUCKET || "avatars";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
@@ -327,6 +328,7 @@ export default function UserBackendPage() {
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  useBodyScrollLock(showAuthModal);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
@@ -689,11 +691,9 @@ export default function UserBackendPage() {
 
   const buildShareUrl = useCallback((id: string) => {
     if (typeof window === "undefined") return "";
-    const baseUrl = import.meta.env.VITE_BRACKET_HOME_URL || DEFAULT_HOME_URL || window.location.origin;
-    const url = new URL(baseUrl, window.location.origin);
-    url.searchParams.set("view", "1");
-    url.searchParams.set("bracketId", id);
-    return url.toString();
+    const sharePage = buildSharePageUrl(id, API_BASE_URL || undefined);
+    if (sharePage) return sharePage;
+    return new URL(`/share/${id}`, window.location.origin).toString();
   }, []);
 
   const shareCoverUrl = useMemo(() => shareCoverOverride || coverUrl || winnerCardBg, [shareCoverOverride, coverUrl]);
@@ -710,15 +710,16 @@ export default function UserBackendPage() {
       },
     ) => {
       if (typeof window === "undefined") return;
-      const messageParts = [
-        `Mi pronóstico Mundialista: campeón ${payload.champion.name}.`,
-        payload.runnerUp.name !== "Por definir" ? `Segundo: ${payload.runnerUp.name}.` : "",
-        payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
-        `Mira mi cuadro aquí: ${payload.shareUrl}`,
-      ].filter(Boolean);
-      const baseMessage = messageParts.join(" ");
-      const shareTitle = "Mi pronóstico Mundialista";
-      const shareTarget = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
+        const sharePageUrl = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
+        const messageParts = [
+          `Mi pronóstico Mundialista: campeón ${payload.champion.name}.`,
+          payload.runnerUp.name !== "Por definir" ? `Segundo: ${payload.runnerUp.name}.` : "",
+          payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
+          `Mira mi cuadro aquí: ${sharePageUrl}`,
+        ].filter(Boolean);
+        const baseMessage = messageParts.join(" ");
+        const shareTitle = "Mi pronóstico Mundialista";
+        const shareTarget = sharePageUrl;
       const openShareTarget = (url: string) => {
         const next = window.open(url, "_blank", "noopener,noreferrer");
         if (!next) {
@@ -816,6 +817,7 @@ export default function UserBackendPage() {
     [coverUrl, shareCoverOverride, session?.access_token],
   );
   const canEdit = !!session?.access_token;
+  const showRepechajeSubnav = false;
   const avatarInitial = useMemo(() => {
     const base = profileAlias || profileName || user?.email || "U";
     return base.trim().charAt(0).toUpperCase() || "U";
@@ -1575,7 +1577,7 @@ export default function UserBackendPage() {
                                 Llaves finales
                               </button>
                             </div>
-                            {viewerTab === "repechajes" && (
+                            {showRepechajeSubnav && viewerTab === "repechajes" && (
                               <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   type="button"
@@ -1605,9 +1607,7 @@ export default function UserBackendPage() {
                                     sendViewerNav(
                                       "repechajes",
                                       viewerPlayoffTab,
-                                      viewerPlayoffTab === "intercontinental"
-                                        ? "repechaje-winners-intercontinental"
-                                        : "repechaje-winners-uefa",
+                                      "repechaje-winners-all",
                                     )
                                   }
                                   className="px-3 py-2 rounded-md border text-xs font-semibold border-neutral-700 text-gray-300 hover:text-white"

@@ -30,7 +30,7 @@ export const BestThirdsModal = ({
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center px-4"
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
     >
       <ModalFlipFrame className="rounded-lg w-full md:w-1/2 max-w-3xl flex flex-col">
         <div
