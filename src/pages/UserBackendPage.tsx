@@ -879,7 +879,12 @@ export default function UserBackendPage() {
     setClaimError(null);
     setClaimSuccess(null);
     try {
-      const baseUrl = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "");
+      const rawBase = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "");
+      const baseUrl = rawBase
+        ? /^https?:\/\//i.test(rawBase)
+          ? rawBase
+          : `https://${rawBase}`
+        : "";
       if (!baseUrl) throw new Error("No se pudo conectar al servidor.");
       const res = await fetch(`${baseUrl}/api/guest-brackets/claim`, {
         method: "POST",
