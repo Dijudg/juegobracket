@@ -61,6 +61,19 @@ const logSupabaseError = (context, error) => {
   });
 };
 
+const resolveProfileAvatar = (meta = {}) => {
+  if (typeof meta.avatar_url === "string" && meta.avatar_url) return meta.avatar_url;
+  if (typeof meta.picture === "string" && meta.picture) return meta.picture;
+  if (meta.picture?.data?.url) return meta.picture.data.url;
+  if (typeof meta.avatar === "string" && meta.avatar) return meta.avatar;
+  return "";
+};
+
+const resolveProfileAlias = (meta = {}, email = "") => {
+  const alias = meta.alias || meta.nickname || meta.full_name || meta.name || "";
+  return alias || email || "Usuario";
+};
+
 let shareBucketReady = false;
 const ensureShareBucket = async () => {
   if (shareBucketReady || !supabaseUrl || !supabaseServiceKey) return;
@@ -194,6 +207,33 @@ app.get("/api/brackets/public/:id", async (req, res) => {
   }
   if (!data) return res.status(404).json({ error: "Bracket not found" });
   return res.json({ item: mapBracketItem(data) });
+});
+
+app.get("/api/public-profile/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!userId) return res.status(400).json({ error: "Missing user id" });
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return res.status(500).json({ error: "Server not configured for profiles" });
+    }
+    const { data, error } = await supabase.auth.admin.getUserById(userId);
+    if (error) {
+      logSupabaseError("public.profile.get", error);
+      return res.status(500).json({ error: error.message });
+    }
+    if (!data?.user) return res.status(404).json({ error: "User not found" });
+    const meta = data.user.user_metadata || {};
+    return res.json({
+      userId: data.user.id,
+      name: meta.full_name || meta.name || data.user.email || "Usuario",
+      alias: meta.alias || meta.nickname || meta.full_name || meta.name || "",
+      avatarUrl: resolveProfileAvatar(meta),
+      coverUrl: meta.cover_url || "",
+    });
+  } catch (err) {
+    console.error("[public.profile.get] unexpected error", err);
+    return res.status(500).json({ error: "Profile lookup failed" });
+  }
 });
 
 app.get("/api/brackets/:id", requireAuth, async (req, res) => {

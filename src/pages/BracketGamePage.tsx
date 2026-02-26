@@ -98,6 +98,15 @@ const LS_GUEST_BRACKET = "fm-guest-bracket";
 const GUEST_SAVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+const resolveApiBase = (value?: string) => {
+  const trimmed = (value || "").trim();
+  if (trimmed) {
+    if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
+    return trimmed;
+  }
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+};
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
@@ -607,7 +616,7 @@ export default function BracketGamePage() {
   const [, setShareInfo] = useState<string | null>(null);
   const [activeShareCard, setActiveShareCard] = useState<ShareCardPayload | null>(null);
   const [viewSharedBy, setViewSharedBy] = useState<BracketSavePayload["sharedBy"] | null>(null);
-  const [viewBracketMeta, setViewBracketMeta] = useState<{ name?: string; updatedAt?: string } | null>(null);
+  const [viewBracketMeta, setViewBracketMeta] = useState<{ name?: string; updatedAt?: string; shortCode?: string } | null>(null);
   const [phaseBlock, setPhaseBlock] = useState<{ title: string; missing: string[] } | null>(null);
   const phaseBlockBannerPick = useMemo(() => pickStopBanner(), [!!phaseBlock]);
   const r32BannerPick = useMemo(() => pickStopBanner(), [showR32Warning]);
@@ -840,6 +849,7 @@ export default function BracketGamePage() {
           name: meta.alias || meta.nickname || meta.full_name || meta.name || authUser.email || "Usuario",
           alias: meta.alias || meta.nickname || "",
           avatarUrl: meta.avatar_url || meta.picture || meta.avatar || "",
+          coverUrl: meta.cover_url || "",
           userId: authUser.id,
         }
       : undefined;
@@ -898,16 +908,16 @@ export default function BracketGamePage() {
 
   const loadLatestBracket = useCallback(async () => {
     try {
-      let data: { id: string; name?: string; data?: BracketSavePayload | string } | null = null;
+      let data: { id: string; name?: string; short_code?: string; data?: BracketSavePayload | string } | null = null;
       if (!isViewOnly) return;
       if (!viewBracketId) return;
       const { data: viewData, error } = await supabase
         .from("bracket_saves")
-        .select("id,name,data,created_at,updated_at")
+        .select("id,name,short_code,data,created_at,updated_at")
         .eq("id", viewBracketId)
         .maybeSingle();
       if (error || !viewData) return;
-      data = viewData as { id: string; name?: string; data?: BracketSavePayload | string };
+      data = viewData as { id: string; name?: string; short_code?: string; data?: BracketSavePayload | string };
 
       if (!data) return;
 
@@ -937,6 +947,7 @@ export default function BracketGamePage() {
           setViewBracketMeta({
             name: data.name || "Pronóstico compartido",
             updatedAt: (data as any).updated_at || (data as any).created_at,
+            shortCode: data.short_code || undefined,
           });
         }
       } else if (isViewOnly) {
@@ -1279,11 +1290,60 @@ export default function BracketGamePage() {
     }
   }, [isViewOnly, loadLatestBracket]);
 
-    useEffect(() => {
-      if (teams.length === 0) return;
-      if (pendingLoadRef.current) {
-        applySavedBracket(pendingLoadRef.current);
-        pendingLoadRef.current = null;
+  useEffect(() => {
+    if (!isViewOnly) return;
+    const userId = viewSharedBy?.userId;
+    if (!userId) return;
+    const needsCover = !viewSharedBy?.coverUrl;
+    const needsAvatar = !viewSharedBy?.avatarUrl;
+    const needsAlias = !viewSharedBy?.alias && !viewSharedBy?.name;
+    if (!needsCover && !needsAvatar && !needsAlias) return;
+    const baseUrl = resolveApiBase(API_BASE_URL);
+    if (!baseUrl) return;
+    let active = true;
+    fetch(`${baseUrl}/api/public-profile/${userId}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Perfil no disponible");
+        return res.json() as Promise<{
+          userId?: string;
+          name?: string;
+          alias?: string;
+          avatarUrl?: string;
+          coverUrl?: string;
+        }>;
+      })
+      .then((data) => {
+        if (!active || !data) return;
+        setViewSharedBy((prev) => {
+          if (!prev) return { ...data };
+          return {
+            ...prev,
+            userId: prev.userId || data.userId,
+            name: prev.name || data.name,
+            alias: prev.alias || data.alias,
+            avatarUrl: prev.avatarUrl || data.avatarUrl,
+            coverUrl: prev.coverUrl || data.coverUrl,
+          };
+        });
+      })
+      .catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [
+    isViewOnly,
+    viewSharedBy?.userId,
+    viewSharedBy?.coverUrl,
+    viewSharedBy?.avatarUrl,
+    viewSharedBy?.alias,
+    viewSharedBy?.name,
+  ]);
+
+  useEffect(() => {
+    if (teams.length === 0) return;
+    if (pendingLoadRef.current) {
+      applySavedBracket(pendingLoadRef.current);
+      pendingLoadRef.current = null;
       }
     }, [teams.length, applySavedBracket]);
 
@@ -2199,6 +2259,10 @@ const scheduleByMatch = useMemo(() => {
       shareUrl,
     };
   }, [buildShareUrl, championTeam, runnerUpTeam, thirdPlaceWinner, viewBracketId]);
+  const viewBracketCode = useMemo(() => {
+    const raw = viewBracketMeta?.shortCode || viewBracketId || "--";
+    return raw.toString().slice(0, 8).toUpperCase();
+  }, [viewBracketMeta?.shortCode, viewBracketId]);
 
   useEffect(() => {
     if (isViewOnly || !currentSaveId || !authSession?.access_token) return;
@@ -3141,32 +3205,57 @@ const scheduleByMatch = useMemo(() => {
   return (
      <div className=" bg-neutral-900">
     <div className=" max-w-7xl mx-auto bg-neutral-900 text-white p-2 md:px-36 flex flex-col gap-8 bracket-stable">
-      {!isViewOnly && <Header authSlot={authSlot} showNav={false} showSearch={false} />}
+      {!isEmbedded && <Header authSlot={authSlot} showNav={false} showSearch={false} />}
       <main className="max-w-7xl px-2 sm:px-6 lg:px-10 xl:px-16">
           <div className="max-w-7xl mx-auto">
             {showSharedHeader && (
-              <div className="mb-6 flex flex-col lg:flex-row gap-4 items-start">
-                <div className="flex-1 rounded-lg border border-neutral-800 bg-black/40 p-4">
-                  <p className="text-xs text-gray-400 uppercase tracking-wide">Pronóstico compartido</p>
-                  <h1 className="mt-1 text-2xl md:text-3xl font-black text-white">
-                    {viewBracketMeta?.name || "Pronóstico compartido"}
-                  </h1>
-                  <div className="mt-3 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-neutral-800 overflow-hidden flex items-center justify-center text-sm font-bold text-gray-200">
-                      {viewSharedBy?.avatarUrl ? (
-                        <img
-                          src={viewSharedBy.avatarUrl}
-                          alt={viewSharedBy.alias || viewSharedBy.name || "Usuario"}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span>{(viewSharedBy?.alias || viewSharedBy?.name || "U").trim().charAt(0).toUpperCase()}</span>
-                      )}
+              <div className="mb-6 flex flex-col lg:flex-row gap-4 items-stretch">
+                <div className="flex-1 rounded-2xl border border-neutral-800 bg-black/40 overflow-hidden">
+                  <div
+                    className="relative h-40"
+                    style={
+                      viewSharedBy?.coverUrl
+                        ? {
+                            backgroundImage: `url(${viewSharedBy.coverUrl})`,
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                          }
+                        : {
+                            background:
+                              "linear-gradient(135deg, rgba(8,8,8,1) 0%, rgba(17,24,39,1) 45%, rgba(31,42,18,1) 100%)",
+                          }
+                    }
+                  >
+                    <div className="absolute -left-16 -bottom-16 w-40 h-40 rounded-full bg-[#c6f600]/20 blur-3xl" />
+                    <div className="absolute right-0 top-0 w-32 h-32 rounded-full bg-white/10 blur-3xl" />
+                  </div>
+                  <div className="relative px-4 pb-4">
+                    <div className="flex items-center gap-4 -mt-10">
+                      <div className="relative w-20 h-20 rounded-full overflow-hidden border-4 border-neutral-900 bg-neutral-800 shrink-0">
+                        {viewSharedBy?.avatarUrl ? (
+                          <img
+                            src={viewSharedBy.avatarUrl}
+                            alt={viewSharedBy.alias || viewSharedBy.name || "Usuario"}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="w-full h-full flex items-center justify-center text-2xl font-bold text-[#c6f600]">
+                            {(viewSharedBy?.alias || viewSharedBy?.name || "U").trim().charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs uppercase tracking-wider text-gray-400">
+                          Pronóstico compartido por
+                        </span>
+                        <span className="text-2xl md:text-3xl font-black text-white">
+                          {viewSharedBy?.alias || viewSharedBy?.name || "Usuario"}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs text-gray-400">Compartido por</span>
-                      <span className="text-base font-semibold text-gray-100">
-                        {viewSharedBy?.alias || viewSharedBy?.name || "Usuario"}
+                    <div className="mt-3 flex flex-col gap-1">
+                      <span className="text-sm text-gray-300">
+                        Código: <span className="font-semibold text-[#c6f600]">{viewBracketCode}</span>
                       </span>
                       {viewBracketMeta?.updatedAt && (
                         <span className="text-xs text-gray-500">
@@ -3871,7 +3960,7 @@ const scheduleByMatch = useMemo(() => {
           </div>
         </div>
       )}
-      {!isViewOnly && <Footer />}
+      {!isEmbedded && <Footer />}
         <NewGamePromptModal
           open={showNewGamePrompt && !isViewOnly}
           onCancel={() => {

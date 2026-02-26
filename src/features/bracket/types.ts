@@ -82,6 +82,7 @@ export type BracketSavePayload = {
     name?: string;
     alias?: string;
     avatarUrl?: string;
+    coverUrl?: string;
     userId?: string;
   };
 };
