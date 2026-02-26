@@ -448,12 +448,12 @@ html.view-only *::-webkit-scrollbar-thumb:hover {
 
 /* Ocultar scrollbar pero mantener funcionalidad */
 .scrollbar-hide {
-  -ms-overflow-style: none;  /* IE y Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none !important;  /* IE y Edge */
+  scrollbar-width: none !important;  /* Firefox */
 }
 
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;  /* Chrome, Safari y Opera */
+  display: none !important;  /* Chrome, Safari y Opera */
 }
 
 /* Estilos para react-slick carrusel */
@@ -1197,6 +1197,14 @@ body{
 }
 .rounded-\[10px\] {
   border-radius: 10px;
+}
+.rounded-b-xl {
+  border-bottom-left-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+}
+.rounded-t-none {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 .z-\[1\] {
   z-index: 1;

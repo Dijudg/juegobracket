@@ -1,6 +1,6 @@
 ﻿import { Crown, ChevronDown, CalendarDays } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
 import { captureShareCard } from "../utils/shareCardCapture";
 import { buildSharePageUrl, createGuestShare, uploadShareCardImage } from "../utils/shareCardApi";
@@ -2559,60 +2559,54 @@ const scheduleByMatch = useMemo(() => {
     }
   };
 
-  const authSlot = isViewOnly ? null : authUser ? (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-300 hidden md:inline">{authUser.email}</span>
-      <button
-        type="button"
-        onClick={() => navigateTo("backend")}
-        className="px-2 py-1 rounded-md border border-neutral-700 text-[11px] font-semibold text-gray-200 hover:border-[#c6f600] whitespace-nowrap"
-      >
-        Panel usuario
-      </button>
-      <button
-        type="button"
-        onClick={handleSignOut}
-        className="px-2 py-1 rounded-md border border-neutral-700 text-[11px] font-semibold text-gray-200 hover:border-[#c6f600] whitespace-nowrap"
-      >
-        Cerrar sesion
-      </button>
-    </div>
-  ) : (
-    <button
-      type="button"
-      onClick={() => openAuthModal("login")}
-      className="px-2 py-1 rounded-md border border-neutral-700 text-[11px] font-semibold text-gray-200 hover:border-[#c6f600] whitespace-nowrap"
-    >
-      Iniciar sesión / Crear usuario
-    </button>
-  );
-
-  const authSlotMobile = isViewOnly ? null : authUser ? (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => navigateTo("backend")}
-        className="px-3 py-2 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-      >
-        Panel
-      </button>
-      <button
-        type="button"
-        onClick={handleSignOut}
-        className="px-3 py-2 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-      >
-        Cerrar sesión
-      </button>
-    </div>
-  ) : (
-    <button
-      type="button"
-      onClick={() => openAuthModal("login")}
-      className="px-3 py-2 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-    >
-      Iniciar sesión
-    </button>
-  );
+  const authSlot = null;
+  const authSlotMobile = null;
+  const showAuthCta = !isViewOnly && !isEmbedded;
+  const authCtaPortal =
+    showAuthCta && typeof document !== "undefined"
+      ? createPortal(
+          <div className="fixed inset-x-0 bottom-0 z-[9999] px-4 pb-4">
+            <div className="mx-auto max-w-3xl rounded-2xl border border-neutral-800 bg-black/80 backdrop-blur-md shadow-lg p-3 flex flex-col sm:flex-row gap-2">
+              {authUser ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("backend")}
+                    className="flex-1 px-4 py-3 rounded-b-xl rounded-t-none border border-neutral-700 text-sm font-semibold text-white hover:border-[#c6f600]"
+                  >
+                    Panel usuario
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="flex-1 px-4 py-3 rounded-b-xl rounded-t-none bg-[#c6f600] text-black text-sm font-semibold hover:brightness-95"
+                  >
+                    Cerrar sesión
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openAuthModal("login")}
+                    className="flex-1 px-4 py-3 rounded-b-xl rounded-t-none border border-neutral-700 text-sm font-semibold text-white hover:border-[#c6f600]"
+                  >
+                    Iniciar sesión
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAuthModal("signup")}
+                    className="flex-1 px-4 py-3 rounded-b-xl rounded-t-none bg-[#c6f600] text-black text-sm font-semibold hover:brightness-95"
+                  >
+                    Crear usuario
+                  </button>
+                </>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
 
   const shareButtons = [
     { key: "whatsapp", icon: whatsappIcon, alt: "WhatsApp", platform: "whatsapp" as const },
@@ -3204,13 +3198,17 @@ const scheduleByMatch = useMemo(() => {
 
   return (
      <div className=" bg-neutral-900">
-    <div className=" max-w-7xl mx-auto bg-neutral-900 text-white p-2 md:px-36 flex flex-col gap-8 bracket-stable">
+    <div
+      className={`max-w-7xl mx-auto bg-neutral-900 text-white p-2 md:px-36 flex flex-col gap-8 bracket-stable ${
+        showAuthCta ? "pb-20" : ""
+      }`}
+    >
       {!isEmbedded && <Header authSlot={authSlot} showNav={false} showSearch={false} />}
       <main className="max-w-7xl px-2 sm:px-6 lg:px-10 xl:px-16">
           <div className="max-w-7xl mx-auto">
             {showSharedHeader && (
               <div className="mb-6 flex flex-col lg:flex-row gap-4 items-stretch">
-                <div className="flex-1 rounded-2xl border border-neutral-800 bg-black/40 overflow-hidden">
+                <div className="flex-1 rounded-2xl  rounded-xl  overflow-hidden">
                   <div
                     className="relative h-40"
                     style={
@@ -3229,9 +3227,9 @@ const scheduleByMatch = useMemo(() => {
                     <div className="absolute -left-16 -bottom-16 w-40 h-40 rounded-full bg-[#c6f600]/20 blur-3xl" />
                     <div className="absolute right-0 top-0 w-32 h-32 rounded-full bg-white/10 blur-3xl" />
                   </div>
-                  <div className="relative px-4 pb-4">
-                    <div className="flex items-center gap-4 -mt-10">
-                      <div className="relative w-20 h-20 rounded-full overflow-hidden border-4 border-neutral-900 bg-neutral-800 shrink-0">
+                  <div className="relative px-4 pb-4 rounded">
+                    <div className="flex items-center gap-4 mt-4 justify-center items-center">
+                      <div className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-neutral-900 bg-neutral-800 shrink-0">
                         {viewSharedBy?.avatarUrl ? (
                           <img
                             src={viewSharedBy.avatarUrl}
@@ -3245,24 +3243,18 @@ const scheduleByMatch = useMemo(() => {
                         )}
                       </div>
                       <div className="flex flex-col">
-                        <span className="text-xs uppercase tracking-wider text-gray-400">
-                          Pronóstico compartido por
+                      
+                        <span className="text-xs uppercase bg-[#c6f600]  tracking-wider text-black px-2 rounded">
+                          Pronóstico compartido por:
                         </span>
-                        <span className="text-2xl md:text-3xl font-black text-white">
+                        
+                        <span className="text-5xl md:text-3xl font-black text-white">
                           {viewSharedBy?.alias || viewSharedBy?.name || "Usuario"}
                         </span>
+                        
                       </div>
                     </div>
-                    <div className="mt-3 flex flex-col gap-1">
-                      <span className="text-sm text-gray-300">
-                        Código: <span className="font-semibold text-[#c6f600]">{viewBracketCode}</span>
-                      </span>
-                      {viewBracketMeta?.updatedAt && (
-                        <span className="text-xs text-gray-500">
-                          Actualizado: {formatViewDate(viewBracketMeta.updatedAt)}
-                        </span>
-                      )}
-                    </div>
+                    
                   </div>
                 </div>
                 <div className="w-full lg:w-auto flex justify-center">
@@ -3279,9 +3271,9 @@ const scheduleByMatch = useMemo(() => {
             <div className={isViewOnly ? " select-none" : ""}>
             {!isViewOnly && (
               <>
-                <div className="md:hidden flex justify-end mb-3">{authSlotMobile}</div>
-                <div className="hidden md:flex justify-end mb-3">{authSlot}</div>
-                <div className="flex items-center gap-3 mb-3">
+                {authSlotMobile && <div className="md:hidden flex justify-end mb-3">{authSlotMobile}</div>}
+                {authSlot && <div className="hidden md:flex justify-end mb-3">{authSlot}</div>}
+                <div className="flex items-center gap-3 ">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
                       <span className="font-semibold text-gray-200">Progreso</span>
@@ -3301,14 +3293,14 @@ const scheduleByMatch = useMemo(() => {
             )}
 
           {!isEmbedded && (
-            <div className="flex flex-wrap items-center mb-2">
+            <div className="flex items-center mb-3 overflow-x-auto flex-nowrap scrollbar-hide">
             <button
               type="button"
               onClick={() => setActiveTab("repechajes")}
-              className={`px-4 py-2 rounded-md border text-sm font-semibold transition ${
+              className={`px-3 py-2 rounded-b-xl rounded-t-none whitespace-nowrap text-base font-semibold transition ${
                 activeTab === "repechajes"
-                  ? "bg-[#c6f600] text-black "
-                  : "border-neutral-700 text-gray-400 hover:text-white"
+                  ? "bg-[#c6f600] text-black  "
+                  : " text-gray-400 hover:text-white"
               }`}
             >
               Liguilla de Repechajes
@@ -3316,10 +3308,10 @@ const scheduleByMatch = useMemo(() => {
             <button
               type="button"
               onClick={() => (isViewOnly ? setActiveTab("grupos") : goToGroupsIfReady())}
-              className={`px-4 py-2 rounded-md border text-sm font-semibold transition ${
+              className={`px-3 py-2 rounded-b-xl rounded-t-none whitespace-nowrap text-base font-semibold transition ${
                 activeTab === "grupos"
-                  ? "bg-[#c6f600] text-black border-[#c6f600]"
-                  : "border-neutral-700 text-gray-400 hover:text-white"
+                  ? "bg-[#c6f600] text-black text-base "
+                  : "text-gray-400"
               }`}
             >
               Fase de grupos
@@ -3337,10 +3329,10 @@ const scheduleByMatch = useMemo(() => {
                   }
                   goToDieciseisavosIfReady();
                 }}
-                className={`px-4 py-2 rounded-md border text-sm font-semibold transition ${
+                className={`px-3 py-2 rounded-b-xl rounded-t-none whitespace-nowrap text-base font-semibold transition ${
                   activeTab === "dieciseisavos"
-                    ? "bg-[#c6f600] text-black border-[#c6f600]"
-                    : "border-neutral-700 text-gray-400 hover:text-white"
+                    ? "bg-[#c6f600] text-black "
+                    : "text-gray-400 hover:text-white"
                 }`}
             >
               Eliminatorias
@@ -3348,9 +3340,9 @@ const scheduleByMatch = useMemo(() => {
               <button
                 type="button"
                 onClick={() => (isViewOnly ? setActiveTab("llaves") : goToLlavesIfReady())}
-                className={`px-4 py-2 rounded-md border text-sm font-semibold transition ${
+                className={`px-3 py-2 rounded-b-xl rounded-t-none whitespace-nowrap text-base font-semibold transition ${
                   activeTab === "llaves"
-                    ? "bg-[#c6f600] text-black border-[#c6f600]"
+                    ? "bg-[#c6f600] text-black "
                     : "border-neutral-700 text-gray-400 hover:text-white"
                 }`}
               >
@@ -3426,10 +3418,10 @@ const scheduleByMatch = useMemo(() => {
                     <button
                       type="button"
                       onClick={() => handlePlayoffTabClick("uefa")}
-                      className={`px-5 py-3 rounded-full border text-base  md:text-lg font-bold tracking-wide w-1/2 transition ${
+                      className={`px-5 py-3 rounded-full text-base  md:text-lg font-bold tracking-wide w-1/2 transition ${
                         activePlayoffTab === "uefa"
                           ? "bg-[#c6f600] text-black  "
-                          : "border-neutral-700 text-gray-200 bg-neutral-900/70 hover:text-white hover:border-[#c6f600]"
+                          : " text-gray-200 bg-neutral-900/70 hover:text-white "
                       }`}
                     >
                       Liguilla UEFA
@@ -4351,6 +4343,7 @@ const scheduleByMatch = useMemo(() => {
         )}
       </AnimatePresence>
     </div>
+    {authCtaPortal}
     </div>
   );
 }
