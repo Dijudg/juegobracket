@@ -3218,7 +3218,7 @@ const scheduleByMatch = useMemo(() => {
             )}
 
           {!isViewOnly && (
-            <div className="flex flex-wrap items-center mb-4">
+            <div className="flex flex-wrap items-center mb-2">
             <button
               type="button"
               onClick={() => setActiveTab("repechajes")}
