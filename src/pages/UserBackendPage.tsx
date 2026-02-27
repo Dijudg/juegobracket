@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type TouchEvent } from "react";
 import { flushSync } from "react-dom";
 import type { Session, User } from "@supabase/supabase-js";
 import Header from "../components/header";
@@ -25,6 +25,9 @@ import {
 } from "../features/bracket/utils";
 import thirdLookup from "../data/third_lookup.json";
 import winnerCardBg from "../assets/final.jpg";
+import logofanatico from "../assets/Logofanatico.svg";
+import etLogo from "../assets/ET_LOGO.png";
+import ectvLogo from "../assets/ECTV_LOGO.png";
 import facebookIcon from "../assets/facebook.svg";
 import instagramIcon from "../assets/instagram.svg";
 import whatsappIcon from "../assets/whatsapp.svg";
@@ -332,6 +335,10 @@ export default function UserBackendPage() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+  const [pronosticosIndex, setPronosticosIndex] = useState(0);
+  const [pronosticosDirection, setPronosticosDirection] = useState<"next" | "prev" | null>(null);
+  const pronosticosTouchStartX = useRef<number | null>(null);
+  const pronosticosTouchStartY = useRef<number | null>(null);
   const [consentMarketing, setConsentMarketing] = useState(false);
   const [consentNews, setConsentNews] = useState(false);
   const [consentUpdates, setConsentUpdates] = useState(false);
@@ -343,6 +350,7 @@ export default function UserBackendPage() {
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [showSideMenu, setShowSideMenu] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -354,7 +362,7 @@ export default function UserBackendPage() {
   const [coverBusy, setCoverBusy] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const avatarSyncRef = useRef<Record<string, boolean>>({});
-  const [activeTab, setActiveTab] = useState<"profile" | "settings">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "settings" | "claim">("profile");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [claimCode, setClaimCode] = useState("");
@@ -712,7 +720,7 @@ export default function UserBackendPage() {
       if (typeof window === "undefined") return;
         const sharePageUrl = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
         const messageParts = [
-          `Mi pronóstico Mundialista: campeón ${payload.champion.name}.`,
+          `Mi prónosticos Mundialista: campeón ${payload.champion.name}.`,
           payload.runnerUp.name !== "Por definir" ? `Segundo: ${payload.runnerUp.name}.` : "",
           payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
           `Mira mi cuadro aquí: ${sharePageUrl}`,
@@ -826,7 +834,7 @@ export default function UserBackendPage() {
     if (!items.length) return [];
     const map = new Map<string, { name: string; count: number; latest: string; latestId: string }>();
     items.forEach((item) => {
-      const name = extractGameName(item.name || "Mi Pronóstico del Mundial 2026");
+      const name = extractGameName(item.name || "Mi Pron?stico del Mundial 2026");
       const current = map.get(name) || {
         name,
         count: 0,
@@ -861,19 +869,191 @@ export default function UserBackendPage() {
   const displayName = profileAlias || profileName || user?.email || "Usuario";
   const displaySubtitle = profileName || user?.email || "Completa tu perfil";
 
+  useEffect(() => {
+    if (!games.length) {
+      if (pronosticosIndex !== 0) setPronosticosIndex(0);
+      return;
+    }
+    const maxIndex = Math.max(0, games.length - 1);
+    if (pronosticosIndex > maxIndex) {
+      setPronosticosIndex(maxIndex);
+    }
+  }, [games.length, pronosticosIndex]);
+
+  const handlePronosticosSlide = (direction: "next" | "prev") => {
+    setPronosticosIndex((current) => {
+      const maxIndex = Math.max(0, games.length - 1);
+      if (direction === "next") {
+        if (current >= maxIndex) return current;
+        setPronosticosDirection("next");
+        return current + 1;
+      }
+      if (current <= 0) return current;
+      setPronosticosDirection("prev");
+      return current - 1;
+    });
+  };
+
+  const resetPronosticosTouch = () => {
+    pronosticosTouchStartX.current = null;
+    pronosticosTouchStartY.current = null;
+  };
+
+  const handlePronosticosTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    pronosticosTouchStartX.current = touch.clientX;
+    pronosticosTouchStartY.current = touch.clientY;
+  };
+
+  const handlePronosticosTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    if (games.length < 2) {
+      resetPronosticosTouch();
+      return;
+    }
+    const startX = pronosticosTouchStartX.current;
+    const startY = pronosticosTouchStartY.current;
+    resetPronosticosTouch();
+    if (startX == null || startY == null) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const deltaX = touch.clientX - startX;
+    const deltaY = touch.clientY - startY;
+    if (Math.abs(deltaX) < 40 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+    if (deltaX < 0) {
+      handlePronosticosSlide("next");
+    } else {
+      handlePronosticosSlide("prev");
+    }
+  };
+
+  const renderGameCard = (game: { name: string; latestId: string }) => {
+    const latest = detailsMap[game.latestId];
+    let payload = latest?.data as BracketSavePayload | undefined;
+    if (typeof latest?.data === "string") {
+      try {
+        payload = JSON.parse(latest.data) as BracketSavePayload;
+      } catch {
+        payload = undefined;
+      }
+    }
+    const podium = computePodium(payload);
+    const championIdRaw = payload?.picks?.["final-104"];
+    const championKey = normalizeTeamKey(championIdRaw);
+    let championTeam = podium.champion;
+    if (!championTeam && championKey) {
+      championTeam =
+        teamIndex.get(championKey) ||
+        teams.find(
+          (team) =>
+            normalizeTeamKey(team.id) === championKey ||
+            normalizeTeamKey(team.codigo) === championKey ||
+            normalizeTeamKey(getTeamCode(team)) === championKey,
+        );
+    }
+    const championName = championTeam?.nombre || (championKey ? championKey : "Por definir");
+    const championEscudo = getTeamEscudo(championTeam);
+    const runnerUpTeam = podium.runnerUp;
+    const thirdTeam = podium.third;
+    const runnerUpInfo: ShareTeamInfo = runnerUpTeam
+      ? { name: runnerUpTeam.nombre || runnerUpTeam.id, escudo: getTeamEscudo(runnerUpTeam) }
+      : { name: "Por definir" };
+    const thirdInfo: ShareTeamInfo = thirdTeam
+      ? { name: thirdTeam.nombre || thirdTeam.id, escudo: getTeamEscudo(thirdTeam) }
+      : { name: "Por definir" };
+    const championInfo: ShareTeamInfo = { name: championName, escudo: championEscudo };
+    const shareUrl = buildShareUrl(game.latestId);
+    const sharePayload = {
+      id: game.latestId,
+      champion: championInfo,
+      runnerUp: runnerUpInfo,
+      third: thirdInfo,
+      shareUrl,
+    };
+
+    return (
+      <div className="rounded-lg overflow-hidden rounded-xl shadow-xl bg-neutral-800 pb-6 flex flex-col">
+        <div className="relative h-42">
+          <img src={winnerCardBg} alt="Ganador" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/30 to-black/80" />
+        </div>
+        <div className="relative -mt-10 px-5 pb-5 flex flex-col items-center text-center">
+          <div className="w-24 h-24 rounded-full border-4 border-[#0b0b0b] bg-black shadow-lg overflow-hidden flex items-center justify-center">
+            {championEscudo ? (
+              <img src={championEscudo} alt={championName} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-xs text-gray-500 uppercase">N/A</span>
+            )}
+          </div>
+
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-3xl font-black uppercase text-white">{championName}</span>
+            <span className="text-3xl font-black uppercase text-[#c6f600]">Campe?n</span>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              setViewerId(game.latestId);
+              setSelectedId(game.latestId);
+              setViewerTab("repechajes");
+              setViewerPlayoffTab("uefa");
+              await getBracketDetails(game.latestId);
+              document.getElementById("viewer-bracket")?.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="mt-3 w-full rounded-full bg-[#c6f600] text-black text-sm font-bold py-2 hover:brightness-95"
+          >
+            Ver todo mi pronósticos
+          </button>
+          <div className="mt-3 w-full flex items-center  justify-center text-base text-gray-400">
+            <span className="mr-2">Compartir:</span>
+            <div className="flex items-center ">
+              <button
+                type="button"
+                onClick={() => sharePronostico("whatsapp", sharePayload)}
+                disabled={shareBusyId === game.latestId}
+                className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
+                aria-label="Compartir en WhatsApp"
+              >
+                <img src={whatsappIcon} alt="WhatsApp" className="w-8 h-8" />
+              </button>
+              <button
+                type="button"
+                onClick={() => sharePronostico("facebook", sharePayload)}
+                disabled={shareBusyId === game.latestId}
+                className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
+                aria-label="Compartir en Facebook"
+              >
+                <img src={facebookIcon} alt="Facebook" className="w-8 h-8" />
+              </button>
+              <button
+                type="button"
+                onClick={() => sharePronostico("instagram", sharePayload)}
+                disabled={shareBusyId === game.latestId}
+                className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
+                aria-label="Compartir en Instagram"
+              >
+                <img src={instagramIcon} alt="Instagram" className="w-8 h-8" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
   };
 
   const handleClaimBracket = async () => {
     if (!session?.access_token) {
-      setClaimError("Inicia sesión para agregar un Pronóstico.");
+      setClaimError("Inicia sesi?n para agregar un Pron?stico.");
       setClaimSuccess(null);
       return;
     }
     const shortCode = claimCode.trim().toUpperCase();
     if (!shortCode) {
-      setClaimError("Ingresa el código del Pronóstico.");
+      setClaimError("Ingresa el c?digo del Pron?stico.");
       setClaimSuccess(null);
       return;
     }
@@ -949,7 +1129,7 @@ export default function UserBackendPage() {
 
   const handleAuthSubmit = async () => {
     if (!authEmail || !authPassword) {
-      setAuthError("Completa tu correo y contraseña.");
+      setAuthError("Completa tu correo y contrase?a.");
       return;
     }
     setAuthBusy(true);
@@ -979,7 +1159,7 @@ export default function UserBackendPage() {
         setShowAuthModal(false);
       }
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "No pudimos iniciar sesión.");
+      setAuthError(err instanceof Error ? err.message : "No pudimos iniciar sesi?n.");
     } finally {
       setAuthBusy(false);
     }
@@ -1200,54 +1380,199 @@ export default function UserBackendPage() {
     <div className="bg-neutral-900">
       <div className="max-w-7xl mx-auto bg-neutral-900 text-white flex flex-col gap-8 bracket-stable">
         <Header showNav={false} showSearch={false} />
-        <main className="max-w-5xl px-2 sm:px-6 lg:px-10 xl:px-16">
-          <div className="max-w-5xl mx-auto">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <main className="max-w-7xl px-2 sm:px-6 lg:px-10 rounded-2xl xl:px-16">
+          <div className="max-w-7xl mx-auto ">
+            <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+              <div className="lg:hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowSideMenu((prev) => !prev)}
+                  className="w-full flex items-center justify-between rounded-xl border border-neutral-800 bg-black/40 px-4 py-3 text-sm font-semibold"
+                >
+                  Menu de usuario
+                  <span className="text-[#c6f600]">{showSideMenu ? "\u25B2" : "\u25BC"}</span>
+                </button>
+                {showSideMenu && (
+                  <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
+                    <div className="absolute inset-0 h-full w-1/2 min-w-[220px] bg-neutral-900 border-r border-neutral-800 p-4 flex flex-col gap-4 text-left relative z-10 mobile-menu-panel">
+                      <div className="flex items-center">
+                        <img src={logofanatico} alt="Fanatico" className="h-8 w-auto" />
+                      </div>
+                      <div className="flex items-center justify-between text-left">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full overflow-hidden border border-neutral-700 bg-neutral-800 flex items-center justify-center">
+                            {avatarUrl ? (
+                              <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-sm font-bold text-[#c6f600]">{avatarInitial}</span>
+                            )}
+                          </div>
+                          <span className="text-gray-500">|</span>
+                          <span className="text-sm font-semibold">{displayName}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowSideMenu(false)}
+                          className="text-sm text-black hover:text-white bg-[#c6f600] rounded-full w-6 h-6 flex items-center justify-center"
+                        >
+                          X
+                        </button>
+                      </div>
+                      <div className="pt-2 border-t border-neutral-800 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("profile");
+                            setShowSideMenu(false);
+                          }}
+                          className={`px-3 py-2 text-sm font-semibold rounded-md  transition text-left ${
+                            activeTab === "profile"
+                              ? " text-[#c6f600]"
+                              : "text-gray-400 "
+                          }`}
+                        >
+                          Perfil
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("settings");
+                            setShowSideMenu(false);
+                          }}
+                          className={`px-3 py-2 text-sm font-semibold rounded-md  transition text-left ${
+                            activeTab === "settings"
+                              ? " text-[#c6f600]"
+                              : "border-transparent text-gray-400 hover:text-[#c6f600]"
+                          }`}
+                        >
+                          Ajustes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("claim");
+                            setShowSideMenu(false);
+                          }}
+                          className={`px-3 py-2 rounded-md  text-xs font-semibold transition text-left ${
+                            activeTab === "claim"
+                              ? "border-[#c6f600] text-[#c6f600]"
+                              : " text-gray-200 "
+                          }`}
+                        >
+                          Agregar bracket
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigateTo("home", { resetGame: Date.now() })}
+                          className="px-3 py-2 rounded-md uppercase text-xs font-semibold text-left bg-[#c6f600] text-black hover:brightness-95"
+                        >
+                          Volver al juego
+                        </button>
+                      </div>
+                      <div className="mt-auto pt-4 border-t border-neutral-800 flex flex-col gap-3">
+                        <button
+                          type="button"
+                          onClick={handleSignOut}
+                          className="px-3 py-2 rounded-md  text-xs font-semibold text-left text-gray-200 hover:border-[#c6f600]"
+                        >
+                          Cerrar sesión
+                        </button>
+                        <div className="flex items-center ">
+                          <a href="https://www.eltelegrafo.com.ec/" target="_blank" rel="noreferrer">
+                            <img src={etLogo} alt="ET Logo" className=" h-5" />
+                          </a>
+                          <span className="text-gray-500">|</span>
+                          <a href="https://www.ecuadortv.ec" target="_blank" rel="noreferrer">
+                            <img src={ectvLogo} alt="ECTV Logo" className=" h-5" />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSideMenu(false)}
+                      className="absolute inset-0 z-0"
+                      aria-label="Cerrar menu"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <aside className="hidden lg:block lg:sticky lg:top-24 self-start">
+                <div className="rounded-2xl  bg-neutral-800 rounded-xl p-4 flex flex-col gap-4">
+                  <div>
+                    <h1 className="text-2xl font-black">Panel de usuario</h1>
+                    <p className="text-sm text-gray-400 mt-1">
+                    </p>
+                  </div>
+              
+                  <div className="pt-2 border-t border-neutral-800 flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("profile")}
+                      className={`px-3 py-2 text-sm font-semibold rounded-md border transition text-left ${
+                        activeTab === "profile"
+                          ? "text-[#c6f600]"
+                          : "border-transparent text-gray-400 hover:text-[#c6f600]"
+                      }`}
+                    >
+                      Perfil
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("settings")}
+                      className={`px-3 py-2 text-base  font-semibold rounded-md border transition text-left ${
+                        activeTab === "settings"
+                          ? " text-[#c6f600]"
+                          : "border-transparent text-gray-400 hover:text-[#c6f600]"
+                      }`}
+                    >
+                      Ajustes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("claim")}
+                      className={`px-3 py-2 rounded-md border text-left  text-base font-semibold transition ${
+                        activeTab === "claim"
+                          ? " text-[#c6f600]"
+                          : "text-gray-200 hover:border-[#c6f600]"
+                      }`}
+                    >
+                      Agregar bracket
+                    </button>
+                       <button
+                      type="button"
+                      onClick={() => navigateTo("home", { resetGame: Date.now() })}
+                      className="px-3 py-2 rounded-md text-left uppercase text-base  font-semibold text-black bg-[#c6f600]"
+                    >
+                      Volver al juego
+                    </button>
+                  </div>
+                      <div className="mt-auto pt-4 border-t border-neutral-800 flex flex-col gap-3">
+                        <button
+                          type="button"
+                          onClick={handleSignOut}
+                          className="px-3 py-2  text-xs font-semibold text-left text-gray-200 hover:border-[#c6f600]"
+                        >
+                          Cerrar sesión
+                        </button>
+                        <div className="flex items-center gap-3">
+                          <a href="https://www.eltelegrafo.com.ec/" target="_blank" rel="noreferrer">
+                            <img src={etLogo} alt="ET Logo" className="h-6 w-auto" />
+                          </a>
+                          <span className="text-gray-500">|</span>
+                          <a href="https://www.ecuadortv.ec" target="_blank" rel="noreferrer">
+                            <img src={ectvLogo} alt="ECTV Logo" className="h-6 w-auto" />
+                          </a>
+                        </div>
+                      </div>
+</div>
+              </aside>
+
               <div>
-                <h1 className="text-3xl md:text-4xl font-black">Panel de usuario</h1>
-                <p className="text-sm text-gray-400">
-                  Consulta lo que se guarda en la base de datos y descarga tus pronósticos.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => navigateTo("home", { resetGame: Date.now() })}
-                    className="px-3 py-2 rounded-md border uppercase border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-                  >
-                     Volver al juego
-                  </button>
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center gap-2 border-b border-neutral-800">
-              <button
-                type="button"
-                onClick={() => setActiveTab("profile")}
-                className={`px-4 py-2 text-sm font-semibold border-b-2 transition ${
-                  activeTab === "profile"
-                    ? "border-[#c6f600] text-[#c6f600]"
-                    : "border-transparent text-gray-400 hover:text-[#c6f600]"
-                }`}
-              >
-                Perfil
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("settings")}
-                className={`px-4 py-2 text-sm font-semibold border-b-2 transition ${
-                  activeTab === "settings"
-                    ? "border-[#c6f600] text-[#c6f600]"
-                    : "border-transparent text-gray-400 hover:text-[#c6f600]"
-                }`}
-              >
-                Ajustes
-              </button>
-            </div>
-
             {activeTab === "profile" ? (
               <>
-                <section className="mt-6 rounded-2xl border border-neutral-800 bg-black/40 overflow-hidden">
+                <section className="rounded-2xl border border-neutral-800 bg-black/40 overflow-hidden">
                   <div
                     className="relative md:h-96  h-48"
                     style={
@@ -1283,7 +1608,7 @@ export default function UserBackendPage() {
                         </div>
                         <div>
                           <h2 className="text-6xl  font-black">{displayName}</h2>
-                          <p className="text-sm text-gray-400">{displaySubtitle}</p>
+                          <p className="text-sm text-gray-400 text-left">{displaySubtitle}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1293,198 +1618,78 @@ export default function UserBackendPage() {
                             onClick={() => openAuthModal("login") }
                             className="px-3 py-2 rounded-md bg-[#c6f600] text-black text-xs font-semibold hover:brightness-95"
                           >
-                            Iniciar sesi?n
+                            Iniciar sesión
                           </button>
                         )}
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap items-end gap-8 justify-center md:justify-end">
                       <div className="flex flex-col items-center md:items-end">
-                        <p className="text-xs uppercase tracking-wider text-gray-400">Brackets</p>
+                        <p className="text-xs uppercase tracking-wider text-gray-400">pronósticos</p>
                         <p className="text-3xl font-black text-white leading-none">{loading ? "--" : totalBrackets}</p>
                       </div>
                       <div className="flex flex-col items-center md:items-end">
                         <p className="text-xs uppercase tracking-wider text-gray-400">Juegos</p>
                         <p className="text-3xl font-black text-white leading-none">{loading ? "--" : totalGames}</p>
                       </div>
-                      <div className="flex flex-col items-center md:items-end">
-                        <p className="text-xs uppercase tracking-wider text-gray-400">Última actividad</p>
-                        <p className="text-sm font-semibold text-white leading-none">
-                          {loading ? "--" : lastActivity ? formatDate(lastActivity) : "--"}
-                        </p>
-                      </div>
+                     
                     </div>
                   </div>
                 </section>
 
                 <div className="mt-6 ">
                   <div className="flex items-center justify-center py-4  bg-black">
-                    <h2 className="text-4xl font-semibold items-center justify-center">Tus Pronósticos</h2>
+                    <h2 className="text-4xl font-semibold items-center justify-center">Tus pronósticos</h2>
                   </div>
-                  {session?.access_token && (
-                    <div className="mt-4 rounded-lg border border-neutral-800 bg-black/40 p-4">
-                      <div>
-                        <h3 className="text-lg font-semibold">Agregar bracket</h3>
-                        <p className="text-xs text-gray-400">
-                          Ingresa el código corto que te dimos cuando guardaste como invitado. Expira en 7 días.
-                        </p>
-                      </div>
-                      <div className="mt-3 flex flex-col md:flex-row gap-2">
-                        <input
-                          type="text"
-                          value={claimCode}
-                          onChange={(e) => {
-                            const next = e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-                            setClaimCode(next);
-                            setClaimError(null);
-                            setClaimSuccess(null);
-                          }}
-                          placeholder="Ej: AB12CD"
-                          className="flex-1 rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleClaimBracket}
-                          disabled={claimBusy}
-                          className={`px-4 py-2 rounded-md text-xs font-semibold ${
-                            claimBusy
-                              ? "bg-neutral-700 text-gray-400"
-                              : "bg-[#c6f600] text-black hover:brightness-95"
-                          }`}
-                        >
-                          {claimBusy ? "Agregando..." : "Agregar bracket"}
-                        </button>
-                      </div>
-                      {claimError && <p className="mt-2 text-xs text-red-400">{claimError}</p>}
-                      {claimSuccess && <p className="mt-2 text-xs text-green-400">{claimSuccess}</p>}
-                    </div>
-                  )}
                   {!session?.access_token ? (
                     <div className="mt-3 rounded-lg border border-neutral-800 bg-black/40 p-4 text-sm text-gray-300">
-                      Inicia sesión para ver tus juegos activos.
+                      Inicia sesion para ver tus juegos activos.
                     </div>
                   ) : games.length === 0 && !loading ? (
                     <div className="mt-3 rounded-lg border border-neutral-800 bg-black/40 p-4 text-sm text-gray-300">
                       Todavía no has participado en ningún juego.
                     </div>
                     ) : (
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 bg-black items-center justify-center p-6 ">
-                        {games.map((game) => {
-                          const latest = detailsMap[game.latestId];
-                          let payload = latest?.data as BracketSavePayload | undefined;
-                          if (typeof latest?.data === "string") {
-                            try {
-                              payload = JSON.parse(latest.data) as BracketSavePayload;
-                            } catch {
-                              payload = undefined;
-                            }
-                          }
-                          const podium = computePodium(payload);
-                          const championIdRaw = payload?.picks?.["final-104"];
-                          const championKey = normalizeTeamKey(championIdRaw);
-                          let championTeam = podium.champion;
-                          if (!championTeam && championKey) {
-                            championTeam =
-                              teamIndex.get(championKey) ||
-                              teams.find(
-                                (team) =>
-                                  normalizeTeamKey(team.id) === championKey ||
-                                  normalizeTeamKey(team.codigo) === championKey ||
-                                  normalizeTeamKey(getTeamCode(team)) === championKey,
-                              );
-                          }
-                          const championName =
-                            championTeam?.nombre || (championKey ? championKey : "Por definir");
-                          const championEscudo = getTeamEscudo(championTeam);
-                          const runnerUpTeam = podium.runnerUp;
-                          const thirdTeam = podium.third;
-                          const runnerUpInfo: ShareTeamInfo = runnerUpTeam
-                            ? { name: runnerUpTeam.nombre || runnerUpTeam.id, escudo: getTeamEscudo(runnerUpTeam) }
-                            : { name: "Por definir" };
-                          const thirdInfo: ShareTeamInfo = thirdTeam
-                            ? { name: thirdTeam.nombre || thirdTeam.id, escudo: getTeamEscudo(thirdTeam) }
-                            : { name: "Por definir" };
-                          const championInfo: ShareTeamInfo = { name: championName, escudo: championEscudo };
-                          const shareUrl = buildShareUrl(game.latestId);
-                          const sharePayload = {
-                            id: game.latestId,
-                            champion: championInfo,
-                            runnerUp: runnerUpInfo,
-                            third: thirdInfo,
-                            shareUrl,
-                          };
-                          return (
-                            <div
-                              key={game.name}
-                              className="rounded-lg overflow-hidden rounded-xl shadow-xl bg-neutral-800 pb-6 flex flex-col" >
-                              <div className="relative h-42">
-                                <img src={winnerCardBg} alt="Ganador" className="w-full h-full object-cover" />
-                                <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/30 to-black/80" />
+                      <>
+                        <div className="pronosticos-carousel relative bg-black p-6" onTouchStart={handlePronosticosTouchStart} onTouchEnd={handlePronosticosTouchEnd} onTouchCancel={resetPronosticosTouch}>
+                          <div
+                            className="pronosticos-stack w-full"
+                            data-direction={pronosticosDirection ?? ""}
+                          >
+                            {games.map((game, index) => (
+                              <div
+                                key={game.name}
+                                className={`pronosticos-slide ${index === pronosticosIndex ? "is-active" : ""}`}
+                              >
+                                {renderGameCard(game)}
                               </div>
-                              <div className="relative -mt-10 px-5 pb-5 flex flex-col items-center text-center">
-                                <div className="w-24 h-24 rounded-full border-4 border-[#0b0b0b] bg-black shadow-lg overflow-hidden flex items-center justify-center">
-                                  {championEscudo ? (
-                                    <img src={championEscudo} alt={championName} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <span className="text-xs text-gray-500 uppercase">N/A</span>
-                                  )}
-                                </div>
-                               
-                                <div className="mt-2 flex items-center gap-2">
-                                  <span className="text-3xl font-black uppercase text-white">{championName}</span>
-                                  <span className="text-3xl font-black uppercase text-[#c6f600]">Campeón</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    setViewerId(game.latestId);
-                                    setSelectedId(game.latestId);
-                                    setViewerTab("repechajes");
-                                    setViewerPlayoffTab("uefa");
-                                    await getBracketDetails(game.latestId);
-                                    document.getElementById("viewer-bracket")?.scrollIntoView({ behavior: "smooth" });
-                                  }}
-                                  className="mt-3 w-full rounded-full bg-[#c6f600] text-black text-sm font-bold py-2 hover:brightness-95"
-                                >
-                                  Ver todo mi pronóstico
-                                </button>
-                                <div className="mt-3 w-full flex items-center  justify-center text-base text-gray-400">
-                                  <span className="mr-2">Compartir:</span>
-                                  <div className="flex items-center ">
-                                    <button
-                                      type="button"
-                                      onClick={() => sharePronostico("whatsapp", sharePayload)}
-                                      disabled={shareBusyId === game.latestId}
-                                      className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
-                                      aria-label="Compartir en WhatsApp"
-                                    >
-                                      <img src={whatsappIcon} alt="WhatsApp" className="w-8 h-8" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => sharePronostico("facebook", sharePayload)}
-                                      disabled={shareBusyId === game.latestId}
-                                      className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
-                                      aria-label="Compartir en Facebook"
-                                    >
-                                      <img src={facebookIcon} alt="Facebook" className="w-8 h-8" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => sharePronostico("instagram", sharePayload)}
-                                      disabled={shareBusyId === game.latestId}
-                                      className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
-                                      aria-label="Compartir en Instagram"
-                                    >
-                                      <img src={instagramIcon} alt="Instagram" className="w-8 h-8" />
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handlePronosticosSlide("prev")}
+                            disabled={pronosticosIndex === 0}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-[#c6f600] text-black flex items-center justify-center shadow hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Ver pronósticos anterior"
+                          >
+                            &lt;
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handlePronosticosSlide("next")}
+                            disabled={pronosticosIndex >= games.length - 1}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-[#c6f600] text-black flex items-center justify-center shadow hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Ver pronósticos siguiente"
+                          >
+                            &gt;
+                          </button>
+                        </div>
+                        <div className="pronosticos-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-3 bg-black items-center justify-center p-6">
+                          {games.map((game) => (
+                            <div key={game.name}>{renderGameCard(game)}</div>
+                          ))}
+                        </div>
+                      </>
                     )}
                   </div>
 
@@ -1514,7 +1719,7 @@ export default function UserBackendPage() {
                         <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm text-gray-300">
-                            <span className="text-[#c6f600] font-semibold">{selectedItem.name || "Mi Pronóstico del Mundial 2026"}</span>
+                            <span className="text-[#c6f600] font-semibold">{selectedItem.name || "Mi Pron?stico del Mundial 2026"}</span>
                           </p>
                           <p className="text-xs text-gray-400">Actualizado: {formatDate(selectedItem.updated_at)}</p>
                         </div>
@@ -1619,7 +1824,7 @@ export default function UserBackendPage() {
                             <div className="rounded-lg overflow-hidden border border-neutral-800">
                               <iframe
                                 ref={viewerFrameRef}
-                                title="Pron�stico"
+                                title="Pron?stico"
                                 src={`/?view=1&bracketId=${selectedItem.id}`}
                                 onLoad={() => sendViewerNav(viewerTab, viewerPlayoffTab)}
                                 className="w-full min-h-screen  bg-black"
@@ -1641,9 +1846,54 @@ export default function UserBackendPage() {
                   )}
                 </div>
               </>
+            ) : activeTab === "claim" ? (
+              <>
+                <section className="rounded-2xl border border-neutral-800 bg-black/40 p-4">
+                  <h2 className="text-2xl font-semibold">Agregar bracket</h2>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Ingresa el código corto que te dimos cuando guardaste como invitado. Expira en 7 días.
+                  </p>
+                  {!session?.access_token ? (
+                    <div className="mt-4 rounded-lg border border-neutral-800 bg-black/40 p-4 text-sm text-gray-300">
+                      Inicia sesión para agregar un bracket.
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-lg border border-neutral-800 bg-black/40 p-4">
+                      <div className="mt-3 flex flex-col md:flex-row gap-2">
+                        <input
+                          type="text"
+                          value={claimCode}
+                          onChange={(e) => {
+                            const next = e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                            setClaimCode(next);
+                            setClaimError(null);
+                            setClaimSuccess(null);
+                          }}
+                          placeholder="Ej: AB12CD"
+                          className="flex-1 rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleClaimBracket}
+                          disabled={claimBusy}
+                          className={`px-4 py-2 rounded-md text-xs font-semibold ${
+                            claimBusy
+                              ? "bg-neutral-700 text-gray-400"
+                              : "bg-[#c6f600] text-black hover:brightness-95"
+                          }`}
+                        >
+                          {claimBusy ? "Agregando..." : "Agregar bracket"}
+                        </button>
+                      </div>
+                      {claimError && <p className="mt-2 text-xs text-red-400">{claimError}</p>}
+                      {claimSuccess && <p className="mt-2 text-xs text-green-400">{claimSuccess}</p>}
+                    </div>
+                  )}
+                </section>
+              </>
             ) : (
               <>
-                <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                <div className="grid gap-4 lg:grid-cols-2">
                   <section className="rounded-lg border border-neutral-800 bg-black/40 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -1656,11 +1906,11 @@ export default function UserBackendPage() {
                           onClick={() => openAuthModal("login")}
                           className="px-3 py-2 rounded-md bg-[#c6f600] text-black text-xs font-semibold hover:brightness-95"
                         >
-                          Iniciar sesi?n
+                          Iniciar sesión
                         </button>
                       ) : (
                         <span className="text-xs text-gray-400">
-                          {loading ? "Verificando sesi?n..." : "Sesi?n activa"}
+                          {loading ? "Verificando sesión..." : "Sesión activa"}
                         </span>
                       )}
                     </div>
@@ -1794,7 +2044,7 @@ export default function UserBackendPage() {
                       </button>
                       {session && (
                         <span className="text-xs text-gray-400">
-                          Sesi?n activa para <span className="font-semibold">{userLabel}</span>
+                          Sesión activa para <span className="font-semibold">{userLabel}</span>
                         </span>
                       )}
                     </div>
@@ -1804,7 +2054,7 @@ export default function UserBackendPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <h2 className="text-xl font-semibold">Acceso y seguridad</h2>
-                        <p className="text-xs text-gray-400">Actualiza tu correo y contrase?a.</p>
+                        <p className="text-xs text-gray-400">Actualiza tu correo y contraseña.</p>
                       </div>
                       {!session && !loading && (
                         <button
@@ -1812,7 +2062,7 @@ export default function UserBackendPage() {
                           onClick={() => openAuthModal("login")}
                           className="px-3 py-2 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
                         >
-                          Iniciar sesi?n
+                          Iniciar sesión
                         </button>
                       )}
                     </div>
@@ -1837,12 +2087,12 @@ export default function UserBackendPage() {
                           >
                             Actualizar correo
                           </button>
-                          <span className="text-[11px] text-gray-500">Te enviaremos un correo de confirmaci?n.</span>
+                          <span className="text-[11px] text-gray-500">Te enviaremos un correo de confirmación.</span>
                         </div>
                       </div>
 
                       <div className="rounded-md border border-neutral-800 p-3">
-                        <label className="text-xs text-gray-400">Nueva contrase?a</label>
+                        <label className="text-xs text-gray-400">Nueva contraseña</label>
                         <input
                           type="password"
                           value={newPassword}
@@ -1851,7 +2101,7 @@ export default function UserBackendPage() {
                           className="mt-1 w-full rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-white disabled:opacity-60"
                           placeholder="********"
                         />
-                        <label className="text-xs text-gray-400 mt-3 block">Confirmar contrase?a</label>
+                        <label className="text-xs text-gray-400 mt-3 block">Confirmar contraseña</label>
                         <input
                           type="password"
                           value={confirmPassword}
@@ -1867,7 +2117,7 @@ export default function UserBackendPage() {
                             disabled={!canEdit || credentialsBusy}
                             className="px-3 py-2 rounded-md bg-[#c6f600] text-black text-xs font-semibold hover:brightness-95 disabled:opacity-60"
                           >
-                            Actualizar contrase?a
+                            Actualizar contraseña
                           </button>
                         </div>
                       </div>
@@ -1890,13 +2140,13 @@ export default function UserBackendPage() {
                         onClick={() => openAuthModal("login")}
                         className="px-3 py-2 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
                       >
-                        Iniciar sesi?n
+                        Iniciar sesión
                       </button>
                     )}
                   </div>
 
                   {!session?.access_token ? (
-                    <p className="mt-3 text-sm text-gray-400">Inicia sesi?n para administrar tu cuenta.</p>
+                    <p className="mt-3 text-sm text-gray-400">Inicia sesión para administrar tu cuenta.</p>
                   ) : (
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <button
@@ -1904,7 +2154,7 @@ export default function UserBackendPage() {
                         onClick={handleSignOut}
                         className="px-3 py-2 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
                       >
-                        Cerrar sesi?n
+                        Cerrar sesión
                       </button>
                       <button
                         type="button"
@@ -1921,6 +2171,8 @@ export default function UserBackendPage() {
                 </section>
               </>
             )}
+              </div>
+            </div>
           </div>
         </main>
         <Footer />
@@ -1949,19 +2201,3 @@ export default function UserBackendPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -23,6 +23,7 @@ import whatsappIcon from "../assets/whatsapp.svg";
 import xIcon from "../assets/x.svg";
 import instagramIcon from "../assets/instagram.svg";
 import facebookIcon from "../assets/facebook.svg";
+import userIcon from "../assets/User.svg";
 import "../styles/globals.css";
 import { fetchFanaticoData } from "../utils/fanaticoApi";
 import { supabase } from "../utils/supabaseClient";
@@ -612,6 +613,7 @@ export default function BracketGamePage() {
   const [confettiKey, setConfettiKey] = useState(0);
   const [showR32Warning, setShowR32Warning] = useState(false);
   const [showNewGamePrompt, setShowNewGamePrompt] = useState(false);
+  const [authFabOpen, setAuthFabOpen] = useState(false);
   const { width, height } = useWindowSize();
   const [, setShareInfo] = useState<string | null>(null);
   const [activeShareCard, setActiveShareCard] = useState<ShareCardPayload | null>(null);
@@ -626,6 +628,7 @@ export default function BracketGamePage() {
   const progressBracketRef = useRef<HTMLDivElement>(null);
   const progressR32Ref = useRef<HTMLDivElement>(null);
   const shareCardRef = useRef<HTMLDivElement>(null);
+  const authFabRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isViewOnly) return;
     setShowRulesModal(false);
@@ -638,6 +641,18 @@ export default function BracketGamePage() {
     setPhaseBlock(null);
     setShowNewGamePrompt(false);
   }, [isViewOnly]);
+
+  useEffect(() => {
+    if (!authFabOpen) return;
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (authFabRef.current && !authFabRef.current.contains(target)) {
+        setAuthFabOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [authFabOpen]);
   useEffect(() => {
     if (!isViewOnly || typeof window === "undefined") return;
     const handler = (event: MessageEvent) => {
@@ -2562,45 +2577,84 @@ const scheduleByMatch = useMemo(() => {
   const authSlot = null;
   const authSlotMobile = null;
   const showAuthCta = !isViewOnly && !isEmbedded;
+  const authMeta = (authUser?.user_metadata || {}) as Record<string, any>;
+  const authAlias =
+    authMeta.alias || authMeta.nickname || authMeta.full_name || authMeta.name || authUser?.email || "Usuario";
+  const authAvatar = authMeta.avatar_url || authMeta.picture || authMeta.avatar || "";
   const authCtaPortal =
     showAuthCta && typeof document !== "undefined"
       ? createPortal(
-          <div className="fixed inset-x-0 bottom-0 z-[9999] px-4 pb-4">
-            <div className="mx-auto max-w-3xl rounded-2xl border border-neutral-800 bg-black/80 backdrop-blur-md shadow-lg p-3 flex flex-col sm:flex-row gap-2">
-              {authUser ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => navigateTo("backend")}
-                    className="flex-1 px-4 py-3 rounded-b-xl rounded-t-none border border-neutral-700 text-sm font-semibold text-white hover:border-[#c6f600]"
-                  >
-                    Panel usuario
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSignOut}
-                    className="flex-1 px-4 py-3 rounded-b-xl rounded-t-none bg-[#c6f600] text-black text-sm font-semibold hover:brightness-95"
-                  >
-                    Cerrar sesión
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => openAuthModal("login")}
-                    className="flex-1 px-4 py-3 rounded-b-xl rounded-t-none border border-neutral-700 text-sm font-semibold text-white hover:border-[#c6f600]"
-                  >
-                    Iniciar sesión
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openAuthModal("signup")}
-                    className="flex-1 px-4 py-3 rounded-b-xl rounded-t-none bg-[#c6f600] text-black text-sm font-semibold hover:brightness-95"
-                  >
-                    Crear usuario
-                  </button>
-                </>
+          <div className="auth-fab" ref={authFabRef}>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAuthFabOpen((prev) => !prev)}
+                className="auth-fab__button"
+                aria-expanded={authFabOpen}
+                aria-label={authUser ? "Cuenta" : "Iniciar sesión"}
+              >
+                {authUser ? (
+                  authAvatar ? (
+                    <img src={authAvatar} alt={authAlias} className="auth-fab__avatar" />
+                  ) : (
+                    <span className="auth-fab__initial">
+                      {authAlias.trim().charAt(0).toUpperCase()}
+                    </span>
+                  )
+                ) : (
+                  <img src={userIcon} alt="Usuario" className="auth-fab__icon" />
+                )}
+              </button>
+              {authFabOpen && (
+                <div className="auth-fab__panel">
+                  {authUser ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthFabOpen(false);
+                          navigateTo("backend");
+                        }}
+                        className="auth-fab__action"
+                      >
+                        Cuenta
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthFabOpen(false);
+                          handleSignOut();
+                        }}
+                        className="auth-fab__action auth-fab__action--primary"
+                      >
+                        Cerrar sesión
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthFabOpen(false);
+                          openAuthModal("login");
+                        }}
+                        className="auth-fab__action"
+                      >
+                        Iniciar sesión
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthFabOpen(false);
+                          openAuthModal("signup");
+                        }}
+                        className="auth-fab__action auth-fab__action--primary"
+                      >
+                        Crear usuario
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>,
@@ -3200,7 +3254,7 @@ const scheduleByMatch = useMemo(() => {
      <div className=" bg-neutral-900">
     <div
       className={`max-w-7xl mx-auto bg-neutral-900 text-white p-2 md:px-36 flex flex-col gap-8 bracket-stable ${
-        showAuthCta ? "pb-20" : ""
+        showAuthCta ? "with-auth-cta" : ""
       }`}
     >
       {!isEmbedded && <Header authSlot={authSlot} showNav={false} showSearch={false} />}

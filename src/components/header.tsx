@@ -115,35 +115,42 @@ function AdBanner() {
 
   return (
     <div className="w-full bg-neutral-900 rounded-lg overflow-hidden">
-      <div
-        className="w-full aspect-[10/1] m-2 flex items-center justify-center bg-neutral-800 relative overflow-hidden bg-center"
-        style={{
-          backgroundImage: `url('${fallbackImage}')`,
-          backgroundSize: "100% 100%",
-          backgroundRepeat: "no-repeat",
-        }}
+      <a
+        href="https://www.ecuadortv.ec/programas/noticias-7"
+        target="_blank"
+        rel="noreferrer"
+        className="block"
       >
-        {useAdsense ? (
-          <GoogleAdSense
-            client={adsenseClient as string}
-            slot={adsenseSlot as string}
-            format="auto"
-            fullWidthResponsive
-            className="block w-full h-full relative z-10"
-            style={{
-              display: "block",
-              width: "100%",
-              height: "100%",
-            }}
-          />
-        ) : (
-          <ins
-            data-revive-zoneid="3"
-            data-revive-id="60f0b66ffc0f4db66aaad1c14934c701"
-            className="block w-full h-full relative z-10"
-          />
-        )}
-      </div>
+        <div
+          className="w-full aspect-[10/1] m-2 flex items-center justify-center bg-neutral-800 relative overflow-hidden bg-center"
+          style={{
+            backgroundImage: `url('${fallbackImage}')`,
+            backgroundSize: "100% 100%",
+            backgroundRepeat: "no-repeat",
+          }}
+        >
+          {useAdsense ? (
+            <GoogleAdSense
+              client={adsenseClient as string}
+              slot={adsenseSlot as string}
+              format="auto"
+              fullWidthResponsive
+              className="block w-full h-full relative z-10"
+              style={{
+                display: "block",
+                width: "100%",
+                height: "100%",
+              }}
+            />
+          ) : (
+            <ins
+              data-revive-zoneid="3"
+              data-revive-id="60f0b66ffc0f4db66aaad1c14934c701"
+              className="block w-full h-full relative z-10"
+            />
+          )}
+        </div>
+      </a>
     </div>
   );
 }
@@ -399,6 +406,7 @@ export default function Header({
     </header>
   );
 }
+
 
 
 
