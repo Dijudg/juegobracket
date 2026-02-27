@@ -19,6 +19,8 @@ import intercontinentalBanner from "../assets/Intercontinental.jpg";
 import championBanner from "../assets/final.jpg";
 import modalBackImage from "../assets/fondo.jpg";
 import mundialBanner from "../assets/mundial.png";
+import faltaSound from "../assets/mp3/falta.mp3";
+import iniSound from "../assets/mp3/ini.wav";
 import whatsappIcon from "../assets/whatsapp.svg";
 import xIcon from "../assets/x.svg";
 import instagramIcon from "../assets/instagram.svg";
@@ -722,6 +724,11 @@ export default function BracketGamePage() {
   const progressR32Ref = useRef<HTMLDivElement>(null);
   const shareCardRef = useRef<HTMLDivElement>(null);
   const authFabRef = useRef<HTMLDivElement>(null);
+  const warningAudioRef = useRef<HTMLAudioElement | null>(null);
+  const prevWarningRef = useRef(false);
+  const rulesAudioRef = useRef<HTMLAudioElement | null>(null);
+  const prevRulesOpenRef = useRef(false);
+  const prevActiveTabRef = useRef(activeTab);
   const shareInfoTimerRef = useRef<number | null>(null);
   const shareAssetRef = useRef<typeof shareAsset>(null);
   const autoShareInFlightRef = useRef(false);
@@ -755,6 +762,59 @@ export default function BracketGamePage() {
     setPhaseBlock(null);
     setShowNewGamePrompt(false);
   }, [isViewOnly]);
+  useEffect(() => {
+    if (typeof Audio === "undefined") return;
+    if (!warningAudioRef.current) {
+      const audio = new Audio(faltaSound);
+      audio.preload = "auto";
+      warningAudioRef.current = audio;
+    }
+    if (!rulesAudioRef.current) {
+      const audio = new Audio(iniSound);
+      audio.preload = "auto";
+      rulesAudioRef.current = audio;
+    }
+  }, []);
+  const scrollToTop = useCallback((behavior: ScrollBehavior = "smooth") => {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, behavior });
+  }, []);
+  useEffect(() => {
+    const prev = prevActiveTabRef.current;
+    if (prev !== activeTab) {
+      requestAnimationFrame(() => scrollToTop());
+    }
+    prevActiveTabRef.current = activeTab;
+  }, [activeTab, scrollToTop]);
+  useEffect(() => {
+    const isWarningOpen = showR32Warning || !!phaseBlock;
+    if (isWarningOpen && !prevWarningRef.current) {
+      try {
+        const audio = warningAudioRef.current;
+        if (audio) {
+          audio.currentTime = 0;
+          void audio.play();
+        }
+      } catch {
+        // ignore autoplay errors
+      }
+    }
+    prevWarningRef.current = isWarningOpen;
+  }, [showR32Warning, phaseBlock]);
+  useEffect(() => {
+    if (showRulesModal && !prevRulesOpenRef.current) {
+      try {
+        const audio = rulesAudioRef.current;
+        if (audio) {
+          audio.currentTime = 0;
+          void audio.play();
+        }
+      } catch {
+        // ignore autoplay errors
+      }
+    }
+    prevRulesOpenRef.current = showRulesModal;
+  }, [showRulesModal]);
 
   useEffect(() => {
     if (!authFabOpen) return;
@@ -2506,12 +2566,19 @@ const scheduleByMatch = useMemo(() => {
     }),
     [championTeam, runnerUpTeam, thirdPlaceWinner],
   );
-  const captureShareCardBlob = async (payload: ShareCardPayload) => {
-    flushSync(() => setActiveShareCard(payload));
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const target = shareCardRef.current || document.getElementById("share-card-capture");
-    return createShareCardBlob(payload, target || undefined, { backgroundColor: "#1d1d1b" });
-  };
+  const captureShareCardBlob = useCallback(
+    async (payload: ShareCardPayload) => {
+      flushSync(() => setActiveShareCard(payload));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const target = shareCardRef.current || document.getElementById("share-card-capture");
+      return createShareCardBlob(payload, target || undefined, {
+        backgroundColor: "#1d1d1b",
+        coverUrl: championBanner,
+        forceFallback: true,
+      });
+    },
+    [championBanner],
+  );
   const ensureShareCardReady = useCallback(
     async (reason: "auto" | "share") => {
       if (isViewOnly || !championTeam) return null;
@@ -3248,6 +3315,14 @@ const scheduleByMatch = useMemo(() => {
       setActiveR32Tab("llave1");
     }
   }, [activeTab]);
+  const prevR32TabRef = useRef(activeR32Tab);
+  useEffect(() => {
+    const prev = prevR32TabRef.current;
+    if (activeTab === "dieciseisavos" && prev !== activeR32Tab) {
+      requestAnimationFrame(() => scrollToTop());
+    }
+    prevR32TabRef.current = activeR32Tab;
+  }, [activeTab, activeR32Tab, scrollToTop]);
 
   const prevR32LeftCompleteRef = useRef(r32LeftComplete);
   useEffect(() => {

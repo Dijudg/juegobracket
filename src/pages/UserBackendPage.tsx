@@ -757,7 +757,11 @@ export default function UserBackendPage() {
       try {
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const target = shareCardRef.current || document.getElementById("share-card-capture");
-        const blob = await createShareCardBlob(payload, target || undefined, { backgroundColor: "#1d1d1b" });
+        const blob = await createShareCardBlob(payload, target || undefined, {
+          backgroundColor: "#1d1d1b",
+          coverUrl: shareCoverUrl || winnerCardBg,
+          forceFallback: true,
+        });
 
         let finalSharePageUrl = shareTarget;
         if (session?.access_token) {

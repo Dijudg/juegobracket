@@ -1,5 +1,4 @@
-import type { ShareCardTeam } from "../components/ShareCard";
-import { captureShareCard } from "./shareCardCapture";
+﻿import type { ShareCardTeam } from "../components/ShareCard";
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
@@ -10,6 +9,8 @@ type ShareCardPayload = {
 
 type ShareCardImageOptions = {
   backgroundColor?: string;
+  coverUrl?: string;
+  forceFallback?: boolean;
 };
 
 const wrapText = (
@@ -41,9 +42,19 @@ const wrapText = (
   return cursorY;
 };
 
+const loadImage = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("No se pudo cargar la imagen."));
+    img.src = src;
+  });
+
 const createFallbackShareCardBlob = async (
   payload: ShareCardPayload,
   backgroundColor = "#1d1d1b",
+  coverUrl?: string,
 ) => {
   if (typeof document === "undefined") {
     throw new Error("No document available for fallback share card.");
@@ -59,45 +70,104 @@ const createFallbackShareCardBlob = async (
   ctx.fillStyle = backgroundColor;
   ctx.fillRect(0, 0, width, height);
 
-  ctx.fillStyle = "#c6f600";
-  ctx.fillRect(0, 0, width, 140);
+  const headerHeight = 460;
+  if (coverUrl) {
+    try {
+      const coverImg = await loadImage(coverUrl);
+      ctx.drawImage(coverImg, 0, 0, width, headerHeight);
+      const gradient = ctx.createLinearGradient(0, 0, 0, headerHeight);
+      gradient.addColorStop(0, "rgba(0,0,0,0)");
+      gradient.addColorStop(0.6, "rgba(0,0,0,0.3)");
+      gradient.addColorStop(1, "rgba(0,0,0,0.8)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, headerHeight);
+    } catch {
+      ctx.fillStyle = "#111111";
+      ctx.fillRect(0, 0, width, headerHeight);
+    }
+  } else {
+    ctx.fillStyle = "#111111";
+    ctx.fillRect(0, 0, width, headerHeight);
+  }
 
+  const avatarSize = 192;
+  const avatarX = width / 2;
+  const avatarY = headerHeight - avatarSize / 2 + 20;
+  ctx.fillStyle = "#0b0b0b";
+  ctx.beginPath();
+  ctx.arc(avatarX, avatarY, avatarSize / 2 + 8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(avatarX, avatarY, avatarSize / 2, 0, Math.PI * 2);
+  ctx.clip();
+  if (payload.champion.escudo) {
+    try {
+      const champImg = await loadImage(payload.champion.escudo);
+      ctx.drawImage(
+        champImg,
+        avatarX - avatarSize / 2,
+        avatarY - avatarSize / 2,
+        avatarSize,
+        avatarSize,
+      );
+    } catch {
+      ctx.fillStyle = "#111111";
+      ctx.fillRect(avatarX - avatarSize / 2, avatarY - avatarSize / 2, avatarSize, avatarSize);
+    }
+  } else {
+    ctx.fillStyle = "#111111";
+    ctx.fillRect(avatarX - avatarSize / 2, avatarY - avatarSize / 2, avatarSize, avatarSize);
+  }
+  ctx.restore();
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 72px 'Afacad Flux', sans-serif";
+  const nameY = avatarY + avatarSize / 2 + 60;
+  wrapText(ctx, (payload.champion.name || "Por definir").toUpperCase(), width / 2, nameY, width - 120, 78);
+
+  ctx.fillStyle = "#c6f600";
+  ctx.font = "900 72px 'Afacad Flux', sans-serif";
+  ctx.fillText("CAMPEON", width / 2, nameY + 90);
+
+  const buttonWidth = width - 160;
+  const buttonHeight = 64;
+  const buttonX = (width - buttonWidth) / 2;
+  const buttonY = nameY + 130;
+  ctx.fillStyle = "#c6f600";
+  if (typeof (ctx as any).roundRect === "function") {
+    ctx.beginPath();
+    (ctx as any).roundRect(buttonX, buttonY, buttonWidth, buttonHeight, 32);
+    ctx.fill();
+  } else {
+    ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+  }
   ctx.fillStyle = "#111111";
-  ctx.font = "bold 46px 'Afacad Flux', sans-serif";
-  ctx.fillText("Mi Pronostico", 40, 90);
+  ctx.font = "900 26px 'Afacad Flux', sans-serif";
+  ctx.fillText("Ver todo mi pronostico", width / 2, buttonY + 42);
 
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 56px 'Afacad Flux', sans-serif";
-  let cursorY = 220;
-  ctx.fillText("Campeon", 40, cursorY);
-  cursorY += 60;
-  ctx.font = "bold 52px 'Afacad Flux', sans-serif";
-  cursorY = wrapText(ctx, payload.champion.name || "Por definir", 40, cursorY, width - 80, 56);
-
-  cursorY += 30;
-  ctx.fillStyle = "#c6f600";
-  ctx.font = "bold 36px 'Afacad Flux', sans-serif";
-  ctx.fillText("Segundo lugar", 40, cursorY);
-  cursorY += 48;
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 40px 'Afacad Flux', sans-serif";
-  cursorY = wrapText(ctx, payload.runnerUp.name || "Por definir", 40, cursorY, width - 80, 44);
-
-  cursorY += 24;
-  ctx.fillStyle = "#c6f600";
-  ctx.font = "bold 36px 'Afacad Flux', sans-serif";
-  ctx.fillText("Tercer lugar", 40, cursorY);
-  cursorY += 48;
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 40px 'Afacad Flux', sans-serif";
-  cursorY = wrapText(ctx, payload.third.name || "Por definir", 40, cursorY, width - 80, 44);
-
-  ctx.fillStyle = "#c6f600";
-  ctx.font = "bold 30px 'Afacad Flux', sans-serif";
-  ctx.fillText("Ver mi pronostico", 40, height - 80);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#a1a1aa";
   ctx.font = "24px 'Afacad Flux', sans-serif";
-  wrapText(ctx, payload.shareUrl || "", 40, height - 40, width - 80, 28);
+  ctx.fillText("Segundo lugar", width / 2, buttonY + 110);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 28px 'Afacad Flux', sans-serif";
+  wrapText(ctx, payload.runnerUp.name || "Por definir", width / 2, buttonY + 148, width - 200, 32);
+
+  ctx.fillStyle = "#a1a1aa";
+  ctx.font = "24px 'Afacad Flux', sans-serif";
+  ctx.fillText("Tercer lugar", width / 2, buttonY + 210);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 28px 'Afacad Flux', sans-serif";
+  wrapText(ctx, payload.third.name || "Por definir", width / 2, buttonY + 248, width - 200, 32);
+
+  ctx.fillStyle = "#c6f600";
+  ctx.font = "bold 24px 'Afacad Flux', sans-serif";
+  ctx.fillText("Ver mi pronostico", width / 2, height - 90);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "22px 'Afacad Flux', sans-serif";
+  wrapText(ctx, payload.shareUrl || "", width / 2, height - 50, width - 120, 26);
 
   const blob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("No se pudo crear imagen"))), "image/png"),
@@ -107,16 +177,11 @@ const createFallbackShareCardBlob = async (
 
 export const createShareCardBlob = async (
   payload: ShareCardPayload,
-  target?: HTMLElement | null,
+  _target?: HTMLElement | null,
   options?: ShareCardImageOptions,
 ) => {
   const backgroundColor = options?.backgroundColor || "#1d1d1b";
-  if (target) {
-    try {
-      return await captureShareCard(target, backgroundColor);
-    } catch {
-      // Fall back to canvas-based card below.
-    }
-  }
-  return createFallbackShareCardBlob(payload, backgroundColor);
+  const coverUrl = options?.coverUrl;
+  return createFallbackShareCardBlob(payload, backgroundColor, coverUrl);
 };
+

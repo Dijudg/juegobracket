@@ -71,9 +71,6 @@ export const createGuestShare = async (params: {
   const baseUrl = resolveApiBase(params.apiBaseUrl);
   if (!baseUrl) return null;
   // Debug: confirmar URL base y final en producción
-  console.log("API BASE (raw):", baseUrl);
-  console.log("API BASE (type):", typeof baseUrl);
-  console.log("POST URL:", `${baseUrl}/api/guest-brackets`);
   const res = await fetch(`${baseUrl}/api/guest-brackets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
