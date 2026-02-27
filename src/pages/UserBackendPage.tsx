@@ -32,7 +32,7 @@ import facebookIcon from "../assets/facebook.svg";
 import instagramIcon from "../assets/instagram.svg";
 import whatsappIcon from "../assets/whatsapp.svg";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
-import { captureShareCard } from "../utils/shareCardCapture";
+import { createShareCardBlob } from "../utils/shareCardImage";
 import { buildSharePageUrl, uploadShareCardImage } from "../utils/shareCardApi";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 
@@ -317,6 +317,22 @@ export default function UserBackendPage() {
   const viewerFrameRef = useRef<HTMLIFrameElement>(null);
   const shareCardRef = useRef<HTMLDivElement>(null);
   const [shareBusyId, setShareBusyId] = useState<string | null>(null);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
+  const shareStatusTimerRef = useRef<number | null>(null);
+  const showShareStatus = useCallback((message: string, timeoutMs = 3500) => {
+    setShareStatus(message);
+    if (typeof window === "undefined") return;
+    if (shareStatusTimerRef.current) {
+      window.clearTimeout(shareStatusTimerRef.current);
+      shareStatusTimerRef.current = null;
+    }
+    if (timeoutMs > 0) {
+      shareStatusTimerRef.current = window.setTimeout(() => {
+        setShareStatus(null);
+        shareStatusTimerRef.current = null;
+      }, timeoutMs);
+    }
+  }, []);
   const [shareCoverOverride, setShareCoverOverride] = useState<string | null>(null);
   const [activeShareCard, setActiveShareCard] = useState<{
     id: string;
@@ -735,56 +751,41 @@ export default function UserBackendPage() {
         }
       };
       setShareBusyId(payload.id);
+      showShareStatus("Generando tarjeta...", 0);
       flushSync(() => setActiveShareCard(payload));
-      let coverFallbackApplied = false;
-
-      const capture = async () => {
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        const target = shareCardRef.current || document.getElementById("share-card-capture");
-        if (!target) throw new Error("No se encontró la tarjeta para compartir");
-        const blob = await captureShareCard(target, "#1d1d1b");
-        return { blob };
-      };
 
       try {
-        let result: { blob: Blob } | null = null;
-        try {
-          result = await capture();
-        } catch (err) {
-          if (coverUrl && !shareCoverOverride) {
-            flushSync(() => setShareCoverOverride(winnerCardBg));
-            coverFallbackApplied = true;
-            result = await capture();
-          } else {
-            throw err;
-          }
-        }
-        if (!result) return;
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const target = shareCardRef.current || document.getElementById("share-card-capture");
+        const blob = await createShareCardBlob(payload, target || undefined, { backgroundColor: "#1d1d1b" });
 
         let finalSharePageUrl = shareTarget;
         if (session?.access_token) {
           try {
+            showShareStatus("Subiendo imagen...", 0);
             const uploaded = await uploadShareCardImage({
               apiBaseUrl: API_BASE_URL || undefined,
               bracketId: payload.id,
               token: session.access_token,
-              blob: result.blob,
+              blob,
             });
             if (uploaded?.sharePageUrl) finalSharePageUrl = uploaded.sharePageUrl;
+            showShareStatus("Imagen subida.", 3000);
           } catch {
             // ignore upload errors
+            showShareStatus("No se pudo subir la imagen. Compartiendo sin preview.", 4000);
           }
         }
         const finalMessage = baseMessage.replace(shareTarget, finalSharePageUrl || shareTarget);
 
-        const file = new File([result.blob], `pronostico-${payload.id}.png`, { type: "image/png" });
+        const file = new File([blob], `pronostico-${payload.id}.png`, { type: "image/png" });
         const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
         if (canShareFile && navigator.share) {
           await navigator.share({ files: [file], title: shareTitle, text: finalMessage, url: finalSharePageUrl });
           return;
         }
 
-        const objectUrl = URL.createObjectURL(result.blob);
+        const objectUrl = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = objectUrl;
         link.download = `pronostico-${payload.id}.png`;
@@ -805,6 +806,7 @@ export default function UserBackendPage() {
           openShareTarget("https://www.instagram.com/");
         }
       } catch {
+        showShareStatus("No se pudo generar la tarjeta.", 4000);
         if (platform === "whatsapp") {
           openShareTarget(`https://wa.me/?text=${encodeURIComponent(baseMessage)}`);
         } else if (platform === "facebook") {
@@ -817,7 +819,6 @@ export default function UserBackendPage() {
           openShareTarget("https://www.instagram.com/");
         }
       } finally {
-        if (coverFallbackApplied) setShareCoverOverride(null);
         setShareBusyId(null);
         setActiveShareCard(null);
       }
@@ -1036,6 +1037,9 @@ export default function UserBackendPage() {
               </button>
             </div>
           </div>
+          {shareBusyId === game.latestId && shareStatus && (
+            <div className="mt-2 text-xs text-gray-400">{shareStatus}</div>
+          )}
         </div>
       </div>
     );

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
-import { captureShareCard } from "../utils/shareCardCapture";
+import { createShareCardBlob } from "../utils/shareCardImage";
 import { buildSharePageUrl, createGuestShare, uploadShareCardImage } from "../utils/shareCardApi";
 import Header from "../components/header";
 import Footer from "../components/Footer";
@@ -165,7 +165,7 @@ const SaveModal = ({
 }: SaveModalProps) => {
   if (!open) return null;
   const overlayRef = useRef<HTMLDivElement>(null);
-  const limitReached = savedBrackets.length >= 3;
+  const limitReached = savedBrackets.length >= 10;
   const showOverwrite = allowOverwrite && savedBrackets.length > 0;
   const showUpdate = allowOverwrite && !!currentSaveId;
   return (
@@ -235,7 +235,7 @@ const SaveModal = ({
 
           {limitReached && (
             <p className="mt-2 text-xs text-yellow-400">
-              Límite de 3 brackets alcanzado. Debes sobrescribir uno.
+              Límite de 10 brackets alcanzado. Debes sobrescribir uno.
             </p>
           )}
 
@@ -701,8 +701,15 @@ export default function BracketGamePage() {
   const [showNewGamePrompt, setShowNewGamePrompt] = useState(false);
   const [authFabOpen, setAuthFabOpen] = useState(false);
   const { width, height } = useWindowSize();
-  const [, setShareInfo] = useState<string | null>(null);
+  const [shareInfo, setShareInfo] = useState<string | null>(null);
   const [activeShareCard, setActiveShareCard] = useState<ShareCardPayload | null>(null);
+  const [shareAsset, setShareAsset] = useState<{
+    shareCardUrl?: string;
+    sharePageUrl?: string;
+    bracketId?: string;
+    guestCode?: string;
+    signature?: string;
+  } | null>(null);
   const [viewSharedBy, setViewSharedBy] = useState<BracketSavePayload["sharedBy"] | null>(null);
   const [viewBracketMeta, setViewBracketMeta] = useState<{ name?: string; updatedAt?: string; shortCode?: string } | null>(null);
   const [phaseBlock, setPhaseBlock] = useState<{ title: string; missing: string[] } | null>(null);
@@ -715,6 +722,27 @@ export default function BracketGamePage() {
   const progressR32Ref = useRef<HTMLDivElement>(null);
   const shareCardRef = useRef<HTMLDivElement>(null);
   const authFabRef = useRef<HTMLDivElement>(null);
+  const shareInfoTimerRef = useRef<number | null>(null);
+  const shareAssetRef = useRef<typeof shareAsset>(null);
+  const autoShareInFlightRef = useRef(false);
+  const autoShareSignatureRef = useRef<string | null>(null);
+  const showShareInfo = useCallback((message: string, timeoutMs = 3500) => {
+    setShareInfo(message);
+    if (typeof window === "undefined") return;
+    if (shareInfoTimerRef.current) {
+      window.clearTimeout(shareInfoTimerRef.current);
+      shareInfoTimerRef.current = null;
+    }
+    if (timeoutMs > 0) {
+      shareInfoTimerRef.current = window.setTimeout(() => {
+        setShareInfo(null);
+        shareInfoTimerRef.current = null;
+      }, timeoutMs);
+    }
+  }, []);
+  useEffect(() => {
+    shareAssetRef.current = shareAsset;
+  }, [shareAsset]);
   useEffect(() => {
     if (!isViewOnly) return;
     setShowRulesModal(false);
@@ -944,6 +972,14 @@ export default function BracketGamePage() {
     },
     [authSession?.access_token],
   );
+
+  const fetchShareCardBlob = useCallback(async (url: string) => {
+    const res = await fetch(url, { mode: "cors", credentials: "omit" });
+    if (!res.ok) {
+      throw new Error("No se pudo descargar la imagen.");
+    }
+    return await res.blob();
+  }, []);
 
   const buildSavePayload = useCallback((): BracketSavePayload => {
     const selectionPayload: BracketSavePayload["selections"] = {};
@@ -1370,13 +1406,13 @@ export default function BracketGamePage() {
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId);
       if (countError) throw countError;
-      if ((count || 0) >= 3) {
+      if ((count || 0) >= 10) {
         trackEvent("save_error", {
           mode: saveMode,
           is_authed: true,
           reason: "limit",
         });
-        setSaveError("Llegaste al límite de 3 brackets. Adminístralos en /user.");
+        setSaveError("Llegaste al límite de 10 brackets. Adminístralos en /user.");
         setSaveBusy(false);
         return;
       }
@@ -2452,7 +2488,173 @@ const scheduleByMatch = useMemo(() => {
   }, [r32]);
   const runnerUpTeam = final[0]?.perdedor;
   const thirdPlaceWinner = thirdPlace[0]?.ganador;
-  const shareCardUploadKeyRef = useRef<string | null>(null);
+  const buildShareCardPayload = useCallback(
+    (shareUrl: string): ShareCardPayload => ({
+      champion: {
+        name: championTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(championTeam),
+      },
+      runnerUp: {
+        name: runnerUpTeam?.nombre || "Por definir",
+        escudo: getTeamEscudo(runnerUpTeam),
+      },
+      third: {
+        name: thirdPlaceWinner?.nombre || "Por definir",
+        escudo: getTeamEscudo(thirdPlaceWinner),
+      },
+      shareUrl,
+    }),
+    [championTeam, runnerUpTeam, thirdPlaceWinner],
+  );
+  const captureShareCardBlob = async (payload: ShareCardPayload) => {
+    flushSync(() => setActiveShareCard(payload));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const target = shareCardRef.current || document.getElementById("share-card-capture");
+    return createShareCardBlob(payload, target || undefined, { backgroundColor: "#1d1d1b" });
+  };
+  const ensureShareCardReady = useCallback(
+    async (reason: "auto" | "share") => {
+      if (isViewOnly || !championTeam) return null;
+      if (autoShareInFlightRef.current) return shareAssetRef.current;
+
+      const signature = [
+        currentSaveId || guestSaveMetaRef.current?.shareId || "",
+        championTeam?.id || "",
+        runnerUpTeam?.id || "",
+        thirdPlaceWinner?.id || "",
+      ].join("|");
+      if (autoShareSignatureRef.current === signature && shareAssetRef.current?.shareCardUrl) {
+        return shareAssetRef.current;
+      }
+
+      autoShareInFlightRef.current = true;
+      showShareInfo(reason === "auto" ? "Generando imagen final..." : "Generando tarjeta...", 0);
+
+      let bracketId = currentSaveId || null;
+      let guestCode: string | undefined = undefined;
+      let sharePageUrl = bracketId ? buildSharePageUrl(bracketId, API_BASE_URL || undefined) : "";
+
+      if (!bracketId) {
+        if (authSession?.access_token) {
+          try {
+            const userId = requireAuthUserId();
+            const { count, error: countError } = await supabase
+              .from("bracket_saves")
+              .select("id", { count: "exact", head: true })
+              .eq("user_id", userId);
+            if (countError) throw countError;
+            if ((count || 0) < 10) {
+              const payload = buildSavePayload();
+              const name = saveName.trim() || "Mi bracket";
+              const { data, error } = await supabase
+                .from("bracket_saves")
+                .insert([{ user_id: userId, name, data: payload }])
+                .select("id,name")
+                .maybeSingle();
+              if (error) throw error;
+              const saved = data as { id: string; name?: string } | null;
+              if (saved?.id) {
+                bracketId = saved.id;
+                setCurrentSaveId(saved.id);
+                setCurrentSaveName(saved.name || name);
+                sharePageUrl = buildSharePageUrl(saved.id, API_BASE_URL || undefined);
+              }
+            }
+          } catch {
+            // fallback to guest share below
+          }
+        }
+      }
+
+      if (!bracketId) {
+        try {
+          const payload = buildSavePayload();
+          const fallbackName = saveName.trim() || guestSaveMetaRef.current?.name || "Mi bracket";
+          const guestShare = await createGuestShare({
+            apiBaseUrl: API_BASE_URL || undefined,
+            name: fallbackName,
+            data: payload,
+          });
+          if (guestShare?.id) {
+            bracketId = guestShare.id;
+            const shortCode = guestShare.shortCode ? guestShare.shortCode.toUpperCase() : "";
+            guestCode = shortCode || undefined;
+            sharePageUrl = guestShare.sharePageUrl || buildSharePageUrl(guestShare.id, API_BASE_URL || undefined);
+            const stored = persistGuestSave(payload, fallbackName, {
+              shortCode,
+              shareId: guestShare.id,
+              shareUrl: guestShare.sharePageUrl,
+            });
+            guestSaveMetaRef.current = {
+              name: stored?.name || fallbackName,
+              updatedAt: stored?.updatedAt || new Date().toISOString(),
+              shortCode,
+              shareId: guestShare.id,
+              shareUrl: guestShare.sharePageUrl,
+            };
+            setGuestShortCode(shortCode || null);
+          }
+        } catch {
+          // ignore guest creation errors
+        }
+      }
+
+      if (!bracketId) {
+        autoShareInFlightRef.current = false;
+        showShareInfo("No se pudo preparar la imagen.", 4000);
+        return null;
+      }
+
+      const shareUrl = sharePageUrl || buildShareUrl(bracketId);
+      const payload = buildShareCardPayload(shareUrl);
+      try {
+        const blob = await captureShareCardBlob(payload);
+        showShareInfo("Subiendo imagen...", 0);
+        const uploaded = await uploadShareCard(blob, bracketId, guestCode);
+        const nextShareCardUrl = uploaded?.shareCardUrl;
+        const nextSharePageUrl = uploaded?.sharePageUrl || sharePageUrl || shareUrl;
+        if (nextShareCardUrl) {
+          const nextAsset = {
+            shareCardUrl: nextShareCardUrl,
+            sharePageUrl: nextSharePageUrl,
+            bracketId,
+            guestCode,
+            signature,
+          };
+          setShareAsset(nextAsset);
+          shareAssetRef.current = nextAsset;
+          autoShareSignatureRef.current = signature;
+          showShareInfo("Imagen final lista.", 3500);
+        } else {
+          showShareInfo("No se pudo subir la imagen. Compartiendo sin preview.", 4000);
+        }
+        return uploaded || null;
+      } catch {
+        showShareInfo("No se pudo generar la tarjeta.", 4000);
+        return null;
+      } finally {
+        autoShareInFlightRef.current = false;
+      }
+    },
+    [
+      API_BASE_URL,
+      authSession?.access_token,
+      buildSavePayload,
+      buildShareCardPayload,
+      buildShareUrl,
+      showShareInfo,
+      captureShareCardBlob,
+      championTeam,
+      currentSaveId,
+      isViewOnly,
+      persistGuestSave,
+      requireAuthUserId,
+      runnerUpTeam,
+      saveName,
+      thirdPlaceWinner,
+      uploadShareCard,
+    ],
+  );
   const viewSharePayload = useMemo(() => {
     const shareUrl = buildShareUrl(viewBracketId || undefined);
     return {
@@ -2477,57 +2679,9 @@ const scheduleByMatch = useMemo(() => {
   }, [viewBracketMeta?.shortCode, viewBracketId]);
 
   useEffect(() => {
-    if (isViewOnly || !currentSaveId || !authSession?.access_token) return;
-    if (!championTeam) return;
-    const signature = [
-      currentSaveId,
-      championTeam?.id || "",
-      runnerUpTeam?.id || "",
-      thirdPlaceWinner?.id || "",
-    ].join("|");
-    if (shareCardUploadKeyRef.current === signature) return;
-    shareCardUploadKeyRef.current = signature;
-    const payload: ShareCardPayload = {
-      champion: {
-        name: championTeam?.nombre || "Por definir",
-        escudo: getTeamEscudo(championTeam),
-      },
-      runnerUp: {
-        name: runnerUpTeam?.nombre || "Por definir",
-        escudo: getTeamEscudo(runnerUpTeam),
-      },
-      third: {
-        name: thirdPlaceWinner?.nombre || "Por definir",
-        escudo: getTeamEscudo(thirdPlaceWinner),
-      },
-      shareUrl: buildShareUrl(currentSaveId),
-    };
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const blob = await captureShareCardBlob(payload);
-        if (cancelled) return;
-        await uploadShareCard(blob, currentSaveId);
-      } catch {
-        // ignore
-      } finally {
-        // no-op
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    isViewOnly,
-    currentSaveId,
-    authSession?.access_token,
-    championTeam,
-    runnerUpTeam,
-    thirdPlaceWinner,
-    buildShareUrl,
-    uploadShareCard,
-  ]);
+    if (isViewOnly || !championTeam) return;
+    void ensureShareCardReady("auto");
+  }, [isViewOnly, championTeam, runnerUpTeam, thirdPlaceWinner, ensureShareCardReady]);
 
   const applyWinner = (matchId: string, team?: Team) => {
     if (isViewOnly) return;
@@ -2592,14 +2746,6 @@ const scheduleByMatch = useMemo(() => {
 
   const buildFileNameWithCode = (base: string, code?: string | null) => (code ? `${base}-${code}` : base);
 
-  const captureShareCardBlob = async (payload: ShareCardPayload) => {
-    flushSync(() => setActiveShareCard(payload));
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const target = shareCardRef.current || document.getElementById("share-card-capture");
-    if (!target) throw new Error("No se encontró la tarjeta para compartir");
-    return captureShareCard(target, "#1d1d1b");
-  };
-
   const shareCaptures = async (
     platform: "whatsapp" | "facebook" | "instagram" | "tiktok" | "x",
     champion?: Team,
@@ -2610,8 +2756,13 @@ const scheduleByMatch = useMemo(() => {
       is_embedded: isEmbedded,
       is_share: isSharePath,
     });
+    showShareInfo("Generando tarjeta...", 0);
     let shareUploadId: string | null = currentSaveId || null;
     let shareUploadCode: string | undefined;
+    if (shareAssetRef.current?.bracketId) {
+      shareUploadId = shareAssetRef.current.bracketId || shareUploadId;
+      shareUploadCode = shareAssetRef.current.guestCode || shareUploadCode;
+    }
     if (!shareUploadId && guestSaveMetaRef.current?.shareId) {
       shareUploadId = guestSaveMetaRef.current.shareId || null;
       shareUploadCode = guestSaveMetaRef.current.shortCode;
@@ -2663,6 +2814,16 @@ const scheduleByMatch = useMemo(() => {
         return;
       }
     }
+    if (!shareAssetRef.current?.shareCardUrl) {
+      await ensureShareCardReady("share");
+    }
+
+    const cachedSharePageUrl = shareAssetRef.current?.sharePageUrl;
+    if (cachedSharePageUrl) {
+      sharePageUrl = cachedSharePageUrl;
+      viewUrl = cachedSharePageUrl;
+    }
+
     const championPick = champion || championTeam;
     const payload: ShareCardPayload = {
       champion: {
@@ -2712,14 +2873,54 @@ const scheduleByMatch = useMemo(() => {
     }
 
     try {
+      if (shareAssetRef.current?.shareCardUrl && shareAssetRef.current?.sharePageUrl) {
+        const cached = shareAssetRef.current;
+        const shareTargetUrl = cached.sharePageUrl || shareTarget;
+        const finalMessage = baseMessage.replace(shareTarget, shareTargetUrl || shareTarget);
+        const fileName = buildFileNameWithCode("Fanatico-Mundialista-Pronostico", generateUniqueCode());
+        try {
+          showShareInfo("Usando imagen guardada...", 0);
+          const blob = await fetchShareCardBlob(cached.shareCardUrl);
+          const file = new File([blob], `${fileName}.png`, { type: "image/png" });
+          const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+          if (canShareFile && navigator.share) {
+            await navigator.share({ files: [file], title: shareTitle, text: finalMessage, url: shareTargetUrl });
+            showShareInfo("Compartido con imagen guardada.", 3000);
+            return;
+          }
+          showShareInfo("Usando enlace guardado.", 2500);
+          return;
+        } catch {
+          // fallback to normal capture/upload path below
+        }
+      }
       const blob = await captureShareCardBlob(payload);
       let finalSharePageUrl = shareTarget;
       if (!isViewOnly && shareUploadId) {
         try {
+          showShareInfo("Subiendo imagen...", 0);
           const uploaded = await uploadShareCard(blob, shareUploadId, shareUploadCode);
           if (uploaded?.sharePageUrl) finalSharePageUrl = uploaded.sharePageUrl;
+          if (uploaded?.shareCardUrl) {
+            const signature = [
+              shareUploadId,
+              championTeam?.id || "",
+              runnerUpTeam?.id || "",
+              thirdPlaceWinner?.id || "",
+            ].join("|");
+            setShareAsset({
+              shareCardUrl: uploaded.shareCardUrl,
+              sharePageUrl: uploaded.sharePageUrl || finalSharePageUrl,
+              bracketId: shareUploadId,
+              guestCode: shareUploadCode,
+              signature,
+            });
+            autoShareSignatureRef.current = signature;
+          }
+          showShareInfo("Imagen subida.", 3000);
         } catch {
           // ignore upload failures and continue with local URL
+          showShareInfo("No se pudo subir la imagen. Compartiendo sin preview.", 4000);
         }
       }
       const finalMessage = baseMessage.replace(shareTarget, finalSharePageUrl || shareTarget);
@@ -2741,6 +2942,7 @@ const scheduleByMatch = useMemo(() => {
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
     } catch (err) {
+      showShareInfo("No pudimos generar la tarjeta para compartir.", 4000);
       setShareInfo("No pudimos preparar la captura para compartir. Intenta de nuevo o haz captura manual.");
       // eslint-disable-next-line no-console
       console.error(err);
@@ -2753,6 +2955,10 @@ const scheduleByMatch = useMemo(() => {
     trackEvent("download_bracket_start", {
       view_mode: isViewOnly ? "view_only" : "interactive",
     });
+    showShareInfo("Generando descarga...", 0);
+    if (!shareAssetRef.current?.shareCardUrl) {
+      await ensureShareCardReady("share");
+    }
     const shareUrl = buildShareUrl(isViewOnly ? viewBracketId : currentSaveId);
     const payload: ShareCardPayload = {
       champion: {
@@ -2770,6 +2976,29 @@ const scheduleByMatch = useMemo(() => {
       shareUrl,
     };
     try {
+      if (shareAssetRef.current?.shareCardUrl) {
+        try {
+          showShareInfo("Descargando imagen guardada...", 0);
+          const blob = await fetchShareCardBlob(shareAssetRef.current.shareCardUrl);
+          const code = generateUniqueCode();
+          const fileName = buildFileNameWithCode("Fanatico-Mundialista-Pronostico", code);
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = `${fileName}.png`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+          showShareInfo("Descarga lista.", 3000);
+          trackEvent("download_bracket_success", {
+            view_mode: isViewOnly ? "view_only" : "interactive",
+          });
+          return;
+        } catch {
+          // fallback to capture
+        }
+      }
       const blob = await captureShareCardBlob(payload);
       const code = generateUniqueCode();
       const fileName = buildFileNameWithCode("Fanatico-Mundialista-Pronostico", code);
@@ -2781,10 +3010,12 @@ const scheduleByMatch = useMemo(() => {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+      showShareInfo("Descarga lista.", 3000);
       trackEvent("download_bracket_success", {
         view_mode: isViewOnly ? "view_only" : "interactive",
       });
     } catch (err) {
+      showShareInfo("No se pudo generar la descarga.", 4000);
       trackEvent("download_bracket_error", {
         view_mode: isViewOnly ? "view_only" : "interactive",
       });
@@ -2894,49 +3125,52 @@ const scheduleByMatch = useMemo(() => {
   const renderShareRow = (targetChampion?: Team, disabled?: boolean, includeDownload = true, includeSave = true) => {
     if (isViewOnly) return null;
     return (
-      <div className="flex items-center justify-center gap-2">
-        {shareButtons.map((btn) => (
-          <button
-            key={btn.key}
-            type="button"
-            onClick={() => shareCaptures(btn.platform, targetChampion)}
-            disabled={disabled}
-            className={`p-2 rounded-md  ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
-            aria-label={`Compartir en ${btn.alt}`}
-          >
-            <img src={btn.icon} alt={btn.alt} className="w-5 h-5" />
-          </button>
-        ))}
-        {includeDownload && (
-          <button
-            type="button"
-            onClick={downloadBracketImage}
-            disabled={disabled}
-            className={`px-3 py-2 rounded-md border border-neutral-700 bg-neutral-900 text-xs font-semibold hover:border-[#c6f600] transition ${
-              disabled ? "opacity-60 cursor-not-allowed" : ""
-            }`}
-          >
-            Descargar
-          </button>
-        )}
-        {includeSave && (
-          <button
-            type="button"
-            onClick={handleSaveClick}
-            className="px-3 py-2 rounded-md border border-[#c6f600] text-[#c6f600] text-xs font-semibold transition hover:brightness-95"
-          >
-            Agregar juego
-          </button>
-        )}
-        {includeSave && finalComplete && (
-          <button
-            type="button"
-            onClick={handleNewGame}
-            className="px-3 py-2 rounded-md border border-neutral-700 text-gray-200 text-xs font-semibold transition hover:border-[#c6f600] hover:text-white"
-          >
-            Nuevo juego
-          </button>
-        )}
+      <div className="flex flex-col items-center gap-2">
+        <div className="flex items-center justify-center gap-2">
+          {shareButtons.map((btn) => (
+            <button
+              key={btn.key}
+              type="button"
+              onClick={() => shareCaptures(btn.platform, targetChampion)}
+              disabled={disabled}
+              className={`p-2 rounded-md  ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+              aria-label={`Compartir en ${btn.alt}`}
+            >
+              <img src={btn.icon} alt={btn.alt} className="w-5 h-5" />
+            </button>
+          ))}
+          {includeDownload && (
+            <button
+              type="button"
+              onClick={downloadBracketImage}
+              disabled={disabled}
+              className={`px-3 py-2 rounded-md border border-neutral-700 bg-neutral-900 text-xs font-semibold hover:border-[#c6f600] transition ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              }`}
+            >
+              Descargar
+            </button>
+          )}
+          {includeSave && (
+            <button
+              type="button"
+              onClick={handleSaveClick}
+              className="px-3 py-2 rounded-md border border-[#c6f600] text-[#c6f600] text-xs font-semibold transition hover:brightness-95"
+            >
+              Agregar juego
+            </button>
+          )}
+          {includeSave && finalComplete && (
+            <button
+              type="button"
+              onClick={handleNewGame}
+              className="px-3 py-2 rounded-md border border-neutral-700 text-gray-200 text-xs font-semibold transition hover:border-[#c6f600] hover:text-white"
+            >
+              Nuevo juego
+            </button>
+          )}
+        </div>
+        {shareInfo && <span className="text-xs text-gray-400">{shareInfo}</span>}
       </div>
     );
   };

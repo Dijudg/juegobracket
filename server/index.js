@@ -135,6 +135,54 @@ const createUniqueShortCode = async (maxAttempts = 6) => {
   return null;
 };
 
+const cleanupExpiredGuestBrackets = async () => {
+  const nowIso = new Date().toISOString();
+  const { data: expired, error } = await supabase
+    .from("bracket_saves")
+    .select("id")
+    .eq("user_id", guestBracketUserId)
+    .lt("expires_at", nowIso);
+
+  if (error) {
+    logSupabaseError("guest.brackets.cleanup.fetch", error);
+    return;
+  }
+  if (!expired || expired.length === 0) return;
+
+  try {
+    for (const row of expired) {
+      const prefix = row.id;
+      const { data: files, error: listError } = await supabase.storage
+        .from(shareCardBucket)
+        .list(prefix, { limit: 100, offset: 0 });
+      if (listError) {
+        logSupabaseError("guest.brackets.cleanup.list", listError);
+        continue;
+      }
+      if (files && files.length > 0) {
+        const paths = files.map((f) => `${prefix}/${f.name}`);
+        const { error: removeError } = await supabase.storage.from(shareCardBucket).remove(paths);
+        if (removeError) {
+          logSupabaseError("guest.brackets.cleanup.remove", removeError);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[guest.brackets.cleanup] unexpected error", err);
+  }
+
+  const { error: deleteError } = await supabase
+    .from("bracket_saves")
+    .delete()
+    .in(
+      "id",
+      expired.map((row) => row.id),
+    );
+  if (deleteError) {
+    logSupabaseError("guest.brackets.cleanup.delete", deleteError);
+  }
+};
+
 const requireAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization || "";
@@ -263,7 +311,7 @@ app.post("/api/brackets", requireAuth, async (req, res) => {
 
   if (!data) return res.status(400).json({ error: "Missing bracket data" });
 
-  // limite 3 brackets por usuario
+  // limite 10 brackets por usuario
   if (!id) {
     const { count, error: countError } = await supabase
       .from("bracket_saves")
@@ -274,7 +322,7 @@ app.post("/api/brackets", requireAuth, async (req, res) => {
       logSupabaseError("brackets.count", countError);
       return res.status(500).json({ error: countError.message, details: countError.details, hint: countError.hint });
     }
-    if ((count || 0) >= 3) return res.status(409).json({ error: "Limit reached (max 3 brackets)" });
+    if ((count || 0) >= 10) return res.status(409).json({ error: "Limit reached (max 10 brackets)" });
   }
 
   // si viene id, verifica que sea del usuario
@@ -363,7 +411,7 @@ app.post("/api/guest-brackets", async (req, res) => {
 
     // Limpia registros expirados en background (best-effort)
     try {
-      await supabase.from("bracket_saves").delete().lt("expires_at", new Date().toISOString());
+      await cleanupExpiredGuestBrackets();
     } catch {
       // ignore cleanup errors
     }
@@ -410,8 +458,8 @@ app.post("/api/guest-brackets/claim", requireAuth, async (req, res) => {
       logSupabaseError("guest.brackets.claim.count", countError);
       return res.status(500).json({ error: countError.message });
     }
-    if ((count || 0) >= 3) {
-      return res.status(409).json({ error: "Limit reached (max 3 brackets)" });
+    if ((count || 0) >= 10) {
+      return res.status(409).json({ error: "Limit reached (max 10 brackets)" });
     }
 
     const { data: updated, error: updateError } = await supabase
