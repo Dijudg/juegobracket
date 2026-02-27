@@ -988,7 +988,7 @@ export default function UserBackendPage() {
 
           <div className="mt-2 flex items-center gap-2">
             <span className="text-3xl font-black uppercase text-white">{championName}</span>
-            <span className="text-3xl font-black uppercase text-[#c6f600]">Campe?n</span>
+            <span className="text-3xl font-black uppercase text-[#c6f600]">Campeón</span>
           </div>
           <button
             type="button"

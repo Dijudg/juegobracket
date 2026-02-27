@@ -66,6 +66,7 @@ import {
   readPendingConsent,
   storePendingConsent,
 } from "../utils/authConsent";
+import { attachClickTracking, initAnalytics, trackEvent, trackPageView } from "../analytics";
 
 
 // Normaliza ids de partido para mapear contra el sheet (quita P/p y ceros a la izquierda)
@@ -304,7 +305,7 @@ const INTERCONTINENTAL_KEYS = [
     title: "Aspirantes grupo I",
     mapGroup: "Llave 1",
     seed: "IRQ",
-    semi: { id: "int-k2-sf", home: "BOL", away: "SUR", date: "Lunes 23 de marzo" },
+    semi: { id: "int-k2-sf", home: "BOL", away: "SUR", date: "Jueves 26 de marzo" },
     final: { id: "int-k2-final", date: "Martes 31 de marzo" },
   },
   {
@@ -312,7 +313,7 @@ const INTERCONTINENTAL_KEYS = [
     title: "Aspirantes grupo K",
     mapGroup: "Llave 2",
     seed: "COD",
-    semi: { id: "int-k1-sf", home: "NCL", away: "JAM", date: "Lunes 23 de marzo" },
+    semi: { id: "int-k1-sf", home: "NCL", away: "JAM", date: "Jueves 26 de marzo" },
     final: { id: "int-k1-final", date: "Martes 31 de marzo" },
   },
 ] as const;
@@ -322,33 +323,33 @@ const UEFA_KEYS = [
     id: "A",
     title: "Aspirantes grupo A",
     mapGroup: "Ruta D",
-    semi1: { id: "uefa4-sf1", home: "DEN", away: "MKD" },
-    semi2: { id: "uefa4-sf2", home: "CZE", away: "IRL" },
-    final: { id: "uefa4-final" },
+    semi1: { id: "uefa4-sf1", home: "DEN", away: "MKD", date: "Jueves 23 de marzo" },
+    semi2: { id: "uefa4-sf2", home: "CZE", away: "IRL", date: "Jueves 23 de marzo" },
+    final: { id: "uefa4-final", date: "Martes 31 de marzo" },
   },
   {
     id: "B",
     title: "Aspirantes grupo B",
     mapGroup: "Ruta A",
-    semi1: { id: "uefa1-sf1", home: "ITA", away: "NIR" },
-    semi2: { id: "uefa1-sf2", home: "WAL", away: "BIH" },
-    final: { id: "uefa1-final" },
+    semi1: { id: "uefa1-sf1", home: "ITA", away: "NIR", date: "Jueves 23 de marzo" },
+    semi2: { id: "uefa1-sf2", home: "WAL", away: "BIH", date: "Jueves 23 de marzo" },
+    final: { id: "uefa1-final", date: "Martes 31 de marzo" },
   },
   {
     id: "D",
     title: "Aspirantes grupo D",
     mapGroup: "Ruta C",
-    semi1: { id: "uefa3-sf1", home: "TUR", away: "ROU" },
-    semi2: { id: "uefa3-sf2", home: "SVK", away: "KOS" },
-    final: { id: "uefa3-final" },
+    semi1: { id: "uefa3-sf1", home: "TUR", away: "ROU", date: "Jueves 23 de marzo" },
+    semi2: { id: "uefa3-sf2", home: "SVK", away: "KOS", date: "Jueves 23 de marzo" },
+    final: { id: "uefa3-final", date: "Martes 31 de marzo" },
   },
   {
     id: "F",
     title: "Aspirantes grupo F",
     mapGroup: "Ruta B",
-    semi1: { id: "uefa2-sf1", home: "UKR", away: "SWE" },
-    semi2: { id: "uefa2-sf2", home: "POL", away: "ALB" },
-    final: { id: "uefa2-final" },
+    semi1: { id: "uefa2-sf1", home: "UKR", away: "SWE", date: "Jueves 23 de marzo" },
+    semi2: { id: "uefa2-sf2", home: "POL", away: "ALB", date: "Jueves 23 de marzo" },
+    final: { id: "uefa2-final", date: "Martes 31 de marzo" },
   },
 ] as const;
 
@@ -589,6 +590,15 @@ export default function BracketGamePage() {
       root.classList.remove("view-only");
     };
   }, [isViewOnly]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    initAnalytics();
+    trackPageView(window.location.pathname, document.title);
+    const detachTracking = attachClickTracking();
+    return () => {
+      detachTracking?.();
+    };
+  }, []);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -749,10 +759,12 @@ export default function BracketGamePage() {
   };
 
   const trackPick = (context: string, matchId: string, teamCode: string) => {
-    // Hook para analytics (GA4) - se conecta luego.
-    void context;
-    void matchId;
-    void teamCode;
+    trackEvent("bracket_pick", {
+      event_category: "interaction",
+      context,
+      match_id: matchId,
+      team_code: teamCode,
+    });
   };
 
   const resolveTeamForGroup = useCallback(
