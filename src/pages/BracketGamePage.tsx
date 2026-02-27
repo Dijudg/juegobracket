@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
 import { createShareCardBlob } from "../utils/shareCardImage";
+import { resolveApiBase } from "../utils/apiBase";
 import { buildSharePageUrl, createGuestShare, uploadShareCardImage } from "../utils/shareCardApi";
 import Header from "../components/header";
 import Footer from "../components/Footer";
@@ -102,15 +103,6 @@ const LS_GUEST_BRACKET = "fm-guest-bracket";
 const GUEST_SAVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
-const resolveApiBase = (value?: string) => {
-  const trimmed = (value || "").trim();
-  if (trimmed) {
-    if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
-    return trimmed;
-  }
-  if (typeof window !== "undefined") return window.location.origin;
-  return "";
-};
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
@@ -779,6 +771,33 @@ export default function BracketGamePage() {
     if (typeof window === "undefined") return;
     window.scrollTo({ top: 0, behavior });
   }, []);
+  const upsertMeta = useCallback((selector: string, attrs: Record<string, string>) => {
+    if (typeof document === "undefined") return;
+    let el = document.querySelector<HTMLMetaElement>(selector);
+    if (!el) {
+      el = document.createElement("meta");
+      document.head.appendChild(el);
+    }
+    Object.entries(attrs).forEach(([key, value]) => {
+      el!.setAttribute(key, value);
+    });
+  }, []);
+  const updateOgTags = useCallback(
+    (payload: { title: string; description: string; image: string; url: string }) => {
+      upsertMeta('meta[property="og:title"]', { property: "og:title", content: payload.title });
+      upsertMeta('meta[property="og:description"]', { property: "og:description", content: payload.description });
+      upsertMeta('meta[property="og:image"]', { property: "og:image", content: payload.image });
+      upsertMeta('meta[property="og:url"]', { property: "og:url", content: payload.url });
+      upsertMeta('meta[name="twitter:title"]', { name: "twitter:title", content: payload.title });
+      upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: payload.description });
+      upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: payload.image });
+      upsertMeta('meta[name="twitter:card"]', {
+        name: "twitter:card",
+        content: payload.image ? "summary_large_image" : "summary",
+      });
+    },
+    [upsertMeta],
+  );
   useEffect(() => {
     const prev = prevActiveTabRef.current;
     if (prev !== activeTab) {
@@ -887,6 +906,38 @@ export default function BracketGamePage() {
   const [selectedOverwriteId, setSelectedOverwriteId] = useState<string | null>(null);
   const [currentSaveId, setCurrentSaveId] = useState<string | null>(null);
   const [currentSaveName, setCurrentSaveName] = useState<string>("Mi bracket");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const bracketId = shareAsset?.bracketId || viewBracketId || currentSaveId;
+    if (!bracketId) return;
+    const shareUrl =
+      shareAsset?.sharePageUrl ||
+      buildSharePageUrl(bracketId, API_BASE_URL || undefined) ||
+      window.location.href;
+    const imageUrl =
+      shareAsset?.shareCardUrl || new URL("/og.jpg", window.location.origin).toString();
+    const baseTitle = currentSaveName || viewBracketMeta?.name || "Pronóstico Mundialista";
+    const title =
+      baseTitle.toLowerCase().includes("pronóstico") || baseTitle.toLowerCase().includes("pronostico")
+        ? baseTitle
+        : `Pronóstico Mundialista: ${baseTitle}`;
+    const champ = championTeam?.nombre;
+    const description = champ
+      ? `Pronóstico Mundialista. Campeón: ${champ}. Mira el cuadro completo.`
+      : "Mira el pronóstico completo del Mundial.";
+    updateOgTags({ title, description, image: imageUrl, url: shareUrl });
+  }, [
+    shareAsset?.bracketId,
+    shareAsset?.shareCardUrl,
+    shareAsset?.sharePageUrl,
+    viewBracketId,
+    currentSaveId,
+    currentSaveName,
+    viewBracketMeta?.name,
+    championTeam?.nombre,
+    API_BASE_URL,
+    updateOgTags,
+  ]);
   const pendingLoadRef = useRef<BracketSavePayload | null>(null);
   const guestSaveMetaRef = useRef<{
     name: string;
@@ -3189,11 +3240,79 @@ const scheduleByMatch = useMemo(() => {
     { key: "instagram", icon: instagramIcon, alt: "Instagram", platform: "instagram" as const },
   ];
 
+  const handleNativeShare = useCallback(
+    async (targetChampion?: Team) => {
+      if (typeof window === "undefined" || !navigator.share) {
+        showShareInfo("Compartir no está disponible en este dispositivo.", 3000);
+        return;
+      }
+      try {
+        showShareInfo("Preparando para compartir...", 0);
+        if (!shareAssetRef.current?.shareCardUrl) {
+          await ensureShareCardReady("share");
+        }
+        const shareUrl =
+          shareAssetRef.current?.sharePageUrl ||
+          buildSharePageUrl(shareAssetRef.current?.bracketId || currentSaveId || "", API_BASE_URL || undefined) ||
+          window.location.href;
+        const championPick = targetChampion || championTeam;
+        const messageParts = [
+          `Mi pronóstico Mundialista: campeón ${championPick?.nombre || "Por definir"}.`,
+          runnerUpTeam?.nombre ? `Segundo: ${runnerUpTeam.nombre}.` : "",
+          thirdPlaceWinner?.nombre ? `Tercero: ${thirdPlaceWinner.nombre}.` : "",
+          `Mira mi cuadro aquí: ${shareUrl}`,
+        ].filter(Boolean);
+        const text = messageParts.join(" ");
+        const title = "Mi pronóstico Mundialista";
+
+        if (shareAssetRef.current?.shareCardUrl) {
+          try {
+            const blob = await fetchShareCardBlob(shareAssetRef.current.shareCardUrl);
+            const file = new File([blob], "pronostico.png", { type: "image/png" });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share({ title, text, url: shareUrl, files: [file] });
+              showShareInfo("Compartido.", 3000);
+              return;
+            }
+          } catch {
+            // fallback to text-only share
+          }
+        }
+
+        await navigator.share({ title, text, url: shareUrl });
+        showShareInfo("Compartido.", 3000);
+      } catch {
+        showShareInfo("No se pudo compartir.", 3000);
+      }
+    },
+    [
+      API_BASE_URL,
+      championTeam,
+      currentSaveId,
+      ensureShareCardReady,
+      fetchShareCardBlob,
+      runnerUpTeam?.nombre,
+      thirdPlaceWinner?.nombre,
+      showShareInfo,
+    ],
+  );
+
   const renderShareRow = (targetChampion?: Team, disabled?: boolean, includeDownload = true, includeSave = true) => {
     if (isViewOnly) return null;
     return (
       <div className="flex flex-col items-center gap-2">
         <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleNativeShare(targetChampion)}
+            disabled={disabled}
+            className={`md:hidden px-4 py-2 rounded-full bg-[#c6f600] text-black text-xs font-bold ${
+              disabled ? "opacity-60 cursor-not-allowed" : "hover:brightness-95"
+            }`}
+          >
+            Compartir
+          </button>
+          <div className="hidden md:flex items-center gap-2">
           {shareButtons.map((btn) => (
             <button
               key={btn.key}
@@ -3206,6 +3325,7 @@ const scheduleByMatch = useMemo(() => {
               <img src={btn.icon} alt={btn.alt} className="w-5 h-5" />
             </button>
           ))}
+          </div>
           {includeDownload && (
             <button
               type="button"

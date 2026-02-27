@@ -1,4 +1,5 @@
 import type { BracketSavePayload } from "../features/bracket/types";
+import { resolveApiBase } from "./apiBase";
 
 type ShareCardUploadResult = {
   shareCardUrl: string;
@@ -10,16 +11,6 @@ type GuestShareResult = {
   sharePageUrl: string;
   expiresAt?: string;
   shortCode?: string;
-};
-
-const resolveApiBase = (apiBaseUrl?: string) => {
-  const value = (apiBaseUrl || "").trim();
-  if (value) {
-    if (!/^https?:\/\//i.test(value)) return `https://${value}`;
-    return value;
-  }
-  if (typeof window !== "undefined") return window.location.origin;
-  return "";
 };
 
 export const uploadShareCardImage = async (params: {
