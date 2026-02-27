@@ -1357,7 +1357,7 @@ export default function BracketGamePage() {
     }
   };
 
-  const handleOAuthSignIn = async (provider: "google" | "facebook") => {
+  const handleOAuthSignIn = async (provider: "google") => {
     trackEvent("auth_oauth_start", {
       mode: authMode,
       provider,

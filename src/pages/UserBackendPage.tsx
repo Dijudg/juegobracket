@@ -1111,7 +1111,7 @@ export default function UserBackendPage() {
     }
   };
 
-  const handleOAuthSignIn = async (provider: "google" | "facebook") => {
+  const handleOAuthSignIn = async (provider: "google") => {
     setAuthBusy(true);
     setAuthError(null);
     try {

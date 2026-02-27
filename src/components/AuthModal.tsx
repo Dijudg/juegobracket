@@ -21,7 +21,7 @@ type AuthModalProps = {
   onConsentNewsChange: (value: boolean) => void;
   onConsentUpdatesChange: (value: boolean) => void;
   onSubmit: () => void;
-  onOAuth: (provider: "google" | "facebook") => void;
+  onOAuth: (provider: "google") => void;
 };
 
 export const AuthModal = ({
@@ -73,7 +73,7 @@ export const AuthModal = ({
           </div>
 
           <p className="text-xs text-gray-400 mb-3">
-            Crea tu cuenta directamente con Google o Facebook. Usaremos los datos del navegador/proveedor.
+            Crea tu cuenta directamente con Google. Usaremos los datos del proveedor.
           </p>
 
           <div className="flex flex-col gap-2">
@@ -84,14 +84,6 @@ export const AuthModal = ({
               className="w-full px-3 py-2 rounded-md border border-neutral-700 text-sm text-gray-200 hover:border-[#c6f600]"
             >
               Continuar con Google
-            </button>
-            <button
-              type="button"
-              onClick={() => onOAuth("facebook")}
-              disabled={authBusy}
-              className="w-full px-3 py-2 rounded-md border border-neutral-700 text-sm text-gray-200 hover:border-[#c6f600]"
-            >
-              Continuar con Facebook
             </button>
           </div>
 

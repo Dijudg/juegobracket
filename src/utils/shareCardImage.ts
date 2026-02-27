@@ -130,24 +130,9 @@ const createFallbackShareCardBlob = async (
 
   ctx.fillStyle = "#c6f600";
   ctx.font = "900 72px 'Afacad Flux', sans-serif";
-  ctx.fillText("CAMPEON", width / 2, nameY + 90);
+  ctx.fillText("CAMPEÓN", width / 2, nameY + 90);
 
-  const buttonWidth = width - 160;
-  const buttonHeight = 64;
-  const buttonX = (width - buttonWidth) / 2;
-  const buttonY = nameY + 130;
-  ctx.fillStyle = "#c6f600";
-  if (typeof (ctx as any).roundRect === "function") {
-    ctx.beginPath();
-    (ctx as any).roundRect(buttonX, buttonY, buttonWidth, buttonHeight, 32);
-    ctx.fill();
-  } else {
-    ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-  }
-  ctx.fillStyle = "#111111";
-  ctx.font = "900 26px 'Afacad Flux', sans-serif";
-  ctx.fillText("Ver todo mi pronostico", width / 2, buttonY + 42);
-
+ 
   ctx.fillStyle = "#a1a1aa";
   ctx.font = "24px 'Afacad Flux', sans-serif";
   ctx.fillText("Segundo lugar", width / 2, buttonY + 110);
@@ -164,7 +149,7 @@ const createFallbackShareCardBlob = async (
 
   ctx.fillStyle = "#c6f600";
   ctx.font = "bold 24px 'Afacad Flux', sans-serif";
-  ctx.fillText("Ver mi pronostico", width / 2, height - 90);
+  ctx.fillText("Ver mi pronóstico", width / 2, height - 90);
   ctx.fillStyle = "#ffffff";
   ctx.font = "22px 'Afacad Flux', sans-serif";
   wrapText(ctx, payload.shareUrl || "", width / 2, height - 50, width - 120, 26);
