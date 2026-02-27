@@ -28,9 +28,6 @@ import winnerCardBg from "../assets/final.jpg";
 import logofanatico from "../assets/Logofanatico.svg";
 import etLogo from "../assets/ET_LOGO.png";
 import ectvLogo from "../assets/ECTV_LOGO.png";
-import facebookIcon from "../assets/facebook.svg";
-import instagramIcon from "../assets/instagram.svg";
-import whatsappIcon from "../assets/whatsapp.svg";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
 import { createShareCardBlob } from "../utils/shareCardImage";
 import { buildSharePageUrl, uploadShareCardImage } from "../utils/shareCardApi";
@@ -723,33 +720,28 @@ export default function UserBackendPage() {
   const shareCoverUrl = useMemo(() => shareCoverOverride || coverUrl || winnerCardBg, [shareCoverOverride, coverUrl]);
 
   const sharePronostico = useCallback(
-    async (
-      platform: "facebook" | "instagram" | "whatsapp",
-      payload: {
-        id: string;
-        champion: ShareTeamInfo;
-        runnerUp: ShareTeamInfo;
-        third: ShareTeamInfo;
-        shareUrl: string;
-      },
-    ) => {
+    async (payload: {
+      id: string;
+      champion: ShareTeamInfo;
+      runnerUp: ShareTeamInfo;
+      third: ShareTeamInfo;
+      shareUrl: string;
+    }) => {
       if (typeof window === "undefined") return;
-        const sharePageUrl = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
-        const messageParts = [
-          `Mi prónosticos Mundialista: campeón ${payload.champion.name}.`,
-          payload.runnerUp.name !== "Por definir" ? `Segundo: ${payload.runnerUp.name}.` : "",
-          payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
-          `Mira mi cuadro aquí: ${sharePageUrl}`,
-        ].filter(Boolean);
-        const baseMessage = messageParts.join(" ");
-        const shareTitle = "Mi pronóstico Mundialista";
-        const shareTarget = sharePageUrl;
-      const openShareTarget = (url: string) => {
-        const next = window.open(url, "_blank", "noopener,noreferrer");
-        if (!next) {
-          // Popup bloqueado: no redirigimos para no perder la pagina actual.
-        }
-      };
+      if (!navigator.share) {
+        showShareStatus("Compartir no está disponible en este dispositivo.", 3000);
+        return;
+      }
+      const sharePageUrl = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
+      const messageParts = [
+        `Mi prónosticos Mundialista: campeón ${payload.champion.name}.`,
+        payload.runnerUp.name !== "Por definir" ? `Segundo: ${payload.runnerUp.name}.` : "",
+        payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
+        `Mira mi cuadro aquí: ${sharePageUrl}`,
+      ].filter(Boolean);
+      const baseMessage = messageParts.join(" ");
+      const shareTitle = "Mi pronóstico Mundialista";
+      const shareTarget = sharePageUrl;
       setShareBusyId(payload.id);
       showShareStatus("Generando tarjeta...", 0);
       flushSync(() => setActiveShareCard(payload));
@@ -776,58 +768,26 @@ export default function UserBackendPage() {
             if (uploaded?.sharePageUrl) finalSharePageUrl = uploaded.sharePageUrl;
             showShareStatus("Imagen subida.", 3000);
           } catch {
-            // ignore upload errors
             showShareStatus("No se pudo subir la imagen. Compartiendo sin preview.", 4000);
           }
         }
-        const finalMessage = baseMessage.replace(shareTarget, finalSharePageUrl || shareTarget);
 
+        const finalMessage = baseMessage.replace(shareTarget, finalSharePageUrl || shareTarget);
         const file = new File([blob], `pronostico-${payload.id}.png`, { type: "image/png" });
         const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
-        if (canShareFile && navigator.share) {
+        if (canShareFile) {
           await navigator.share({ files: [file], title: shareTitle, text: finalMessage, url: finalSharePageUrl });
-          return;
-        }
-
-        const objectUrl = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = `pronostico-${payload.id}.png`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
-
-        if (platform === "whatsapp") {
-          openShareTarget(`https://wa.me/?text=${encodeURIComponent(finalMessage)}`);
-        } else if (platform === "facebook") {
-          const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-            finalSharePageUrl || shareTarget,
-          )}&quote=${encodeURIComponent(finalMessage)}`;
-          openShareTarget(url);
-        } else if (platform === "instagram") {
-          navigator.clipboard?.writeText(finalMessage).catch(() => null);
-          openShareTarget("https://www.instagram.com/");
+        } else {
+          await navigator.share({ title: shareTitle, text: finalMessage, url: finalSharePageUrl });
         }
       } catch {
         showShareStatus("No se pudo generar la tarjeta.", 4000);
-        if (platform === "whatsapp") {
-          openShareTarget(`https://wa.me/?text=${encodeURIComponent(baseMessage)}`);
-        } else if (platform === "facebook") {
-          const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
-            shareTarget,
-          )}&quote=${encodeURIComponent(baseMessage)}`;
-          openShareTarget(url);
-        } else if (platform === "instagram") {
-          navigator.clipboard?.writeText(baseMessage).catch(() => null);
-          openShareTarget("https://www.instagram.com/");
-        }
       } finally {
         setShareBusyId(null);
         setActiveShareCard(null);
       }
     },
-    [coverUrl, shareCoverOverride, session?.access_token],
+    [shareCoverUrl, session?.access_token],
   );
   const canEdit = !!session?.access_token;
   const showRepechajeSubnav = false;
@@ -1009,37 +969,15 @@ export default function UserBackendPage() {
           >
             Ver todo mi pronósticos
           </button>
-          <div className="mt-3 w-full flex items-center  justify-center text-base text-gray-400">
-            <span className="mr-2">Compartir:</span>
-            <div className="flex items-center ">
-              <button
-                type="button"
-                onClick={() => sharePronostico("whatsapp", sharePayload)}
-                disabled={shareBusyId === game.latestId}
-                className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
-                aria-label="Compartir en WhatsApp"
-              >
-                <img src={whatsappIcon} alt="WhatsApp" className="w-8 h-8" />
-              </button>
-              <button
-                type="button"
-                onClick={() => sharePronostico("facebook", sharePayload)}
-                disabled={shareBusyId === game.latestId}
-                className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
-                aria-label="Compartir en Facebook"
-              >
-                <img src={facebookIcon} alt="Facebook" className="w-8 h-8" />
-              </button>
-              <button
-                type="button"
-                onClick={() => sharePronostico("instagram", sharePayload)}
-                disabled={shareBusyId === game.latestId}
-                className="w-10 h-10 rounded-full flex items-center justify-center shadow disabled:opacity-60 disabled:cursor-not-allowed"
-                aria-label="Compartir en Instagram"
-              >
-                <img src={instagramIcon} alt="Instagram" className="w-8 h-8" />
-              </button>
-            </div>
+          <div className="mt-3 w-full flex items-center justify-center text-base text-gray-400">
+            <button
+              type="button"
+              onClick={() => sharePronostico(sharePayload)}
+              disabled={shareBusyId === game.latestId}
+              className="w-full rounded-full bg-[#c6f600] text-black text-sm font-bold py-2 hover:brightness-95 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              Compartir
+            </button>
           </div>
           {shareBusyId === game.latestId && shareStatus && (
             <div className="mt-2 text-xs text-gray-400">{shareStatus}</div>

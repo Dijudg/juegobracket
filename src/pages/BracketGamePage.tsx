@@ -799,12 +799,13 @@ export default function BracketGamePage() {
     [upsertMeta],
   );
   useEffect(() => {
+    if (isViewOnly) return;
     const prev = prevActiveTabRef.current;
     if (prev !== activeTab) {
       requestAnimationFrame(() => scrollToTop());
     }
     prevActiveTabRef.current = activeTab;
-  }, [activeTab, scrollToTop]);
+  }, [activeTab, scrollToTop, isViewOnly]);
   useEffect(() => {
     const isWarningOpen = showR32Warning || !!phaseBlock;
     if (isWarningOpen && !prevWarningRef.current) {
@@ -3437,12 +3438,13 @@ const scheduleByMatch = useMemo(() => {
   }, [activeTab]);
   const prevR32TabRef = useRef(activeR32Tab);
   useEffect(() => {
+    if (isViewOnly) return;
     const prev = prevR32TabRef.current;
     if (activeTab === "dieciseisavos" && prev !== activeR32Tab) {
       requestAnimationFrame(() => scrollToTop());
     }
     prevR32TabRef.current = activeR32Tab;
-  }, [activeTab, activeR32Tab, scrollToTop]);
+  }, [activeTab, activeR32Tab, scrollToTop, isViewOnly]);
 
   const prevR32LeftCompleteRef = useRef(r32LeftComplete);
   useEffect(() => {
