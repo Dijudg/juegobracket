@@ -1,0 +1,13 @@
+# Fanatico Mundialista
+
+Summary:
+Interactive bracket to build a FIFA World Cup 2026 prediction, share picks, and view shared brackets.
+
+Language:
+- es-EC
+
+Primary URLs:
+- https://especiales.eltelegrafo.com.ec/fanaticomundialista/
+
+Notes:
+- This site is a single-page application. The main content is available at the primary URL.

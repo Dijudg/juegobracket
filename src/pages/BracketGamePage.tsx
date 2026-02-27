@@ -594,11 +594,87 @@ export default function BracketGamePage() {
     if (typeof window === "undefined") return;
     initAnalytics();
     trackPageView(window.location.pathname, document.title);
+    const platform =
+      window.matchMedia && window.matchMedia("(max-width: 768px)").matches
+        ? "mobile"
+        : window.matchMedia && window.matchMedia("(max-width: 1024px)").matches
+          ? "tablet"
+          : "desktop";
+    const viewMode = isViewOnly ? "view_only" : "interactive";
+    trackEvent("platform_view", {
+      platform,
+      viewport_width: window.innerWidth,
+      viewport_height: window.innerHeight,
+    });
+    trackEvent("view_mode", {
+      view_mode: viewMode,
+      is_embedded: isEmbedded,
+      is_share: isSharePath,
+    });
+    if (isViewOnly) {
+      trackEvent("live_view", {
+        view_mode: viewMode,
+        is_embedded: isEmbedded,
+        is_share: isSharePath,
+      });
+    }
     const detachTracking = attachClickTracking();
-    return () => {
-      detachTracking?.();
+    let startTime = performance.now();
+    let hiddenAt: number | null = null;
+    let hiddenTotal = 0;
+    let sent = false;
+
+    const recordHiddenTime = () => {
+      if (hiddenAt === null) return;
+      hiddenTotal += performance.now() - hiddenAt;
+      hiddenAt = null;
     };
-  }, []);
+
+    const getActiveDuration = () => {
+      const now = performance.now();
+      const hiddenNow = hiddenAt ? now - hiddenAt : 0;
+      return Math.max(0, now - startTime - hiddenTotal - hiddenNow);
+    };
+
+    const flushTimeOnPage = (reason: string) => {
+      if (sent) return;
+      sent = true;
+      recordHiddenTime();
+      const durationMs = Math.round(getActiveDuration());
+      trackEvent("time_on_page", {
+        duration_ms: durationMs,
+        duration_sec: Math.round(durationMs / 1000),
+        reason,
+        page_path: window.location.pathname,
+        view_mode: viewMode,
+        platform,
+        is_embedded: isEmbedded,
+        is_share: isSharePath,
+      });
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = performance.now();
+      } else {
+        recordHiddenTime();
+      }
+    };
+
+    const handlePageHide = () => flushTimeOnPage("pagehide");
+    const handleBeforeUnload = () => flushTimeOnPage("beforeunload");
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      detachTracking?.();
+      flushTimeOnPage("unmount");
+    };
+  }, [isViewOnly, isEmbedded, isSharePath]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -724,7 +800,13 @@ export default function BracketGamePage() {
   const [currentSaveId, setCurrentSaveId] = useState<string | null>(null);
   const [currentSaveName, setCurrentSaveName] = useState<string>("Mi bracket");
   const pendingLoadRef = useRef<BracketSavePayload | null>(null);
-  const guestSaveMetaRef = useRef<{ name: string; updatedAt: string; shortCode?: string } | null>(null);
+  const guestSaveMetaRef = useRef<{
+    name: string;
+    updatedAt: string;
+    shortCode?: string;
+    shareId?: string;
+    shareUrl?: string;
+  } | null>(null);
   const authInitRef = useRef(false);
   const [guestShortCode, setGuestShortCode] = useState<string | null>(null);
 
@@ -849,12 +931,14 @@ export default function BracketGamePage() {
   );
 
   const uploadShareCard = useCallback(
-    async (blob: Blob, bracketId: string) => {
-      if (!authSession?.access_token) return null;
+    async (blob: Blob, bracketId: string, guestCode?: string) => {
+      const token = authSession?.access_token;
+      if (!token && !guestCode) return null;
       return uploadShareCardImage({
         apiBaseUrl: API_BASE_URL || undefined,
         bracketId,
-        token: authSession.access_token,
+        token,
+        guestCode,
         blob,
       });
     },
@@ -1028,6 +1112,12 @@ export default function BracketGamePage() {
   }, []);
 
   const openAuthModal = (mode: "login" | "signup") => {
+    trackEvent("auth_open", {
+      mode,
+      view_mode: isViewOnly ? "view_only" : "interactive",
+      is_embedded: isEmbedded,
+      is_share: isSharePath,
+    });
     setAuthMode(mode);
     setAuthError(null);
     setAuthSuccess(null);
@@ -1067,6 +1157,10 @@ export default function BracketGamePage() {
       setAuthError("Completa tu correo y contraseña.");
       return;
     }
+    trackEvent("auth_submit", {
+      mode: authMode,
+      method: "email",
+    });
     setAuthBusy(true);
     setAuthError(null);
     setAuthSuccess(null);
@@ -1087,6 +1181,10 @@ export default function BracketGamePage() {
           },
         });
         if (error) throw error;
+        trackEvent("auth_success", {
+          mode: authMode,
+          method: "email",
+        });
         setAuthSuccess("Cuenta creada. Revisa tu correo para confirmar.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -1094,9 +1192,17 @@ export default function BracketGamePage() {
           password: authPassword,
         });
         if (error) throw error;
+        trackEvent("auth_success", {
+          mode: authMode,
+          method: "email",
+        });
         setShowAuthModal(false);
       }
     } catch (err) {
+      trackEvent("auth_error", {
+        mode: authMode,
+        method: "email",
+      });
       setAuthError(err instanceof Error ? err.message : "No pudimos iniciar sesión.");
     } finally {
       setAuthBusy(false);
@@ -1104,6 +1210,10 @@ export default function BracketGamePage() {
   };
 
   const handleOAuthSignIn = async (provider: "google" | "facebook") => {
+    trackEvent("auth_oauth_start", {
+      mode: authMode,
+      provider,
+    });
     setAuthBusy(true);
     setAuthError(null);
     try {
@@ -1122,12 +1232,17 @@ export default function BracketGamePage() {
       });
       if (error) throw error;
     } catch (err) {
+      trackEvent("auth_oauth_error", {
+        mode: authMode,
+        provider,
+      });
       setAuthError(err instanceof Error ? err.message : "No pudimos conectar con el proveedor.");
       setAuthBusy(false);
     }
   };
 
   const handleSignOut = async () => {
+    trackEvent("sign_out");
     await supabase.auth.signOut();
     setAuthUser(null);
     setAuthSession(null);
@@ -1137,6 +1252,9 @@ export default function BracketGamePage() {
   };
 
   const handleSaveClick = async () => {
+    trackEvent("save_open", {
+      is_authed: !!authSession?.access_token,
+    });
     setSaveError(null);
     if (!authSession?.access_token) {
       setShowChampionModal(false);
@@ -1146,6 +1264,8 @@ export default function BracketGamePage() {
           name: existing.name,
           updatedAt: existing.updatedAt,
           shortCode: existing.shortCode,
+          shareId: existing.shareId,
+          shareUrl: existing.shareUrl,
         };
         setGuestShortCode(existing.shortCode ?? null);
       } else {
@@ -1165,6 +1285,10 @@ export default function BracketGamePage() {
   };
 
   const handleConfirmSave = async () => {
+    trackEvent("save_confirm", {
+      mode: saveMode,
+      is_authed: !!authSession?.access_token,
+    });
     setSaveBusy(true);
     setSaveError(null);
     try {
@@ -1187,6 +1311,11 @@ export default function BracketGamePage() {
           shareId = guestShare.id;
           shareUrl = guestShare.sharePageUrl || "";
         } catch (err) {
+          trackEvent("save_error", {
+            mode: saveMode,
+            is_authed: false,
+            reason: "guest_code",
+          });
           setSaveError(err instanceof Error ? err.message : "No pudimos generar el código de invitado.");
           setSaveBusy(false);
           return;
@@ -1196,9 +1325,42 @@ export default function BracketGamePage() {
           name: stored?.name || name,
           updatedAt: stored?.updatedAt || new Date().toISOString(),
           shortCode,
+          shareId,
+          shareUrl,
         };
         setGuestShortCode(shortCode);
         setShowSaveModal(false);
+        void (async () => {
+          try {
+            const shareUrlForCard = shareUrl || buildSharePageUrl(shareId, API_BASE_URL || undefined);
+            const sharePayload: ShareCardPayload = {
+              champion: {
+                name: championTeam?.nombre || "Por definir",
+                escudo: getTeamEscudo(championTeam),
+              },
+              runnerUp: {
+                name: runnerUpTeam?.nombre || "Por definir",
+                escudo: getTeamEscudo(runnerUpTeam),
+              },
+              third: {
+                name: thirdPlaceWinner?.nombre || "Por definir",
+                escudo: getTeamEscudo(thirdPlaceWinner),
+              },
+              shareUrl: shareUrlForCard,
+            };
+            const blob = await captureShareCardBlob(sharePayload);
+            await uploadShareCard(blob, shareId, shortCode);
+          } catch {
+            // ignore upload failures for guest saves
+          } finally {
+            setActiveShareCard(null);
+          }
+        })();
+        trackEvent("save_success", {
+          mode: saveMode,
+          is_authed: false,
+          save_target: "guest",
+        });
         setSaveNotice(`Bracket guardado. Código: ${shortCode}`);
         return;
       }
@@ -1209,6 +1371,11 @@ export default function BracketGamePage() {
         .eq("user_id", userId);
       if (countError) throw countError;
       if ((count || 0) >= 3) {
+        trackEvent("save_error", {
+          mode: saveMode,
+          is_authed: true,
+          reason: "limit",
+        });
         setSaveError("Llegaste al límite de 3 brackets. Adminístralos en /user.");
         setSaveBusy(false);
         return;
@@ -1227,8 +1394,18 @@ export default function BracketGamePage() {
         setCurrentSaveName(saved.name || name);
       }
       setShowSaveModal(false);
+      trackEvent("save_success", {
+        mode: saveMode,
+        is_authed: true,
+        save_target: "user",
+      });
       setSaveNotice("Bracket guardado correctamente.");
     } catch (err) {
+      trackEvent("save_error", {
+        mode: saveMode,
+        is_authed: !!authSession?.access_token,
+        reason: "unknown",
+      });
       setSaveError(err instanceof Error ? err.message : "No pudimos guardar el bracket.");
     } finally {
       setSaveBusy(false);
@@ -1951,6 +2128,10 @@ export default function BracketGamePage() {
   };
   const handleFinalReset = () => {
     if (!authUser || resetAttemptsLeft === null || resetAttemptsLeft <= 0) return;
+    const nextAttempts = resetAttemptsLeft - 1;
+    trackEvent("reset_attempt", {
+      remaining: resetAttemptsLeft,
+    });
     setResetAttemptsLeft((prev) => {
       if (prev === null || prev <= 0) return prev;
       const next = prev - 1;
@@ -1966,8 +2147,12 @@ export default function BracketGamePage() {
       return next;
     });
     resetAll();
+    trackEvent("reset_success", {
+      remaining: Math.max(0, nextAttempts),
+    });
   };
-  const handleNewGame = () => {
+  const handleNewGame = (source: "manual" | "deeplink" | "auto" = "manual") => {
+    trackEvent("new_game", { source });
     resetAll();
     pendingLoadRef.current = null;
     setActiveTab("repechajes");
@@ -1995,7 +2180,7 @@ export default function BracketGamePage() {
     if (lastResetFromPanelRef.current === resetToken) return;
     lastResetFromPanelRef.current = resetToken;
     skipAutoLoadRef.current = true;
-    handleNewGame();
+    handleNewGame("deeplink");
     navigateTo("home", {});
   }, [pageParams?.resetGame, handleNewGame, navigateTo]);
 
@@ -2419,6 +2604,18 @@ const scheduleByMatch = useMemo(() => {
     platform: "whatsapp" | "facebook" | "instagram" | "tiktok" | "x",
     champion?: Team,
   ) => {
+    trackEvent("share_click", {
+      platform,
+      view_mode: isViewOnly ? "view_only" : "interactive",
+      is_embedded: isEmbedded,
+      is_share: isSharePath,
+    });
+    let shareUploadId: string | null = currentSaveId || null;
+    let shareUploadCode: string | undefined;
+    if (!shareUploadId && guestSaveMetaRef.current?.shareId) {
+      shareUploadId = guestSaveMetaRef.current.shareId || null;
+      shareUploadCode = guestSaveMetaRef.current.shortCode;
+    }
     let sharePageUrl =
       isViewOnly || !currentSaveId
         ? buildSharePageUrl(viewBracketId || currentSaveId || "", API_BASE_URL || undefined)
@@ -2453,7 +2650,11 @@ const scheduleByMatch = useMemo(() => {
           name: stored?.name || fallbackName,
           updatedAt: stored?.updatedAt || new Date().toISOString(),
           shortCode,
+          shareId: guestShare.id,
+          shareUrl: guestShare.sharePageUrl,
         };
+        shareUploadId = guestShare.id;
+        shareUploadCode = shortCode || undefined;
         setGuestShortCode(shortCode || null);
         sharePageUrl = guestShare.sharePageUrl || buildSharePageUrl(guestShare.id, API_BASE_URL || undefined);
         viewUrl = sharePageUrl || viewUrl;
@@ -2513,9 +2714,9 @@ const scheduleByMatch = useMemo(() => {
     try {
       const blob = await captureShareCardBlob(payload);
       let finalSharePageUrl = shareTarget;
-      if (!isViewOnly && currentSaveId) {
+      if (!isViewOnly && shareUploadId) {
         try {
-          const uploaded = await uploadShareCard(blob, currentSaveId);
+          const uploaded = await uploadShareCard(blob, shareUploadId, shareUploadCode);
           if (uploaded?.sharePageUrl) finalSharePageUrl = uploaded.sharePageUrl;
         } catch {
           // ignore upload failures and continue with local URL
@@ -2549,6 +2750,9 @@ const scheduleByMatch = useMemo(() => {
   };
 
   const downloadBracketImage = async () => {
+    trackEvent("download_bracket_start", {
+      view_mode: isViewOnly ? "view_only" : "interactive",
+    });
     const shareUrl = buildShareUrl(isViewOnly ? viewBracketId : currentSaveId);
     const payload: ShareCardPayload = {
       champion: {
@@ -2577,7 +2781,13 @@ const scheduleByMatch = useMemo(() => {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+      trackEvent("download_bracket_success", {
+        view_mode: isViewOnly ? "view_only" : "interactive",
+      });
     } catch (err) {
+      trackEvent("download_bracket_error", {
+        view_mode: isViewOnly ? "view_only" : "interactive",
+      });
       setShareInfo("No pudimos generar la imagen para descargar. Intenta de nuevo.");
       // eslint-disable-next-line no-console
       console.error(err);

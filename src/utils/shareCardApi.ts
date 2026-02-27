@@ -25,17 +25,28 @@ const resolveApiBase = (apiBaseUrl?: string) => {
 export const uploadShareCardImage = async (params: {
   apiBaseUrl?: string;
   bracketId: string;
-  token: string;
+  token?: string;
+  guestCode?: string;
   blob: Blob;
 }): Promise<ShareCardUploadResult | null> => {
   const baseUrl = resolveApiBase(params.apiBaseUrl);
   if (!baseUrl) return null;
-  const res = await fetch(`${baseUrl}/api/brackets/${params.bracketId}/share-card`, {
+  const headers: Record<string, string> = {
+    "Content-Type": "image/png",
+  };
+  let endpoint = "";
+  if (params.token) {
+    headers.Authorization = `Bearer ${params.token}`;
+    endpoint = `/api/brackets/${params.bracketId}/share-card`;
+  } else if (params.guestCode) {
+    headers["x-guest-code"] = params.guestCode;
+    endpoint = `/api/guest-brackets/${params.bracketId}/share-card`;
+  } else {
+    throw new Error("Missing auth token or guest code.");
+  }
+  const res = await fetch(`${baseUrl}${endpoint}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${params.token}`,
-      "Content-Type": "image/png",
-    },
+    headers,
     body: params.blob,
   });
   if (!res.ok) {

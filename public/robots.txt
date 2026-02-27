@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://especiales.eltelegrafo.com.ec/fanaticomundialista/sitemap.xml

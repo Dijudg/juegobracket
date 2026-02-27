@@ -508,6 +508,88 @@ app.post(
   },
 );
 
+app.post(
+  "/api/guest-brackets/:id/share-card",
+  express.raw({ type: "image/png", limit: "5mb" }),
+  async (req, res) => {
+    try {
+      await ensureShareBucket();
+      const { id } = req.params;
+      if (!id) return res.status(400).json({ error: "Missing bracket id" });
+      if (!req.body || !Buffer.isBuffer(req.body)) {
+        return res.status(400).json({ error: "Missing image body" });
+      }
+
+      const rawCode =
+        (req.headers["x-guest-code"] || req.query?.code || "").toString().trim();
+      const shortCode = rawCode.toUpperCase();
+      if (!shortCode) return res.status(400).json({ error: "Missing guest code" });
+
+      const nowIso = new Date().toISOString();
+      const { data: existing, error: existingErr } = await supabase
+        .from("bracket_saves")
+        .select("id,user_id,data,short_code,expires_at")
+        .eq("id", id)
+        .eq("user_id", guestBracketUserId)
+        .eq("short_code", shortCode)
+        .eq("is_public", true)
+        .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+        .maybeSingle();
+
+      if (existingErr) {
+        logSupabaseError("guest.brackets.share.verify", existingErr);
+        return res.status(500).json({ error: existingErr.message });
+      }
+      if (!existing) return res.status(404).json({ error: "Bracket not found" });
+
+      const fileName = `${Date.now()}.png`;
+      const filePath = `${id}/${fileName}`;
+      const { error: uploadError } = await supabase.storage
+        .from(shareCardBucket)
+        .upload(filePath, req.body, { contentType: "image/png", upsert: true, cacheControl: "3600" });
+
+      if (uploadError) {
+        logSupabaseError("guest.brackets.share.upload", uploadError);
+        return res.status(500).json({ error: uploadError.message });
+      }
+
+      const { data: publicData } = supabase.storage.from(shareCardBucket).getPublicUrl(filePath);
+      const shareCardUrl = publicData?.publicUrl;
+
+      let nextData = existing.data;
+      if (typeof nextData === "string") {
+        try {
+          nextData = JSON.parse(nextData);
+        } catch {
+          nextData = { data: existing.data };
+        }
+      }
+      const updatedPayload = {
+        ...(nextData || {}),
+        shareCardUrl,
+        shareCardUpdatedAt: new Date().toISOString(),
+      };
+
+      const { error: updateError } = await supabase
+        .from("bracket_saves")
+        .update({ data: updatedPayload })
+        .eq("id", id)
+        .eq("user_id", guestBracketUserId)
+        .eq("short_code", shortCode);
+
+      if (updateError) {
+        logSupabaseError("guest.brackets.share.update", updateError);
+      }
+
+      const sharePageUrl = `${req.protocol}://${req.get("host")}/share/${id}`;
+      return res.json({ shareCardUrl, sharePageUrl });
+    } catch (err) {
+      console.error("[guest.brackets.share] unexpected error", err);
+      return res.status(500).json({ error: "Guest share card upload failed" });
+    }
+  },
+);
+
 app.delete("/api/brackets/:id", requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { id } = req.params;
@@ -559,7 +641,12 @@ app.get("/share/:id", async (req, res) => {
       payload = {};
     }
   }
-  const shareCardUrl = payload?.shareCardUrl || shareCardFallbackUrl;
+  const fallbackShareCardUrl =
+    shareCardFallbackUrl ||
+    (bracketHomeUrl
+      ? new URL("/og.jpg", bracketHomeUrl).toString()
+      : `${req.protocol}://${req.get("host")}/og.jpg`);
+  const shareCardUrl = payload?.shareCardUrl || fallbackShareCardUrl;
   const title = data.name || "Pronóstico Mundialista";
   const viewUrlBase =
     bracketHomeUrl || `${req.protocol}://${req.get("host")}`;
