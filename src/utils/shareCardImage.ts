@@ -132,20 +132,20 @@ const createFallbackShareCardBlob = async (
   ctx.font = "900 72px 'Afacad Flux', sans-serif";
   ctx.fillText("CAMPEÓN", width / 2, nameY + 90);
 
- 
+  const podiumY = nameY + 120;
   ctx.fillStyle = "#a1a1aa";
   ctx.font = "24px 'Afacad Flux', sans-serif";
-  ctx.fillText("Segundo lugar", width / 2, buttonY + 110);
+  ctx.fillText("Segundo lugar", width / 2, podiumY + 110);
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 28px 'Afacad Flux', sans-serif";
-  wrapText(ctx, payload.runnerUp.name || "Por definir", width / 2, buttonY + 148, width - 200, 32);
+  wrapText(ctx, payload.runnerUp.name || "Por definir", width / 2, podiumY + 148, width - 200, 32);
 
   ctx.fillStyle = "#a1a1aa";
   ctx.font = "24px 'Afacad Flux', sans-serif";
-  ctx.fillText("Tercer lugar", width / 2, buttonY + 210);
+  ctx.fillText("Tercer lugar", width / 2, podiumY + 210);
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 28px 'Afacad Flux', sans-serif";
-  wrapText(ctx, payload.third.name || "Por definir", width / 2, buttonY + 248, width - 200, 32);
+  wrapText(ctx, payload.third.name || "Por definir", width / 2, podiumY + 248, width - 200, 32);
 
   ctx.fillStyle = "#c6f600";
   ctx.font = "bold 24px 'Afacad Flux', sans-serif";
@@ -169,4 +169,3 @@ export const createShareCardBlob = async (
   const coverUrl = options?.coverUrl;
   return createFallbackShareCardBlob(payload, backgroundColor, coverUrl);
 };
-
