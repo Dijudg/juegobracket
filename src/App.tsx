@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { NavigationProvider } from "./contexts/NavigationContext";
 import BracketGamePage from "./pages/BracketGamePage";
 import UserBackendPage from "./pages/UserBackendPage";
+import { Analytics } from "@vercel/analytics/react";
+
 
 export default function App() {
   const resolvePageFromPath = (path: string) => (path === "/user" ? "backend" : "home");
@@ -33,6 +35,7 @@ export default function App() {
   return (
     <NavigationProvider currentPage={currentPage} pageParams={pageParams} navigateTo={navigateTo}>
       {currentPage === "backend" ? <UserBackendPage /> : <BracketGamePage />}
+      <Analytics />
     </NavigationProvider>
   );
 }
