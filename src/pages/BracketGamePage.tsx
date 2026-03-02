@@ -103,6 +103,8 @@ const LS_GUEST_BRACKET = "fm-guest-bracket";
 const GUEST_SAVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+const generateBracketCode = () =>
+  `FM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
@@ -123,8 +125,6 @@ type GuestBracketSave = {
 type SaveModalProps = {
   open: boolean;
   onClose: () => void;
-  saveName: string;
-  onSaveNameChange: (value: string) => void;
   saveMode: "new" | "overwrite" | "update";
   onSaveModeChange: (value: "new" | "overwrite" | "update") => void;
   currentSaveId: string | null;
@@ -135,15 +135,12 @@ type SaveModalProps = {
   saveBusy: boolean;
   onConfirm: () => void;
   isAuthed: boolean;
-  guestShortCode?: string | null;
   allowOverwrite?: boolean;
 };
 
 const SaveModal = ({
   open,
   onClose,
-  saveName,
-  onSaveNameChange,
   saveMode,
   onSaveModeChange,
   currentSaveId,
@@ -154,7 +151,6 @@ const SaveModal = ({
   saveBusy,
   onConfirm,
   isAuthed,
-  guestShortCode,
   allowOverwrite = true,
 }: SaveModalProps) => {
   if (!open) return null;
@@ -182,14 +178,9 @@ const SaveModal = ({
             </button>
           </div>
 
-          <label className="text-xs text-gray-400">Nombre</label>
-          <input
-            type="text"
-            value={saveName}
-            onChange={(e) => onSaveNameChange(e.target.value)}
-            className="mt-1 mb-3 w-full rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-white"
-            placeholder="Mi bracket"
-          />
+          <p className="text-xs text-gray-400">
+            El código del juego se genera automáticamente para tu bracket.
+          </p>
 
           <div className="flex flex-col gap-2 text-sm text-gray-200">
             {showUpdate && (
@@ -239,11 +230,6 @@ const SaveModal = ({
             </p>
           )}
 
-          {!isAuthed && guestShortCode && (
-            <p className="mt-2 text-xs text-gray-300">
-              Tu código: <span className="font-semibold text-[#c6f600]">{guestShortCode}</span>
-            </p>
-          )}
 
           {saveMode === "overwrite" && showOverwrite && (
             <div className="mt-3 flex flex-col gap-2 max-h-40 overflow-y-auto">
@@ -898,7 +884,7 @@ export default function BracketGamePage() {
   const [consentNews, setConsentNews] = useState(false);
   const [consentUpdates, setConsentUpdates] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [saveName, setSaveName] = useState("Mi bracket");
+  const [saveName, setSaveName] = useState("");
   const [saveMode, setSaveMode] = useState<"new" | "overwrite" | "update">("new");
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -948,7 +934,6 @@ export default function BracketGamePage() {
     shareUrl?: string;
   } | null>(null);
   const authInitRef = useRef(false);
-  const [guestShortCode, setGuestShortCode] = useState<string | null>(null);
 
   const allTeamsIndex = useMemo(() => {
     const map = new Map<string, Team>();
@@ -1259,6 +1244,21 @@ export default function BracketGamePage() {
     }
   }, []);
 
+  const ensureGuestMeta = useCallback(() => {
+    if (guestSaveMetaRef.current?.shareId) return guestSaveMetaRef.current;
+    const existing = readGuestSave();
+    if (existing) {
+      guestSaveMetaRef.current = {
+        name: existing.name,
+        updatedAt: existing.updatedAt,
+        shortCode: existing.shortCode,
+        shareId: existing.shareId,
+        shareUrl: existing.shareUrl,
+      };
+    }
+    return guestSaveMetaRef.current;
+  }, [readGuestSave]);
+
   const openAuthModal = (mode: "login" | "signup") => {
     trackEvent("auth_open", {
       mode,
@@ -1400,12 +1400,13 @@ export default function BracketGamePage() {
   };
 
   const handleSaveClick = async () => {
+    setShowChampionModal(false);
     trackEvent("save_open", {
       is_authed: !!authSession?.access_token,
     });
     setSaveError(null);
+    const autoName = generateBracketCode();
     if (!authSession?.access_token) {
-      setShowChampionModal(false);
       const existing = readGuestSave();
       if (existing) {
         guestSaveMetaRef.current = {
@@ -1415,19 +1416,15 @@ export default function BracketGamePage() {
           shareId: existing.shareId,
           shareUrl: existing.shareUrl,
         };
-        setGuestShortCode(existing.shortCode ?? null);
-      } else {
-        setGuestShortCode(null);
       }
-      const fallbackName = existing?.name || guestSaveMetaRef.current?.name || "Mi bracket";
       setSaveMode("new");
-      setSaveName(fallbackName);
+      setSaveName(existing?.shortCode || autoName);
       setSelectedOverwriteId(null);
       setShowSaveModal(true);
       return;
     }
     setSaveMode("new");
-    setSaveName("Mi bracket");
+    setSaveName(autoName);
     setSelectedOverwriteId(null);
     setShowSaveModal(true);
   };
@@ -1441,15 +1438,37 @@ export default function BracketGamePage() {
     setSaveError(null);
     try {
       const payload = buildSavePayload();
-      const name = saveName.trim() || "Mi bracket";
       if (!authSession?.access_token) {
+        const existingGuest = guestSaveMetaRef.current;
+        if (existingGuest?.shareId && existingGuest?.shortCode) {
+          const stored = persistGuestSave(payload, existingGuest.shortCode, {
+            shortCode: existingGuest.shortCode,
+            shareId: existingGuest.shareId,
+            shareUrl: existingGuest.shareUrl,
+          });
+          guestSaveMetaRef.current = {
+            name: existingGuest.shortCode,
+            updatedAt: stored?.updatedAt || new Date().toISOString(),
+            shortCode: existingGuest.shortCode,
+            shareId: existingGuest.shareId,
+            shareUrl: existingGuest.shareUrl,
+          };
+          setShowSaveModal(false);
+          setSaveNotice("Tu enlace ya está listo para compartir.");
+          trackEvent("save_success", {
+            mode: saveMode,
+            is_authed: false,
+            save_target: "guest",
+          });
+          return;
+        }
         let shortCode = "";
         let shareId = "";
         let shareUrl = "";
         try {
           const guestShare = await createGuestShare({
             apiBaseUrl: API_BASE_URL || undefined,
-            name,
+            name: "",
             data: payload,
           });
           if (!guestShare?.id || !guestShare?.shortCode) {
@@ -1468,15 +1487,14 @@ export default function BracketGamePage() {
           setSaveBusy(false);
           return;
         }
-        const stored = persistGuestSave(payload, name, { shortCode, shareId, shareUrl });
+        const stored = persistGuestSave(payload, shortCode, { shortCode, shareId, shareUrl });
         guestSaveMetaRef.current = {
-          name: stored?.name || name,
+          name: stored?.name || shortCode,
           updatedAt: stored?.updatedAt || new Date().toISOString(),
           shortCode,
           shareId,
           shareUrl,
         };
-        setGuestShortCode(shortCode);
         setShowSaveModal(false);
         void (async () => {
           try {
@@ -1509,9 +1527,10 @@ export default function BracketGamePage() {
           is_authed: false,
           save_target: "guest",
         });
-        setSaveNotice(`Bracket guardado. Código: ${shortCode}`);
+        setSaveNotice(`Copia el código ${shortCode} para revisar tu bracket.`);
         return;
       }
+      const name = saveName.trim() || generateBracketCode();
       const userId = requireAuthUserId();
       const { count, error: countError } = await supabase
         .from("bracket_saves")
@@ -2634,6 +2653,7 @@ const scheduleByMatch = useMemo(() => {
   const ensureShareCardReady = useCallback(
     async (reason: "auto" | "share") => {
       if (isViewOnly || !championTeam) return null;
+      ensureGuestMeta();
       if (autoShareInFlightRef.current) return shareAssetRef.current;
 
       const signature = [
@@ -2649,9 +2669,17 @@ const scheduleByMatch = useMemo(() => {
       autoShareInFlightRef.current = true;
       showShareInfo(reason === "auto" ? "Generando imagen final..." : "Generando tarjeta...", 0);
 
-      let bracketId = currentSaveId || null;
-      let guestCode: string | undefined = undefined;
-      let sharePageUrl = bracketId ? buildSharePageUrl(bracketId, API_BASE_URL || undefined) : "";
+      let bracketId = currentSaveId || guestSaveMetaRef.current?.shareId || null;
+      let guestCode: string | undefined = guestSaveMetaRef.current?.shortCode;
+      let sharePageUrl = "";
+      if (bracketId) {
+        if (currentSaveId) {
+          sharePageUrl = buildSharePageUrl(bracketId, API_BASE_URL || undefined);
+        } else {
+          sharePageUrl =
+            guestSaveMetaRef.current?.shareUrl || buildSharePageUrl(bracketId, API_BASE_URL || undefined);
+        }
+      }
 
       if (!bracketId) {
         if (authSession?.access_token) {
@@ -2664,7 +2692,7 @@ const scheduleByMatch = useMemo(() => {
             if (countError) throw countError;
             if ((count || 0) < 10) {
               const payload = buildSavePayload();
-              const name = saveName.trim() || "Mi bracket";
+              const name = saveName.trim() || generateBracketCode();
               const { data, error } = await supabase
                 .from("bracket_saves")
                 .insert([{ user_id: userId, name, data: payload }])
@@ -2686,12 +2714,16 @@ const scheduleByMatch = useMemo(() => {
       }
 
       if (!bracketId) {
+        if (reason === "auto") {
+          autoShareInFlightRef.current = false;
+          setShareInfo(null);
+          return null;
+        }
         try {
           const payload = buildSavePayload();
-          const fallbackName = saveName.trim() || guestSaveMetaRef.current?.name || "Mi bracket";
           const guestShare = await createGuestShare({
             apiBaseUrl: API_BASE_URL || undefined,
-            name: fallbackName,
+            name: "",
             data: payload,
           });
           if (guestShare?.id) {
@@ -2699,19 +2731,21 @@ const scheduleByMatch = useMemo(() => {
             const shortCode = guestShare.shortCode ? guestShare.shortCode.toUpperCase() : "";
             guestCode = shortCode || undefined;
             sharePageUrl = guestShare.sharePageUrl || buildSharePageUrl(guestShare.id, API_BASE_URL || undefined);
-            const stored = persistGuestSave(payload, fallbackName, {
+            const stored = persistGuestSave(payload, shortCode, {
               shortCode,
               shareId: guestShare.id,
               shareUrl: guestShare.sharePageUrl,
             });
             guestSaveMetaRef.current = {
-              name: stored?.name || fallbackName,
+              name: stored?.name || shortCode,
               updatedAt: stored?.updatedAt || new Date().toISOString(),
               shortCode,
               shareId: guestShare.id,
               shareUrl: guestShare.sharePageUrl,
             };
-            setGuestShortCode(shortCode || null);
+            if (reason === "share") {
+              setSaveNotice(`Copia el código ${shortCode} para revisar tu bracket.`);
+            }
           }
         } catch {
           // ignore guest creation errors
@@ -2765,6 +2799,7 @@ const scheduleByMatch = useMemo(() => {
       captureShareCardBlob,
       championTeam,
       currentSaveId,
+      ensureGuestMeta,
       isViewOnly,
       persistGuestSave,
       requireAuthUserId,
@@ -2876,6 +2911,7 @@ const scheduleByMatch = useMemo(() => {
       is_share: isSharePath,
     });
     showShareInfo("Generando tarjeta...", 0);
+    ensureGuestMeta();
     let shareUploadId: string | null = currentSaveId || null;
     let shareUploadCode: string | undefined;
     if (shareAssetRef.current?.bracketId) {
@@ -2898,39 +2934,47 @@ const scheduleByMatch = useMemo(() => {
         void handleSaveClick();
         return;
       }
-      const payload = buildSavePayload();
-      const fallbackName = saveName.trim() || guestSaveMetaRef.current?.name || "Mi bracket";
-      try {
-        const guestShare = await createGuestShare({
-          apiBaseUrl: API_BASE_URL || undefined,
-          name: fallbackName,
-          data: payload,
-        });
-        if (!guestShare?.id) {
-          setShareInfo("No pudimos crear el enlace de invitado. Intenta de nuevo.");
+      if (guestSaveMetaRef.current?.shareId) {
+        shareUploadId = guestSaveMetaRef.current.shareId;
+        shareUploadCode = guestSaveMetaRef.current.shortCode;
+        sharePageUrl =
+          guestSaveMetaRef.current.shareUrl ||
+          buildSharePageUrl(guestSaveMetaRef.current.shareId, API_BASE_URL || undefined);
+        viewUrl = sharePageUrl || viewUrl;
+      } else {
+        const payload = buildSavePayload();
+        try {
+          const guestShare = await createGuestShare({
+            apiBaseUrl: API_BASE_URL || undefined,
+            name: "",
+            data: payload,
+          });
+          if (!guestShare?.id) {
+            setShareInfo("No pudimos crear el enlace de invitado. Intenta de nuevo.");
+            return;
+          }
+          const shortCode = guestShare.shortCode ? guestShare.shortCode.toUpperCase() : "";
+          const stored = persistGuestSave(payload, shortCode, {
+            shortCode,
+            shareId: guestShare.id,
+            shareUrl: guestShare.sharePageUrl,
+          });
+          guestSaveMetaRef.current = {
+            name: stored?.name || shortCode,
+            updatedAt: stored?.updatedAt || new Date().toISOString(),
+            shortCode,
+            shareId: guestShare.id,
+            shareUrl: guestShare.sharePageUrl,
+          };
+          shareUploadId = guestShare.id;
+          shareUploadCode = shortCode || undefined;
+          setSaveNotice(`Copia el código ${shortCode} para revisar tu bracket.`);
+          sharePageUrl = guestShare.sharePageUrl || buildSharePageUrl(guestShare.id, API_BASE_URL || undefined);
+          viewUrl = sharePageUrl || viewUrl;
+        } catch (err) {
+          setShareInfo(err instanceof Error ? err.message : "No pudimos crear el enlace de invitado.");
           return;
         }
-        const shortCode = guestShare.shortCode ? guestShare.shortCode.toUpperCase() : "";
-        const stored = persistGuestSave(payload, fallbackName, {
-          shortCode,
-          shareId: guestShare.id,
-          shareUrl: guestShare.sharePageUrl,
-        });
-        guestSaveMetaRef.current = {
-          name: stored?.name || fallbackName,
-          updatedAt: stored?.updatedAt || new Date().toISOString(),
-          shortCode,
-          shareId: guestShare.id,
-          shareUrl: guestShare.sharePageUrl,
-        };
-        shareUploadId = guestShare.id;
-        shareUploadCode = shortCode || undefined;
-        setGuestShortCode(shortCode || null);
-        sharePageUrl = guestShare.sharePageUrl || buildSharePageUrl(guestShare.id, API_BASE_URL || undefined);
-        viewUrl = sharePageUrl || viewUrl;
-      } catch (err) {
-        setShareInfo(err instanceof Error ? err.message : "No pudimos crear el enlace de invitado.");
-        return;
       }
     }
     if (!shareAssetRef.current?.shareCardUrl) {
@@ -4718,8 +4762,6 @@ const scheduleByMatch = useMemo(() => {
         <SaveModal
           open={showSaveModal && !showNewGamePrompt && !isViewOnly}
           onClose={closeSaveModal}
-          saveName={saveName}
-          onSaveNameChange={setSaveName}
           saveMode={saveMode}
           onSaveModeChange={setSaveMode}
           currentSaveId={currentSaveId}
@@ -4730,7 +4772,6 @@ const scheduleByMatch = useMemo(() => {
           saveBusy={saveBusy}
           onConfirm={handleConfirmSave}
           isAuthed={!!authSession?.access_token}
-          guestShortCode={guestShortCode}
           allowOverwrite={false}
         />
         <PhaseBlockModal

@@ -257,6 +257,29 @@ app.get("/api/brackets/public/:id", async (req, res) => {
   return res.json({ item: mapBracketItem(data) });
 });
 
+app.get("/api/brackets/code/:code", async (req, res) => {
+  const rawCode = (req.params.code || "").toString().trim().toUpperCase();
+  if (!rawCode) return res.status(400).json({ error: "Missing short code" });
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("bracket_saves")
+    .select("id,short_code,expires_at")
+    .eq("short_code", rawCode)
+    .eq("is_public", true)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .maybeSingle();
+
+  if (error) {
+    logSupabaseError("brackets.code", error);
+    return res.status(500).json({ error: error.message, details: error.details, hint: error.hint });
+  }
+  if (!data) return res.status(404).json({ error: "Bracket not found" });
+
+  const viewBase = bracketHomeUrl || `${req.protocol}://${req.get("host")}`;
+  const sharePageUrl = new URL(`/share/${data.id}`, viewBase).toString();
+  return res.json({ id: data.id, sharePageUrl });
+});
+
 app.get("/api/public-profile/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -363,7 +386,6 @@ app.post("/api/guest-brackets", async (req, res) => {
     if (!supabaseUrl || !supabaseServiceKey) {
       return res.status(500).json({ error: "Server not configured for guest shares" });
     }
-    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
     const rawData = req.body?.data ?? req.body?.bracket;
     if (!rawData) return res.status(400).json({ error: "Missing bracket data" });
 
@@ -381,13 +403,13 @@ app.post("/api/guest-brackets", async (req, res) => {
       }
     }
 
-    const ttlMs = Number.isFinite(guestBracketTtlDays) && guestBracketTtlDays > 0 ? guestBracketTtlDays : 7;
-    const expiresAt = new Date(Date.now() + ttlMs * 24 * 60 * 60 * 1000).toISOString();
-    const safeName = name || "Mi bracket";
     const shortCode = await createUniqueShortCode();
     if (!shortCode) {
       return res.status(500).json({ error: "No se pudo generar el codigo corto" });
     }
+    const ttlMs = Number.isFinite(guestBracketTtlDays) && guestBracketTtlDays > 0 ? guestBracketTtlDays : 7;
+    const expiresAt = new Date(Date.now() + ttlMs * 24 * 60 * 60 * 1000).toISOString();
+    const safeName = shortCode;
 
     const { data, error } = await supabase
       .from("bracket_saves")

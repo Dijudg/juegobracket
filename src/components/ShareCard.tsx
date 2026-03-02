@@ -75,9 +75,6 @@ export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl }: Sha
             </div>
           </div>
         </div>
-        <div className="share-card__cta">
-          <div className="share-card__cta-text">Ver mi pronóstico</div>
-        </div>
       </div>
     </div>
   );

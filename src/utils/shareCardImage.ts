@@ -1,4 +1,5 @@
 ﻿import type { ShareCardTeam } from "../components/ShareCard";
+import fondoCompartir from "../assets/fondo-compartir.png";
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
@@ -51,9 +52,44 @@ const loadImage = (src: string) =>
     img.src = src;
   });
 
+const drawCircleImage = async (
+  ctx: CanvasRenderingContext2D,
+  src: string | undefined,
+  cx: number,
+  cy: number,
+  size: number,
+) => {
+  // aro/fondo
+  ctx.fillStyle = "rgba(255,255,255,0.10)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, size / 2 + 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // imagen recortada en círculo
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+  ctx.clip();
+
+  if (src) {
+    try {
+      const img = await loadImage(src);
+      ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+    } catch {
+      ctx.fillStyle = "#111111";
+      ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+    }
+  } else {
+    ctx.fillStyle = "#111111";
+    ctx.fillRect(cx - size / 2, cy - size / 2, size, size);
+  }
+
+  ctx.restore();
+};
+
 const createFallbackShareCardBlob = async (
   payload: ShareCardPayload,
-  backgroundColor = "#1d1d1b",
+  backgroundColor = "transparent",
   coverUrl?: string,
 ) => {
   if (typeof document === "undefined") {
@@ -67,9 +103,19 @@ const createFallbackShareCardBlob = async (
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No canvas context available.");
 
-  ctx.fillStyle = backgroundColor;
-  ctx.fillRect(0, 0, width, height);
-
+  ctx.clearRect(0, 0, width, height);
+  if (fondoCompartir) {
+    try {
+      const bgImg = await loadImage(fondoCompartir);
+      ctx.drawImage(bgImg, 0, 0, width, height);
+    } catch {
+      // leave transparent if background fails
+    }
+  }
+  if (backgroundColor !== "transparent") {
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(0, 0, width, height);
+  }
   const headerHeight = 460;
   if (coverUrl) {
     try {
@@ -133,19 +179,64 @@ const createFallbackShareCardBlob = async (
   ctx.fillText("CAMPEÓN", width / 2, nameY + 90);
 
   const podiumY = nameY + 120;
-  ctx.fillStyle = "#a1a1aa";
-  ctx.font = "24px 'Afacad Flux', sans-serif";
-  ctx.fillText("Segundo lugar", width / 2, podiumY + 110);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 28px 'Afacad Flux', sans-serif";
-  wrapText(ctx, payload.runnerUp.name || "Por definir", width / 2, podiumY + 148, width - 200, 32);
 
-  ctx.fillStyle = "#a1a1aa";
-  ctx.font = "24px 'Afacad Flux', sans-serif";
-  ctx.fillText("Tercer lugar", width / 2, podiumY + 210);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 28px 'Afacad Flux', sans-serif";
-  wrapText(ctx, payload.third.name || "Por definir", width / 2, podiumY + 248, width - 200, 32);
+  // layout 2 columnas
+  const paddingX = 80;
+  const gap = 24;
+  const cardW = (width - paddingX * 2 - gap) / 2;
+  const cardH = 190;
+  const leftX = paddingX;
+  const rightX = paddingX + cardW + gap;
+  const cardsY = podiumY + 70;
+
+  const drawPodiumCard = async (
+    x: number,
+    y: number,
+    label: string,
+    team: ShareCardTeam,
+  ) => {
+    // Card bg
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 2;
+
+    const r = 18;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + cardW, y, x + cardW, y + cardH, r);
+    ctx.arcTo(x + cardW, y + cardH, x, y + cardH, r);
+    ctx.arcTo(x, y + cardH, x, y, r);
+    ctx.arcTo(x, y, x + cardW, y, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Escudo (tu “bandera”)
+    const imgSize = 64;
+    const imgCx = x + 26 + imgSize / 2;
+    const imgCy = y + 24 + imgSize / 2;
+    await drawCircleImage(ctx, team.escudo, imgCx, imgCy, imgSize);
+
+    // Textos
+    const textX = x + 26 + imgSize + 18;
+    const textW = cardW - (26 + imgSize + 18) - 26;
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#a1a1aa";
+    ctx.font = "24px 'Afacad Flux', sans-serif";
+    ctx.fillText(label, textX, y + 56);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 30px 'Afacad Flux', sans-serif";
+    wrapText(ctx, team.name || "Por definir", textX, y + 98, textW, 34);
+  };
+
+  // pinta las dos tarjetas
+  await drawPodiumCard(leftX, cardsY, "Segundo lugar", payload.runnerUp);
+  await drawPodiumCard(rightX, cardsY, "Tercer lugar", payload.third);
+
+  // vuelve a centrar para lo siguiente
+  ctx.textAlign = "center";
 
   ctx.fillStyle = "#c6f600";
   ctx.font = "bold 24px 'Afacad Flux', sans-serif";
@@ -165,7 +256,7 @@ export const createShareCardBlob = async (
   _target?: HTMLElement | null,
   options?: ShareCardImageOptions,
 ) => {
-  const backgroundColor = options?.backgroundColor || "#1d1d1b";
+  const backgroundColor = options?.backgroundColor || "transparent";
   const coverUrl = options?.coverUrl;
   return createFallbackShareCardBlob(payload, backgroundColor, coverUrl);
 };

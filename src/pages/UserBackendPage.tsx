@@ -341,6 +341,7 @@ export default function UserBackendPage() {
   const [viewerTab, setViewerTab] = useState<"repechajes" | "grupos" | "dieciseisavos" | "llaves">("repechajes");
   const [viewerPlayoffTab, setViewerPlayoffTab] = useState<"uefa" | "intercontinental">("uefa");
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const autoAuthOpenRef = useRef(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -1055,6 +1056,17 @@ export default function UserBackendPage() {
     setShowAuthModal(true);
   };
 
+  useEffect(() => {
+    if (session?.access_token) {
+      autoAuthOpenRef.current = false;
+      return;
+    }
+    if (loading) return;
+    if (autoAuthOpenRef.current) return;
+    autoAuthOpenRef.current = true;
+    openAuthModal("login");
+  }, [loading, session?.access_token, openAuthModal]);
+
   const handleAuthModeChange = (mode: "login" | "signup") => {
     setAuthMode(mode);
     setAuthError(null);
@@ -1321,6 +1333,87 @@ export default function UserBackendPage() {
       setDeleteBusy(false);
     }
   };
+
+  const authModalNode = (
+    <AuthModal
+      open={showAuthModal}
+      onClose={closeAuthModal}
+      authMode={authMode}
+      authEmail={authEmail}
+      authPassword={authPassword}
+      authBusy={authBusy}
+      authError={authError}
+      authSuccess={authSuccess}
+      consentMarketing={consentMarketing}
+      consentNews={consentNews}
+      consentUpdates={consentUpdates}
+      onModeChange={handleAuthModeChange}
+      onEmailChange={setAuthEmail}
+      onPasswordChange={setAuthPassword}
+      onConsentMarketingChange={setConsentMarketing}
+      onConsentNewsChange={setConsentNews}
+      onConsentUpdatesChange={setConsentUpdates}
+      onSubmit={handleAuthSubmit}
+      onOAuth={handleOAuthSignIn}
+    />
+  );
+
+  if (loading) {
+    return (
+      <div className="bg-neutral-900">
+        <div className="max-w-7xl mx-auto bg-neutral-900 text-white flex flex-col gap-8 bracket-stable">
+          <Header showNav={false} showSearch={false} />
+          <main className="max-w-7xl px-2 sm:px-6 lg:px-10 rounded-2xl xl:px-16">
+            <div className="max-w-3xl mx-auto">
+              <section className="rounded-2xl border border-neutral-800 bg-black/50 p-6 text-center">
+                <p className="text-sm text-gray-400">Verificando sesión...</p>
+              </section>
+            </div>
+          </main>
+          <Footer />
+        </div>
+        {authModalNode}
+      </div>
+    );
+  }
+
+  if (!session?.access_token) {
+    return (
+      <div className="bg-neutral-900">
+        <div className="max-w-7xl mx-auto bg-neutral-900 text-white flex flex-col gap-8 bracket-stable">
+          <Header showNav={false} showSearch={false} />
+          <main className="max-w-7xl px-2 sm:px-6 lg:px-10 rounded-2xl xl:px-16">
+            <div className="max-w-3xl mx-auto">
+              <section className="rounded-2xl border border-neutral-800 bg-black/50 p-6 text-center">
+                <h1 className="text-3xl font-black">Accede a tu cuenta</h1>
+                <p className="mt-2 text-sm text-gray-400">
+                  Inicia sesión o crea una cuenta para ver y administrar tus pronósticos guardados.
+                </p>
+                <div className="mt-4 flex flex-col sm:flex-row gap-2 justify-center">
+                  <button
+                    type="button"
+                    onClick={() => openAuthModal("login")}
+                    className="px-4 py-2 rounded-md bg-[#c6f600] text-black text-sm font-semibold hover:brightness-95"
+                  >
+                    Iniciar sesión
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAuthModal("signup")}
+                    className="px-4 py-2 rounded-md border border-neutral-700 text-sm font-semibold text-gray-200 hover:border-[#c6f600]"
+                  >
+                    Crear cuenta
+                  </button>
+                </div>
+              </section>
+            </div>
+          </main>
+          <Footer />
+        </div>
+        {authModalNode}
+      </div>
+    );
+  }
 
   return (
     <div className="bg-neutral-900">
@@ -2123,27 +2216,7 @@ export default function UserBackendPage() {
         </main>
         <Footer />
       </div>
-      <AuthModal
-        open={showAuthModal}
-        onClose={closeAuthModal}
-        authMode={authMode}
-        authEmail={authEmail}
-        authPassword={authPassword}
-        authBusy={authBusy}
-        authError={authError}
-        authSuccess={authSuccess}
-        consentMarketing={consentMarketing}
-        consentNews={consentNews}
-        consentUpdates={consentUpdates}
-        onModeChange={handleAuthModeChange}
-        onEmailChange={setAuthEmail}
-        onPasswordChange={setAuthPassword}
-        onConsentMarketingChange={setConsentMarketing}
-        onConsentNewsChange={setConsentNews}
-        onConsentUpdatesChange={setConsentUpdates}
-        onSubmit={handleAuthSubmit}
-        onOAuth={handleOAuthSignIn}
-      />
+      {authModalNode}
     </div>
   );
 }
