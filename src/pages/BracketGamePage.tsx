@@ -95,6 +95,7 @@ const fixturesUrl =
 
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
 const MAX_THIRD = 8;
+const MAX_USER_BRACKETS = 5;
 const MAX_RESET_ATTEMPTS = 4;
 const LS_INTERCONTINENTAL = "fm-repechaje-intercontinental";
 const LS_UEFA = "fm-repechaje-uefa";
@@ -155,7 +156,7 @@ const SaveModal = ({
 }: SaveModalProps) => {
   if (!open) return null;
   const overlayRef = useRef<HTMLDivElement>(null);
-  const limitReached = savedBrackets.length >= 10;
+  const limitReached = savedBrackets.length >= MAX_USER_BRACKETS;
   const showOverwrite = allowOverwrite && savedBrackets.length > 0;
   const showUpdate = allowOverwrite && !!currentSaveId;
   return (
@@ -220,7 +221,7 @@ const SaveModal = ({
 
           {limitReached && (
             <p className="mt-2 text-xs text-yellow-400">
-              Límite de 10 brackets alcanzado. Debes sobrescribir uno.
+              Límite de {MAX_USER_BRACKETS} brackets alcanzado. Debes sobrescribir uno.
             </p>
           )}
 
@@ -385,26 +386,71 @@ const roundOf32Base = [
   { id: "88", home: "D2", away: "G2" },
 ] as const;
 
+const LKP_SEED_ORDER = ["A1", "B1", "D1", "E1", "G1", "I1", "K1", "L1"] as const;
+
+const LKP_ALLOWED_GROUPS: Record<string, string[]> = {
+  A1: ["C", "E", "F", "H", "I"],
+  E1: ["A", "B", "C", "D", "F"],
+  I1: ["C", "D", "F", "G", "H"],
+  L1: ["E", "H", "I", "J", "K"],
+  D1: ["B", "E", "F", "I", "J"],
+  G1: ["A", "E", "H", "I", "J"],
+  B1: ["E", "F", "G", "I", "J"],
+  K1: ["D", "E", "I", "J", "L"],
+};
+
+const normalizeThirdGroups = (groups: string[]) => {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  groups.forEach((g) => {
+    const normalized = g?.toString().trim().toUpperCase();
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    ordered.push(normalized);
+  });
+  return ordered;
+};
+
+const assignThirdGroupsToSeeds = (thirdsQualified: string[]) => {
+  const orderedThirds = normalizeThirdGroups(thirdsQualified);
+  if (orderedThirds.length < MAX_THIRD) return null;
+
+  const entry: Record<string, string> = {};
+  const used = new Set<string>();
+
+  const backtrack = (seedIdx: number): boolean => {
+    if (seedIdx >= LKP_SEED_ORDER.length) return true;
+    const seed = LKP_SEED_ORDER[seedIdx];
+    const allowed = LKP_ALLOWED_GROUPS[seed] || GROUP_LETTERS;
+    for (const group of orderedThirds) {
+      if (used.has(group)) continue;
+      if (!allowed.includes(group)) continue;
+      used.add(group);
+      entry[seed] = `3${group}`;
+      if (backtrack(seedIdx + 1)) return true;
+      used.delete(group);
+      delete entry[seed];
+    }
+    return false;
+  };
+
+  return backtrack(0) ? entry : null;
+};
+
 const buildRoundOf32 = (
   seeds: Seeds,
   thirdsQualified: string[],
   lookup: Record<string, Record<string, string>>,
 ): { matches: Match[]; error?: string; warning?: string; comboKey?: string } => {
-  const comboKey = thirdsQualified.slice().sort().join("");
-  const entry =
-    lookup[comboKey] ||
-    (() => {
-      // Fallback: generar asignacion deterministica usando el orden de seeds requeridos y los grupos seleccionados
-      const seedsOrder = ["A1", "B1", "D1", "E1", "G1", "I1", "K1", "L1"];
-      const map: Record<string, string> = {};
-      const groupsSorted = thirdsQualified.slice().sort();
-      seedsOrder.forEach((seed, idx) => {
-        const g = groupsSorted[idx];
-        if (g) map[seed] = `3${g}`;
-      });
-      return map;
-    })();
-  const warning = lookup[comboKey] ? undefined : `Asignacion generada por defecto para combinacion sin tabla: ${comboKey}`;
+  const comboKey = normalizeThirdGroups(thirdsQualified).slice().sort().join("");
+  const entry = assignThirdGroupsToSeeds(thirdsQualified);
+  if (!entry) {
+    return {
+      matches: [],
+      error: "No se pudo asignar los mejores terceros. Revisa la selección.",
+      comboKey,
+    };
+  }
 
   const slotTeam = (seed: string): Team | undefined => {
     const group = seed[0];
@@ -430,7 +476,7 @@ const buildRoundOf32 = (
     };
   });
 
-  return { matches, comboKey, warning };
+  return { matches, comboKey };
 };
 
 const buildNextRounds = (
@@ -1537,13 +1583,13 @@ export default function BracketGamePage() {
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId);
       if (countError) throw countError;
-      if ((count || 0) >= 10) {
+      if ((count || 0) >= MAX_USER_BRACKETS) {
         trackEvent("save_error", {
           mode: saveMode,
           is_authed: true,
           reason: "limit",
         });
-        setSaveError("Llegaste al límite de 10 brackets. Adminístralos en /user.");
+        setSaveError(`Llegaste al límite de ${MAX_USER_BRACKETS} brackets. Adminístralos en /user.`);
         setSaveBusy(false);
         return;
       }
@@ -2544,11 +2590,19 @@ export default function BracketGamePage() {
   }, [thirdsAvailable, playoffReplacements]);
 
   const thirdsQualifiedGroups = useMemo(() => {
-    const res = thirdsAvailable
-      .filter((t) => bestThirdIds.includes(t.id))
-      .map((t) => t.grupo.toUpperCase())
-      .sort();
-    return res;
+    const map = new Map(thirdsAvailable.map((t) => [t.id, t.grupo?.toUpperCase()]));
+    const ordered = bestThirdIds
+      .map((id) => map.get(id))
+      .filter(Boolean) as string[];
+    const seen = new Set<string>();
+    const deduped: string[] = [];
+    ordered.forEach((g) => {
+      if (!seen.has(g)) {
+        seen.add(g);
+        deduped.push(g);
+      }
+    });
+    return deduped;
   }, [thirdsAvailable, bestThirdIds]);
 
   const bestThirdTeams = useMemo(
@@ -2690,7 +2744,7 @@ const scheduleByMatch = useMemo(() => {
               .select("id", { count: "exact", head: true })
               .eq("user_id", userId);
             if (countError) throw countError;
-            if ((count || 0) < 10) {
+            if ((count || 0) < MAX_USER_BRACKETS) {
               const payload = buildSavePayload();
               const name = saveName.trim() || generateBracketCode();
               const { data, error } = await supabase

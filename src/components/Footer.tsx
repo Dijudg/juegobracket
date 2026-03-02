@@ -24,7 +24,7 @@ export default function Footer() {
     event.preventDefault();
     const code = codeInput.trim().toUpperCase();
     if (!code) {
-      setLookupStatus("Ingresa tu código.");
+      setLookupStatus("Ingresa tu cÃ³digo.");
       return;
     }
     setLookupBusy(true);
@@ -35,7 +35,7 @@ export default function Footer() {
       const res = await fetch(`${baseUrl}/api/brackets/code/${encodeURIComponent(code)}`);
       if (!res.ok) {
         const message = await res.text().catch(() => "");
-        if (res.status === 404) throw new Error("No encontramos ese código.");
+        if (res.status === 404) throw new Error("No encontramos ese cÃ³digo.");
         throw new Error(message || "No pudimos revisar el bracket.");
       }
       const data = (await res.json()) as { id?: string; sharePageUrl?: string };
@@ -70,7 +70,7 @@ export default function Footer() {
                 setCodeInput(event.target.value);
                 if (lookupStatus) setLookupStatus(null);
               }}
-              placeholder="Código del juego"
+              placeholder="CÃ³digo del juego"
               className="w-full md:w-52 rounded-md bg-neutral-900 border border-neutral-800 px-3 py-2 text-xs text-white"
             />
             <button
@@ -93,9 +93,9 @@ export default function Footer() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label={link.label}
-              className="h-9 w-9 rounded-full border border-neutral-800 flex items-center justify-center hover:border-[#c6f600]"
+              className=" rounded-full border border-neutral-800 flex items-center justify-center hover:border-[#c6f600]"
             >
-              <img src={link.icon} alt={link.label} className="h-5 w-5" />
+              <img src={link.icon} alt={link.label} className="h-10 w-10" />
             </a>
           ))}
         </div>

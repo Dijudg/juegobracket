@@ -43,6 +43,7 @@ type BracketMeta = {
   name: string;
   created_at: string;
   updated_at: string;
+  short_code?: string | null;
 };
 
 type BracketItem = BracketMeta & {
@@ -124,24 +125,66 @@ const buildSeedsFromSelections = (selections: GroupSelections): Seeds => {
   return { firsts, seconds, thirds };
 };
 
+const LKP_SEED_ORDER = ["A1", "B1", "D1", "E1", "G1", "I1", "K1", "L1"] as const;
+
+const LKP_ALLOWED_GROUPS: Record<string, string[]> = {
+  A1: ["C", "E", "F", "H", "I"],
+  E1: ["A", "B", "C", "D", "F"],
+  I1: ["C", "D", "F", "G", "H"],
+  L1: ["E", "H", "I", "J", "K"],
+  D1: ["B", "E", "F", "I", "J"],
+  G1: ["A", "E", "H", "I", "J"],
+  B1: ["E", "F", "G", "I", "J"],
+  K1: ["D", "E", "I", "J", "L"],
+};
+
+const normalizeThirdGroups = (groups: string[]) => {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  groups.forEach((g) => {
+    const normalized = g?.toString().trim().toUpperCase();
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    ordered.push(normalized);
+  });
+  return ordered;
+};
+
+const assignThirdGroupsToSeeds = (thirdsQualified: string[]) => {
+  const orderedThirds = normalizeThirdGroups(thirdsQualified);
+  if (orderedThirds.length < MAX_THIRD) return null;
+
+  const entry: Record<string, string> = {};
+  const used = new Set<string>();
+
+  const backtrack = (seedIdx: number): boolean => {
+    if (seedIdx >= LKP_SEED_ORDER.length) return true;
+    const seed = LKP_SEED_ORDER[seedIdx];
+    const allowed = LKP_ALLOWED_GROUPS[seed] || GROUP_LETTERS;
+    for (const group of orderedThirds) {
+      if (used.has(group)) continue;
+      if (!allowed.includes(group)) continue;
+      used.add(group);
+      entry[seed] = `3${group}`;
+      if (backtrack(seedIdx + 1)) return true;
+      used.delete(group);
+      delete entry[seed];
+    }
+    return false;
+  };
+
+  return backtrack(0) ? entry : null;
+};
+
 const buildRoundOf32 = (
   seeds: Seeds,
   thirdsQualified: string[],
   lookup: Record<string, Record<string, string>>,
 ): { matches: Match[] } => {
-  const comboKey = thirdsQualified.slice().sort().join("");
-  const entry =
-    lookup[comboKey] ||
-    (() => {
-      const seedsOrder = ["A1", "B1", "D1", "E1", "G1", "I1", "K1", "L1"];
-      const map: Record<string, string> = {};
-      const groupsSorted = thirdsQualified.slice().sort();
-      seedsOrder.forEach((seed, idx) => {
-        const g = groupsSorted[idx];
-        if (g) map[seed] = `3${g}`;
-      });
-      return map;
-    })();
+  const entry = assignThirdGroupsToSeeds(thirdsQualified);
+  if (!entry) {
+    return { matches: [] };
+  }
 
   const slotTeam = (seed: string): Team | undefined => {
     const group = seed[0];
@@ -546,7 +589,7 @@ export default function UserBackendPage() {
     try {
       const { data, error: fetchError } = await supabase
         .from("bracket_saves")
-        .select("id,name,created_at,updated_at")
+        .select("id,name,short_code,created_at,updated_at")
         .eq("user_id", user.id)
         .order("updated_at", { ascending: false });
       if (fetchError) throw fetchError;
@@ -571,7 +614,7 @@ export default function UserBackendPage() {
       if (cached) return cached;
       const { data, error: fetchError } = await supabase
         .from("bracket_saves")
-        .select("id,name,data,created_at,updated_at")
+        .select("id,name,short_code,data,created_at,updated_at")
         .eq("id", id)
         .eq("user_id", user.id)
         .maybeSingle();
@@ -929,6 +972,10 @@ export default function UserBackendPage() {
       : { name: "Por definir" };
     const championInfo: ShareTeamInfo = { name: championName, escudo: championEscudo };
     const shareUrl = buildShareUrl(game.latestId);
+    const bracketCode =
+      (latest as BracketItem | undefined)?.short_code ||
+      items.find((item) => item.id === game.latestId)?.short_code ||
+      "";
     const sharePayload = {
       id: game.latestId,
       champion: championInfo,
@@ -980,6 +1027,11 @@ export default function UserBackendPage() {
               Compartir
             </button>
           </div>
+          {bracketCode && (
+            <div className="mt-2 text-xs text-gray-400">
+              Código: <span className="font-semibold text-white">{bracketCode}</span>
+            </div>
+          )}
           {shareBusyId === game.latestId && shareStatus && (
             <div className="mt-2 text-xs text-gray-400">{shareStatus}</div>
           )}
