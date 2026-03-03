@@ -67,6 +67,10 @@ const shareCardFallbackUrl = process.env.SHARE_CARD_FALLBACK_URL || "";
 const guestBracketUserId = process.env.GUEST_BRACKET_USER_ID || "00000000-0000-0000-0000-000000000000";
 const guestBracketTtlDays = Number(process.env.GUEST_BRACKET_TTL_DAYS || 7);
 const guestBracketCodeLength = Number(process.env.GUEST_BRACKET_CODE_LENGTH || 6);
+const resendApiKey = process.env.RESEND_API_KEY || "";
+const consentNotifyTo = process.env.CONSENT_NOTIFY_TO || "djurado@comunica.ec";
+const consentNotifyFrom = process.env.CONSENT_NOTIFY_FROM || "";
+const consentNotifySubject = process.env.CONSENT_NOTIFY_SUBJECT || "Nuevo registro - consentimiento";
 
 if (!supabaseUrl || !supabaseServiceKey) {
   // eslint-disable-next-line no-console
@@ -98,6 +102,35 @@ const resolveProfileAvatar = (meta = {}) => {
 const resolveProfileAlias = (meta = {}, email = "") => {
   const alias = meta.alias || meta.nickname || meta.full_name || meta.name || "";
   return alias || email || "Usuario";
+};
+
+const toCsvValue = (value) => {
+  if (value === null || value === undefined) return "";
+  const str = String(value);
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
+const buildConsentReport = (payload) => {
+  const headers = [
+    "email",
+    "user_id",
+    "consent_marketing",
+    "consent_news",
+    "consent_updates",
+    "consent_timestamp",
+    "consent_source",
+    "method",
+    "received_at",
+  ];
+  const row = headers.map((key) => toCsvValue(payload[key])).join(",");
+  return {
+    json: JSON.stringify(payload, null, 2),
+    csvHeader: headers.join(","),
+    csvRow: row,
+  };
 };
 
 let shareBucketReady = false;
@@ -230,6 +263,56 @@ const requireAuth = async (req, res, next) => {
 
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
+});
+
+app.post("/api/consent-notify", async (req, res) => {
+  try {
+    if (!resendApiKey || !consentNotifyFrom) {
+      return res.status(503).json({ error: "Email provider not configured" });
+    }
+    const body = req.body || {};
+    const consent = body.consent && typeof body.consent === "object" ? body.consent : {};
+    const email = typeof body.email === "string" ? body.email.trim() : "";
+    if (!email) return res.status(400).json({ error: "Missing email" });
+
+    const payload = {
+      email,
+      user_id: typeof body.userId === "string" ? body.userId.trim() : "",
+      consent_marketing: Boolean(consent.consent_marketing),
+      consent_news: Boolean(consent.consent_news),
+      consent_updates: Boolean(consent.consent_updates),
+      consent_timestamp: consent.consent_timestamp || new Date().toISOString(),
+      consent_source: consent.consent_source || body.source || "",
+      method: typeof body.method === "string" ? body.method : "",
+      received_at: new Date().toISOString(),
+    };
+    const report = buildConsentReport(payload);
+
+    const emailPayload = {
+      from: consentNotifyFrom,
+      to: consentNotifyTo,
+      subject: consentNotifySubject,
+      text: `Nuevo registro\n\nJSON:\n${report.json}\n\nCSV:\n${report.csvHeader}\n${report.csvRow}`,
+    };
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(emailPayload),
+    });
+
+    if (!response.ok) {
+      const details = await response.text().catch(() => "");
+      return res.status(502).json({ error: "Email send failed", details: details.slice(0, 500) });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[consent.notify] unexpected error", err);
+    return res.status(500).json({ error: "Consent notify failed" });
+  }
 });
 
 app.get("/api/brackets", requireAuth, async (req, res) => {

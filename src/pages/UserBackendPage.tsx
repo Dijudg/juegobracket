@@ -12,6 +12,7 @@ import {
   readPendingConsent,
   storePendingConsent,
 } from "../utils/authConsent";
+import { sendConsentNotification } from "../utils/consentNotify";
 import { fetchFanaticoData } from "../utils/fanaticoApi";
 import type { BracketSavePayload, GroupSelections, Match, Seeds, Team } from "../features/bracket/types";
 import {
@@ -435,6 +436,17 @@ export default function UserBackendPage() {
       if (!pending) return;
       try {
         await supabase.auth.updateUser({ data: pending });
+        const email = session.user.email || "";
+        if (email) {
+          void sendConsentNotification({
+            email,
+            userId: session.user.id,
+            consent: pending,
+            method: "oauth",
+            source: pending.consent_source,
+            apiBaseUrl: API_BASE_URL,
+          });
+        }
       } catch {
         // ignore
       } finally {
@@ -1153,12 +1165,20 @@ export default function UserBackendPage() {
           updates: consentUpdates,
           source: "signup-email",
         });
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
           options: { emailRedirectTo: window.location.origin, data: consentPayload },
         });
         if (error) throw error;
+        void sendConsentNotification({
+          email: authEmail,
+          userId: data.user?.id,
+          consent: consentPayload,
+          method: "email",
+          source: consentPayload.consent_source,
+          apiBaseUrl: API_BASE_URL,
+        });
         setAuthSuccess("Cuenta creada. Revisa tu correo para confirmar.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({

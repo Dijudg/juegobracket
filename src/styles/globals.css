@@ -231,6 +231,182 @@ html {
   font-family: "Afacad Flux", sans-serif;
 }
 
+.share-card--holo {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(145deg, rgba(16, 16, 16, 0.96), rgba(28, 28, 24, 0.96));
+  box-shadow:
+    0 0 18px rgba(198, 246, 0, 0.18),
+    0 0 38px rgba(0, 195, 255, 0.2);
+}
+
+.share-card--holo::before,
+.share-card--holo::after {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.share-card--holo::before {
+  z-index: 3;
+  opacity: 0.45;
+  mix-blend-mode: screen;
+  background: conic-gradient(
+    from 120deg,
+    rgba(0, 255, 255, 0.2),
+    rgba(255, 0, 255, 0.25),
+    rgba(255, 255, 0, 0.2),
+    rgba(0, 255, 255, 0.2)
+  );
+  animation: share-holo-orbit 16s linear infinite;
+}
+
+.share-card--holo::after {
+  z-index: 4;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+  background: repeating-linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 12%,
+    rgba(0, 255, 255, 0.12) 22%,
+    rgba(255, 0, 255, 0.12) 34%,
+    rgba(255, 255, 0, 0.12) 46%,
+    rgba(255, 255, 255, 0) 60%
+  );
+  animation: share-holo-scan 9s ease-in-out infinite;
+}
+
+.share-card--holo > * {
+  position: relative;
+  z-index: 2;
+}
+
+.share-card--back {
+  background-image: var(--share-card-back), linear-gradient(135deg, #0f0f0f, #1c1c1a);
+  background-size: cover;
+  background-position: center;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.75rem;
+  padding: 2rem 1.5rem;
+}
+
+.share-card__back-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  text-transform: uppercase;
+}
+
+.share-card__back-eyebrow {
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.share-card__back-title {
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.share-card__back-title--accent {
+  color: #c6f600;
+}
+
+.share-card__back-subtitle {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+  letter-spacing: 0.1em;
+}
+
+.share-card-flip {
+  perspective: 1200px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.share-card-flip__card {
+  position: relative;
+  width: 16rem;
+  height: 24rem;
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  transform-origin: center;
+  animation: share-card-spin 30s linear infinite;
+  will-change: transform;
+}
+
+.share-card-flip__face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.share-card-flip__face--front {
+  transform: rotateY(0deg) translateZ(0.01px);
+}
+
+.share-card-flip__face--back {
+  transform: rotateY(180deg);
+}
+
+.share-card-flip__face .share-card {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes share-card-spin {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
+
+@keyframes share-holo-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes share-holo-scan {
+  0% {
+    transform: translateX(-10%);
+  }
+  50% {
+    transform: translateX(10%);
+  }
+  100% {
+    transform: translateX(-10%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .share-card-flip__card {
+    animation: none;
+  }
+
+  .share-card--holo::before,
+  .share-card--holo::after {
+    animation: none;
+  }
+}
+
 .share-card-host {
   position: fixed;
   left: -200vw;

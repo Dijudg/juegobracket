@@ -69,6 +69,7 @@ import {
   readPendingConsent,
   storePendingConsent,
 } from "../utils/authConsent";
+import { sendConsentNotification } from "../utils/consentNotify";
 import { attachClickTracking, initAnalytics, trackEvent, trackPageView } from "../analytics";
 
 
@@ -1465,7 +1466,7 @@ export default function BracketGamePage() {
           updates: consentUpdates,
           source: "signup-email",
         });
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: authEmail,
           password: authPassword,
           options: {
@@ -1474,6 +1475,14 @@ export default function BracketGamePage() {
           },
         });
         if (error) throw error;
+        void sendConsentNotification({
+          email: authEmail,
+          userId: data.user?.id,
+          consent: consentPayload,
+          method: "email",
+          source: consentPayload.consent_source,
+          apiBaseUrl: API_BASE_URL,
+        });
         trackEvent("auth_success", {
           mode: authMode,
           method: "email",
@@ -1710,6 +1719,17 @@ export default function BracketGamePage() {
       if (!pending) return;
       try {
         await supabase.auth.updateUser({ data: pending });
+        const email = session.user.email || "";
+        if (email) {
+          void sendConsentNotification({
+            email,
+            userId: session.user.id,
+            consent: pending,
+            method: "oauth",
+            source: pending.consent_source,
+            apiBaseUrl: API_BASE_URL,
+          });
+        }
       } catch {
         // ignore
       } finally {
@@ -4141,6 +4161,7 @@ const scheduleByMatch = useMemo(() => {
                     runnerUp={viewSharePayload.runnerUp}
                     third={viewSharePayload.third}
                     shareUrl={viewSharePayload.shareUrl}
+                    variant="spin"
                   />
                 </div>
               </div>
