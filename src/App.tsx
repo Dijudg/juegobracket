@@ -3,6 +3,7 @@ import { NavigationProvider } from "./contexts/NavigationContext";
 import BracketGamePage from "./pages/BracketGamePage";
 import UserBackendPage from "./pages/UserBackendPage";
 import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
     <NavigationProvider currentPage={currentPage} pageParams={pageParams} navigateTo={navigateTo}>
       {currentPage === "backend" ? <UserBackendPage /> : <BracketGamePage />}
       <Analytics />
+      <SpeedInsights />
     </NavigationProvider>
   );
 }
