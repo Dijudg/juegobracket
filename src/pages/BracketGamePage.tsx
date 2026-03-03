@@ -1290,6 +1290,16 @@ export default function BracketGamePage() {
     }
   }, []);
 
+  const clearGuestSave = useCallback(() => {
+    guestSaveMetaRef.current = null;
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.removeItem(LS_GUEST_BRACKET);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const ensureGuestMeta = useCallback(() => {
     if (guestSaveMetaRef.current?.shareId) return guestSaveMetaRef.current;
     const existing = readGuestSave();
@@ -1485,29 +1495,6 @@ export default function BracketGamePage() {
     try {
       const payload = buildSavePayload();
       if (!authSession?.access_token) {
-        const existingGuest = guestSaveMetaRef.current;
-        if (existingGuest?.shareId && existingGuest?.shortCode) {
-          const stored = persistGuestSave(payload, existingGuest.shortCode, {
-            shortCode: existingGuest.shortCode,
-            shareId: existingGuest.shareId,
-            shareUrl: existingGuest.shareUrl,
-          });
-          guestSaveMetaRef.current = {
-            name: existingGuest.shortCode,
-            updatedAt: stored?.updatedAt || new Date().toISOString(),
-            shortCode: existingGuest.shortCode,
-            shareId: existingGuest.shareId,
-            shareUrl: existingGuest.shareUrl,
-          };
-          setShowSaveModal(false);
-          setSaveNotice("Tu enlace ya está listo para compartir.");
-          trackEvent("save_success", {
-            mode: saveMode,
-            is_authed: false,
-            save_target: "guest",
-          });
-          return;
-        }
         let shortCode = "";
         let shareId = "";
         let shareUrl = "";
@@ -2378,6 +2365,9 @@ export default function BracketGamePage() {
     setSaveNotice(null);
     setShowNewGamePrompt(false);
     suspendAutoAdvanceRef.current = false;
+    if (!authSession?.access_token) {
+      clearGuestSave();
+    }
   };
   const newGamePromptShownRef = useRef(false);
   const suspendAutoAdvanceRef = useRef(false);

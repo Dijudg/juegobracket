@@ -28,9 +28,17 @@ const app = express();
 
 const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map((v) => v.trim())
-  : "*";
+  : ["*"];
+const allowAllOrigins = corsOrigins.includes("*");
+const corsConfig = {
+  origin: allowAllOrigins ? true : corsOrigins,
+  credentials: !allowAllOrigins,
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Guest-Code"],
+};
 
-app.use(cors({ origin: corsOrigins, credentials: true }));
+app.use(cors(corsConfig));
+app.options("*", cors(corsConfig));
 app.use(express.json({ limit: "1mb" }));
 
 const supabaseUrl = process.env.SUPABASE_URL;
