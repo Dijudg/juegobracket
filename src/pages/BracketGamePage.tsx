@@ -736,6 +736,7 @@ export default function BracketGamePage() {
     guestCode?: string;
     signature?: string;
   } | null>(null);
+  const [guestSharePanel, setGuestSharePanel] = useState<{ code: string; url: string } | null>(null);
   const [viewSharedBy, setViewSharedBy] = useState<BracketSavePayload["sharedBy"] | null>(null);
   const [viewBracketMeta, setViewBracketMeta] = useState<{ name?: string; updatedAt?: string; shortCode?: string } | null>(null);
   const [phaseBlock, setPhaseBlock] = useState<{ title: string; missing: string[] } | null>(null);
@@ -1290,6 +1291,22 @@ export default function BracketGamePage() {
     }
   }, []);
 
+  const copyToClipboard = useCallback(
+    async (value: string, label: string) => {
+      if (typeof navigator === "undefined" || !navigator.clipboard) {
+        showShareInfo("Copiado.", 2000);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        showShareInfo(`${label} copiado.`, 2000);
+      } catch {
+        showShareInfo("No se pudo copiar.", 2500);
+      }
+    },
+    [showShareInfo],
+  );
+
   const clearGuestSave = useCallback(() => {
     guestSaveMetaRef.current = null;
     if (typeof window === "undefined") return;
@@ -1314,6 +1331,27 @@ export default function BracketGamePage() {
     }
     return guestSaveMetaRef.current;
   }, [readGuestSave]);
+
+  const setGuestShareInfo = useCallback(
+    (shortCode?: string, shareId?: string, shareUrl?: string) => {
+      if (!shortCode) return;
+      const url =
+        shareUrl || (shareId ? buildSharePageUrl(shareId, API_BASE_URL || undefined) : "");
+      setGuestSharePanel({ code: shortCode, url });
+    },
+    [API_BASE_URL],
+  );
+
+  useEffect(() => {
+    if (authSession?.access_token) {
+      setGuestSharePanel(null);
+      return;
+    }
+    const existing = readGuestSave();
+    if (existing?.shortCode) {
+      setGuestShareInfo(existing.shortCode, existing.shareId, existing.shareUrl);
+    }
+  }, [authSession?.access_token, readGuestSave, setGuestShareInfo]);
 
   const openAuthModal = (mode: "login" | "signup") => {
     trackEvent("auth_open", {
@@ -1561,6 +1599,7 @@ export default function BracketGamePage() {
           save_target: "guest",
         });
         setSaveNotice(`Copia el código ${shortCode} para revisar tu bracket.`);
+        setGuestShareInfo(shortCode, shareId, shareUrl);
         return;
       }
       const name = saveName.trim() || generateBracketCode();
@@ -2367,6 +2406,7 @@ export default function BracketGamePage() {
     suspendAutoAdvanceRef.current = false;
     if (!authSession?.access_token) {
       clearGuestSave();
+      setGuestSharePanel(null);
     }
   };
   const newGamePromptShownRef = useRef(false);
@@ -2789,6 +2829,7 @@ const scheduleByMatch = useMemo(() => {
             };
             if (reason === "share") {
               setSaveNotice(`Copia el código ${shortCode} para revisar tu bracket.`);
+              setGuestShareInfo(shortCode, guestShare.id, guestShare.sharePageUrl);
             }
           }
         } catch {
@@ -3013,6 +3054,7 @@ const scheduleByMatch = useMemo(() => {
           shareUploadId = guestShare.id;
           shareUploadCode = shortCode || undefined;
           setSaveNotice(`Copia el código ${shortCode} para revisar tu bracket.`);
+          setGuestShareInfo(shortCode, guestShare.id, guestShare.sharePageUrl);
           sharePageUrl = guestShare.sharePageUrl || buildSharePageUrl(guestShare.id, API_BASE_URL || undefined);
           viewUrl = sharePageUrl || viewUrl;
         } catch (err) {
@@ -4167,6 +4209,59 @@ const scheduleByMatch = useMemo(() => {
                     X
                   </button>
                 </div>
+              </div>
+            )}
+
+            {!isViewOnly && !authSession?.access_token && guestSharePanel && (
+              <div className="mb-4 rounded-lg border border-neutral-800 bg-black/50 px-3 py-3 text-sm text-gray-200">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">Tu código de juego</span>
+                  <button
+                    type="button"
+                    onClick={() => setGuestSharePanel(null)}
+                    className="text-xs text-gray-400 hover:text-white"
+                  >
+                    X
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-base text-[#c6f600]">{guestSharePanel.code}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(guestSharePanel.code, "Código")}
+                    className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                  >
+                    Copiar código
+                  </button>
+                </div>
+                {guestSharePanel.url && (
+                  <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={guestSharePanel.url}
+                      className="w-full flex-1 rounded-md bg-neutral-900 border border-neutral-800 px-2 py-1 text-xs text-gray-300"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(guestSharePanel.url, "Enlace")}
+                        className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                      >
+                        Copiar enlace
+                      </button>
+                      <a
+                        href={guestSharePanel.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                      >
+                        Abrir
+                      </a>
+                    </div>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-gray-400">Guárdalo. Expira en 7 días.</p>
               </div>
             )}
 
