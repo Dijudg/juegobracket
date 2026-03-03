@@ -21,6 +21,8 @@ import championBanner from "../assets/final.jpg";
 import modalBackImage from "../assets/fondo.jpg";
 import mundialBanner from "../assets/mundial.png";
 import shareBackLogo from "../assets/7flapollalog.png";
+import guestAvatar from "../assets/Fanatico-m.svg";
+import guestCover from "../assets/polla-banner.jpg";
 import faltaSound from "../assets/mp3/falta.mp3";
 import iniSound from "../assets/mp3/ini.wav";
 import whatsappIcon from "../assets/whatsapp.svg";
@@ -1287,7 +1289,15 @@ export default function BracketGamePage() {
         }
         if (isViewOnly) {
           setIsLocked(true);
-          setViewSharedBy(payload.sharedBy ?? null);
+          const baseShared = payload.sharedBy || {};
+          const isGuestShared = !baseShared.userId;
+          setViewSharedBy({
+            userId: baseShared.userId,
+            name: baseShared.name || "Invitado",
+            alias: baseShared.alias || "",
+            avatarUrl: isGuestShared ? baseShared.avatarUrl || guestAvatar : baseShared.avatarUrl || "",
+            coverUrl: isGuestShared ? baseShared.coverUrl || guestCover : baseShared.coverUrl || "",
+          });
           setViewBracketMeta({
             name: data.name || "Pronóstico compartido",
             updatedAt: (data as any).updated_at || (data as any).created_at,
