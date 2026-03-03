@@ -12,7 +12,7 @@ const inferApiBaseFromHost = () => {
     return "http://localhost:4000";
   }
   if (host.includes("vercel.app") || host.includes("juegobracket") || host.includes("eltelegrafo.com.ec")) {
-    return "https://juegobracket-production.up.railway.app";
+    return "https://pollamundialista-et.up.railway.app";
   }
   return window.location.origin;
 };
