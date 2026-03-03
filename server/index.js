@@ -27,12 +27,30 @@ for (const envPath of envCandidates) {
 const app = express();
 
 const corsOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((v) => v.trim())
-  : ["*"];
+  ? process.env.CORS_ORIGIN.split(",").map((v) => v.trim()).filter(Boolean)
+  : [];
 const allowAllOrigins = corsOrigins.includes("*");
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowAllOrigins) return true;
+  if (corsOrigins.includes(origin)) return true;
+  try {
+    const { hostname } = new URL(origin);
+    if (hostname.endsWith(".vercel.app")) return true;
+  } catch {
+    // ignore
+  }
+  return false;
+};
 const corsConfig = {
-  origin: allowAllOrigins ? true : corsOrigins,
-  credentials: !allowAllOrigins,
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: false,
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Guest-Code"],
 };
