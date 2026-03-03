@@ -1,4 +1,5 @@
 import modalBackImage from "../assets/fondo.jpg";
+import shareBackLogo from "../assets/7flapollalog.png";
 
 type ShareCardTeam = {
   name: string;
@@ -50,7 +51,7 @@ const ShareCardFront = ({
       <div className="share-card__body">
         <div className="share-card__title">
           <div className="share-card__title-name">{champion.name}</div>
-          <div className="share-card__title-label">CampeÃ³n</div>
+          <div className="share-card__title-label">Campeón</div>
         </div>
         <div className="share-card__podium">
           <div className="share-card__podium-item">
@@ -93,12 +94,7 @@ const ShareCardFront = ({
 
 const ShareCardBack = () => (
   <div className="share-card share-card--back share-card--holo">
-    <div className="share-card__back-content">
-      <span className="share-card__back-eyebrow">Pronostico</span>
-      <span className="share-card__back-title">Fanatico</span>
-      <span className="share-card__back-title share-card__back-title--accent">Mundialista</span>
-      <span className="share-card__back-subtitle">Final 2026</span>
-    </div>
+    <img className="share-card__back-logo" src={shareBackLogo} alt="7flapollalog" />
   </div>
 );
 

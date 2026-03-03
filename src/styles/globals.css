@@ -295,34 +295,11 @@ html {
   padding: 2rem 1.5rem;
 }
 
-.share-card__back-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  text-transform: uppercase;
-}
-
-.share-card__back-eyebrow {
-  font-size: 0.75rem;
-  letter-spacing: 0.2em;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.share-card__back-title {
-  font-size: 1.4rem;
-  font-weight: 900;
-  color: #ffffff;
-}
-
-.share-card__back-title--accent {
-  color: #c6f600;
-}
-
-.share-card__back-subtitle {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.75);
-  letter-spacing: 0.1em;
+.share-card__back-logo {
+  width: min(70%, 9rem);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
 }
 
 .share-card-flip {
