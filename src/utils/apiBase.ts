@@ -29,3 +29,12 @@ export const resolveApiBase = (apiBaseUrl?: string) => {
   if (fromEnv) return fromEnv;
   return inferApiBaseFromHost();
 };
+
+export const resolveSiteBase = () => {
+  const fromEnv = normalizeBase(
+    import.meta.env.VITE_SITE_URL || import.meta.env.VITE_PUBLIC_BASE_URL || import.meta.env.VITE_BRACKET_HOME_URL || "",
+  );
+  if (fromEnv) return fromEnv;
+  if (typeof window === "undefined") return "";
+  return window.location.origin;
+};

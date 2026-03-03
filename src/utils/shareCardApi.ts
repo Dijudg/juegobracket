@@ -1,5 +1,5 @@
 import type { BracketSavePayload } from "../features/bracket/types";
-import { resolveApiBase } from "./apiBase";
+import { resolveApiBase, resolveSiteBase } from "./apiBase";
 
 type ShareCardUploadResult = {
   shareCardUrl: string;
@@ -11,6 +11,24 @@ type GuestShareResult = {
   sharePageUrl: string;
   expiresAt?: string;
   shortCode?: string;
+};
+
+const coerceSharePageUrl = (sharePageUrl: string | undefined, fallbackId?: string) => {
+  const baseUrl = resolveSiteBase();
+  if (!baseUrl) return sharePageUrl || "";
+  if (sharePageUrl) {
+    try {
+      const parsed = new URL(sharePageUrl, baseUrl);
+      const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      return new URL(path || "/", baseUrl).toString();
+    } catch {
+      // ignore malformed URL
+    }
+  }
+  if (fallbackId) {
+    return new URL(`/share/${fallbackId}`, baseUrl).toString();
+  }
+  return sharePageUrl || "";
 };
 
 export const uploadShareCardImage = async (params: {
@@ -44,11 +62,15 @@ export const uploadShareCardImage = async (params: {
     const message = await res.text().catch(() => "No se pudo subir la imagen.");
     throw new Error(message || "No se pudo subir la imagen.");
   }
-  return (await res.json()) as ShareCardUploadResult;
+  const payload = (await res.json()) as ShareCardUploadResult;
+  return {
+    ...payload,
+    sharePageUrl: coerceSharePageUrl(payload.sharePageUrl, params.bracketId),
+  };
 };
 
-export const buildSharePageUrl = (bracketId: string, apiBaseUrl?: string) => {
-  const baseUrl = resolveApiBase(apiBaseUrl);
+export const buildSharePageUrl = (bracketId: string, _apiBaseUrl?: string) => {
+  const baseUrl = resolveSiteBase();
   if (!baseUrl) return "";
   const url = new URL(`/share/${bracketId}`, baseUrl);
   return url.toString();
@@ -61,7 +83,6 @@ export const createGuestShare = async (params: {
 }): Promise<GuestShareResult | null> => {
   const baseUrl = resolveApiBase(params.apiBaseUrl);
   if (!baseUrl) return null;
-  // Debug: confirmar URL base y final en producción
   const res = await fetch(`${baseUrl}/api/guest-brackets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -71,5 +92,9 @@ export const createGuestShare = async (params: {
     const message = await res.text().catch(() => "No se pudo crear el enlace.");
     throw new Error(message || "No se pudo crear el enlace.");
   }
-  return (await res.json()) as GuestShareResult;
+  const payload = (await res.json()) as GuestShareResult;
+  return {
+    ...payload,
+    sharePageUrl: coerceSharePageUrl(payload.sharePageUrl, payload.id),
+  };
 };
