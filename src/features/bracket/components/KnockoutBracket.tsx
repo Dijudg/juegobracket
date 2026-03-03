@@ -29,6 +29,7 @@ export const KnockoutBracket = ({
   lockFinalSelection,
   navTarget,
   onNavHandled,
+  onChampionClick,
   locked = false,
 }: {
   r32: Match[];
@@ -45,6 +46,7 @@ export const KnockoutBracket = ({
   lockFinalSelection?: boolean;
   navTarget?: "r32" | "r16" | "qf" | "sf" | "final" | null;
   onNavHandled?: () => void;
+  onChampionClick?: (team?: Team) => void;
   locked?: boolean;
 }) => {
   const BRACKET_CONSTANTS = {
@@ -397,26 +399,29 @@ export const KnockoutBracket = ({
   }) => {
     const escudo = getTeamEscudo(team);
     const isLarge = size === "lg";
+    const clickHandler = onChampionClick ? () => onChampionClick(team) : undefined;
     return (
       <div className="flex flex-col items-center gap-2">
         <div
-          className={`relative flex items-center justify-center ${isLarge ? "w-16 h-16" : "w-10 h-10"}`}
+          className={`relative flex items-center justify-center ${isLarge ? "w-16 h-16" : "w-16 h-16"}`}
         >
-          <Crown className={`${isLarge ? "w-12 h-12" : "w-7 h-7"} text-yellow-500`} />
+          <Crown className={`${isLarge ? "w-12 h-12" : "w-10 h-10"} text-yellow-500`} />
           {escudo ? (
             <img
               src={escudo}
-              alt={team?.nombre || "Campeon"}
-              className={`absolute ${isLarge ? "w-7 h-7" : "w-5 h-5"} rounded-full object-cover shadow-md -bottom-1 -right-1`}
+              alt={team?.nombre || "Campeón"}
+              onClick={clickHandler}
+              className={`absolute ${isLarge ? " h-16 modal-glow" : "w-12 h-12"} rounded-full object-cover shadow-md ${onChampionClick ? "cursor-pointer" : ""}`}
             />
           ) : (
             <div
-              className={`absolute ${isLarge ? "w-7 h-7" : "w-5 h-5"} rounded-full bg-gray-200 -bottom-1 -right-1`}
+              onClick={clickHandler}
+              className={`absolute ${isLarge ? "w-7 h-7" : "w-5 h-5"} rounded-full bg-gray-200 -bottom-1 -right-1 ${onChampionClick ? "cursor-pointer" : ""}`}
             />
           )}
         </div>
-        <span className={`${isLarge ? "text-xs" : "text-[10px]"} text-white font-semibold uppercase`}>
-          {team?.codigo || "??"}
+        <span className={`${isLarge ? "text-4xl " : "text-lg"} text-white font-black uppercase`}>
+          {team?.nombre || "??"}
         </span>
       </div>
     );
@@ -751,3 +756,4 @@ export const KnockoutBracket = ({
     </div>
   );
 };
+

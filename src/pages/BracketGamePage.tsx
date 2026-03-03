@@ -20,6 +20,7 @@ import intercontinentalBanner from "../assets/Intercontinental.jpg";
 import championBanner from "../assets/final.jpg";
 import modalBackImage from "../assets/fondo.jpg";
 import mundialBanner from "../assets/mundial.png";
+import shareBackLogo from "../assets/7flapollalog.png";
 import faltaSound from "../assets/mp3/falta.mp3";
 import iniSound from "../assets/mp3/ini.wav";
 import whatsappIcon from "../assets/whatsapp.svg";
@@ -1645,7 +1646,25 @@ export default function BracketGamePage() {
               shareUrl: shareUrlForCard,
             };
             const blob = await captureShareCardBlob(sharePayload);
-            await uploadShareCard(blob, shareId, shortCode);
+            const uploaded = await uploadShareCard(blob, shareId, shortCode);
+            if (uploaded?.shareCardUrl) {
+              const signature = [
+                shareId,
+                championTeam?.id || "",
+                runnerUpTeam?.id || "",
+                thirdPlaceWinner?.id || "",
+              ].join("|");
+              const nextAsset = {
+                shareCardUrl: uploaded.shareCardUrl,
+                sharePageUrl: uploaded.sharePageUrl || shareUrlForCard,
+                bracketId: shareId,
+                guestCode: shortCode || undefined,
+                signature,
+              };
+              setShareAsset(nextAsset);
+              shareAssetRef.current = nextAsset;
+              autoShareSignatureRef.current = signature;
+            }
           } catch {
             // ignore upload failures for guest saves
           } finally {
@@ -3951,7 +3970,7 @@ const scheduleByMatch = useMemo(() => {
             </button>
           </div>
           <p className="text-sm text-gray-300 mb-2">Te faltan estos partidos:</p>
-          <ul className="list-disc list-inside text-lg text-gray-200 space-y-1">
+          <ul className="grid grid-cols-3 gap-2 list-disc intems-center text-lg text-gray-200">
             {missing.map((m) => (
               <li key={m}>{m}</li>
             ))}
@@ -4880,6 +4899,11 @@ const scheduleByMatch = useMemo(() => {
                   locked={isLocked}
                   navTarget={bracketNavTarget}
                   onNavHandled={clearBracketNavTarget}
+                  onChampionClick={(team) => {
+                    if (!team) return;
+                    setChampionTeam(team);
+                    setShowChampionModal(true);
+                  }}
                 />
               )}
               <div className="w-full flex flex-col items-center gap-2 mt-4">
@@ -5016,7 +5040,9 @@ const scheduleByMatch = useMemo(() => {
               <div
                 className="modal-flip-back w-full max-w-lg mx-auto bg-neutral-900 text-white rounded-xl border border-neutral-700 shadow-2xl flex flex-col text-center overflow-hidden modal-glow"
                 aria-hidden="true"
-              />
+              >
+                <img className="modal-flip-back__logo" src={shareBackLogo} alt="7flapollalog" />
+              </div>
               <div
                 className="modal-flip-front w-full max-w-lg mx-auto bg-neutral-900 text-white rounded-xl border border-neutral-700 shadow-2xl flex flex-col text-center overflow-hidden modal-glow"
                 role="dialog"
@@ -5133,7 +5159,9 @@ const scheduleByMatch = useMemo(() => {
               <div
                 className="modal-flip-back w-full max-w-lg mx-auto bg-neutral-900 text-white rounded-xl border border-neutral-700 shadow-2xl flex flex-col text-center overflow-hidden modal-glow"
                 aria-hidden="true"
-              />
+              >
+                <img className="modal-flip-back__logo" src={shareBackLogo} alt="7flapollalog" />
+              </div>
               <div
                 className="modal-flip-front w-full max-w-lg mx-auto bg-neutral-900 text-white rounded-xl border border-neutral-700 shadow-2xl flex flex-col text-center overflow-hidden modal-glow"
                 role="dialog"
@@ -5195,10 +5223,10 @@ const scheduleByMatch = useMemo(() => {
                         <img
                           src={runnerUpTeam.escudo}
                           alt={runnerUpTeam.nombre}
-                          className="absolute inset-0 w-full h-full object-cover"
+                          className="absolute inset-0 w-full h-full object-cover "
                         />
                       ) : (
-                        <span className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-200">
+                        <span className="absolute inset-0 flex items-center justify-center text-[10px]  text-gray-200">
                           {runnerUpTeam?.codigo || "??"}
                         </span>
                       )}

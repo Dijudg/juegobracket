@@ -1054,6 +1054,7 @@ export default function UserBackendPage() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    navigateTo("home");
   };
 
   const handleClaimBracket = async () => {

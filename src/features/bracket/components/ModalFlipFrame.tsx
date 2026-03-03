@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import modalBackImage from "../../../assets/fondo.jpg";
+import shareBackLogo from "../../../assets/7flapollalog.png";
 
 export const ModalFlipFrame = ({
   className,
@@ -15,7 +16,9 @@ export const ModalFlipFrame = ({
   return (
     <div className="modal-flip" style={{ ["--modal-back" as any]: `url(${modalBackImage})` }}>
       <div className={cardClass}>
-        <div className={`modal-flip-back ${frameClass}`} aria-hidden="true" />
+        <div className={`modal-flip-back ${frameClass}`} aria-hidden="true">
+          <img className="modal-flip-back__logo" src={shareBackLogo} alt="7flapollalog" />
+        </div>
         <div className={`modal-flip-front ${frameClass}`}>{children}</div>
       </div>
     </div>
