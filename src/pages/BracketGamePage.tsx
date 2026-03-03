@@ -137,6 +137,8 @@ type SaveModalProps = {
   onConfirm: () => void;
   isAuthed: boolean;
   allowOverwrite?: boolean;
+  guestShare?: { code: string; url: string } | null;
+  onCopy?: (value: string, label: string) => void;
 };
 
 const SaveModal = ({
@@ -153,12 +155,15 @@ const SaveModal = ({
   onConfirm,
   isAuthed,
   allowOverwrite = true,
+  guestShare,
+  onCopy,
 }: SaveModalProps) => {
   if (!open) return null;
   const overlayRef = useRef<HTMLDivElement>(null);
   const limitReached = savedBrackets.length >= MAX_USER_BRACKETS;
   const showOverwrite = allowOverwrite && savedBrackets.length > 0;
   const showUpdate = allowOverwrite && !!currentSaveId;
+  const guestShareReady = !isAuthed && !!guestShare?.code;
   return (
     <div
       ref={overlayRef}
@@ -184,7 +189,7 @@ const SaveModal = ({
           </p>
 
           <div className="flex flex-col gap-2 text-sm text-gray-200">
-            {showUpdate && (
+            {showUpdate && !guestShareReady && (
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -195,7 +200,7 @@ const SaveModal = ({
                 Actualizar este bracket
               </label>
             )}
-            {!limitReached && (
+            {!limitReached && !guestShareReady && (
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -206,7 +211,7 @@ const SaveModal = ({
                 Guardar como nuevo
               </label>
             )}
-            {showOverwrite && (
+            {showOverwrite && !guestShareReady && (
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -219,7 +224,7 @@ const SaveModal = ({
             )}
           </div>
 
-          {limitReached && (
+          {limitReached && !guestShareReady && (
             <p className="mt-2 text-xs text-yellow-400">
               Límite de {MAX_USER_BRACKETS} brackets alcanzado. Debes sobrescribir uno.
             </p>
@@ -232,7 +237,7 @@ const SaveModal = ({
           )}
 
 
-          {saveMode === "overwrite" && showOverwrite && (
+          {saveMode === "overwrite" && showOverwrite && !guestShareReady && (
             <div className="mt-3 flex flex-col gap-2 max-h-40 overflow-y-auto">
               {savedBrackets.map((item) => (
                 <label key={item.id} className="flex items-center gap-2 text-sm text-gray-200">
@@ -255,24 +260,70 @@ const SaveModal = ({
 
           {saveError && <p className="text-xs text-red-400 mt-3">{saveError}</p>}
 
+          {guestShareReady && (
+            <div className="mt-3 rounded-lg border border-neutral-800 bg-black/60 p-3 text-sm text-gray-200">
+              <p className="text-xs text-gray-400">Copia tu código y enlace para revisar tu bracket.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="font-mono text-base text-[#c6f600]">{guestShare?.code}</span>
+                <button
+                  type="button"
+                  onClick={() => guestShare?.code && onCopy?.(guestShare.code, "Código")}
+                  className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                >
+                  Copiar código
+                </button>
+              </div>
+              {guestShare?.url && (
+                <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={guestShare.url}
+                    className="w-full flex-1 rounded-md bg-neutral-900 border border-neutral-800 px-2 py-1 text-xs text-gray-300"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onCopy?.(guestShare.url, "Enlace")}
+                      className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                    >
+                      Copiar enlace
+                    </button>
+                    <a
+                      href={guestShare.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                    >
+                      Abrir
+                    </a>
+                  </div>
+                </div>
+              )}
+              <p className="mt-2 text-xs text-gray-400">Expira en 7 días.</p>
+            </div>
+          )}
+
           <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
               className="px-3 py-2 rounded-md border border-neutral-700 text-xs text-gray-300 hover:border-[#c6f600]"
             >
-              Cancelar
+              {guestShareReady ? "Cerrar" : "Cancelar"}
             </button>
-            <button
-              type="button"
-              onClick={onConfirm}
-              disabled={saveBusy}
-              className={`px-3 py-2 rounded-md text-xs font-semibold ${
-                saveBusy ? "bg-neutral-700 text-gray-400" : "bg-[#c6f600] text-black hover:brightness-95"
-              }`}
-            >
-              {saveBusy ? "Guardando..." : "Guardar"}
-            </button>
+            {!guestShareReady && (
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={saveBusy}
+                className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                  saveBusy ? "bg-neutral-700 text-gray-400" : "bg-[#c6f600] text-black hover:brightness-95"
+                }`}
+              >
+                {saveBusy ? "Guardando..." : "Guardar"}
+              </button>
+            )}
           </div>
         </div>
       </ModalFlipFrame>
@@ -1566,7 +1617,6 @@ export default function BracketGamePage() {
           shareId,
           shareUrl,
         };
-        setShowSaveModal(false);
         void (async () => {
           try {
             const shareUrlForCard = shareUrl || buildSharePageUrl(shareId, API_BASE_URL || undefined);
@@ -3709,20 +3759,6 @@ const scheduleByMatch = useMemo(() => {
       showThirdsModal ||
       !!showFixturesGroup ||
       showRulesModal ||
-      !!phaseBlock ||
-      showIntercontinentalModal ||
-      showAuthModal ||
-      showSaveModal ||
-      showChampionModal ||
-      showNewGamePrompt ||
-      showR32Warning;
-    useBodyScrollLock(anyModalOpen);
-
-  useEffect(() => {
-    const anyModalOpen =
-      showThirdsModal ||
-      !!showFixturesGroup ||
-      showRulesModal ||
       showR32Warning ||
       !!phaseBlock ||
       showIntercontinentalModal ||
@@ -3730,6 +3766,9 @@ const scheduleByMatch = useMemo(() => {
       showSaveModal ||
       showChampionModal ||
       showNewGamePrompt;
+    useBodyScrollLock(anyModalOpen);
+
+  useEffect(() => {
     if (!anyModalOpen) return;
     const handler = () => {
       setShowThirdsModal(false);
@@ -3752,6 +3791,7 @@ const scheduleByMatch = useMemo(() => {
       window.removeEventListener("popstate", handler);
     };
   }, [
+    anyModalOpen,
     showThirdsModal,
     showFixturesGroup,
     showRulesModal,
@@ -4212,7 +4252,11 @@ const scheduleByMatch = useMemo(() => {
               </div>
             )}
 
-            {!isViewOnly && !authSession?.access_token && guestSharePanel && (
+            {!isViewOnly &&
+              !authSession?.access_token &&
+              guestSharePanel &&
+              championTeam &&
+              !anyModalOpen && (
               <div className="mb-4 rounded-lg border border-neutral-800 bg-black/50 px-3 py-3 text-sm text-gray-200">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold">Tu código de juego</span>
@@ -4912,6 +4956,8 @@ const scheduleByMatch = useMemo(() => {
           onConfirm={handleConfirmSave}
           isAuthed={!!authSession?.access_token}
           allowOverwrite={false}
+          guestShare={!authSession?.access_token ? guestSharePanel : null}
+          onCopy={copyToClipboard}
         />
         <PhaseBlockModal
           open={!!phaseBlock && !showNewGamePrompt && !isViewOnly}
