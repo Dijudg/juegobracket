@@ -1,5 +1,6 @@
 ﻿import type { ShareCardTeam } from "../components/ShareCard";
 import fondoCompartir from "../assets/fondo-compartir.png";
+import logoFanatico from "../assets/logofanatico.svg";
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
@@ -51,6 +52,24 @@ const loadImage = (src: string) =>
     img.onerror = () => reject(new Error("No se pudo cargar la imagen."));
     img.src = src;
   });
+
+const drawImageCover = (
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) => {
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+};
 
 const drawCircleImage = async (
   ctx: CanvasRenderingContext2D,
@@ -136,9 +155,10 @@ const createFallbackShareCardBlob = async (
     ctx.fillRect(0, 0, width, headerHeight);
   }
 
-  const avatarSize = 192;
+  const avatarSize = 250;
   const avatarX = width / 2;
-  const avatarY = headerHeight - avatarSize / 2 + 20;
+  const avatarYOffset = 45; 
+  const avatarY = headerHeight - avatarSize / 2 + avatarYOffset;
   ctx.fillStyle = "#0b0b0b";
   ctx.beginPath();
   ctx.arc(avatarX, avatarY, avatarSize / 2 + 8, 0, Math.PI * 2);
@@ -159,11 +179,11 @@ const createFallbackShareCardBlob = async (
         avatarSize,
       );
     } catch {
-      ctx.fillStyle = "#111111";
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
       ctx.fillRect(avatarX - avatarSize / 2, avatarY - avatarSize / 2, avatarSize, avatarSize);
     }
   } else {
-    ctx.fillStyle = "#111111";
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
     ctx.fillRect(avatarX - avatarSize / 2, avatarY - avatarSize / 2, avatarSize, avatarSize);
   }
   ctx.restore();
@@ -184,10 +204,10 @@ const createFallbackShareCardBlob = async (
   const paddingX = 80;
   const gap = 24;
   const cardW = (width - paddingX * 2 - gap) / 2;
-  const cardH = 190;
+  const cardH = 150;
   const leftX = paddingX;
   const rightX = paddingX + cardW + gap;
-  const cardsY = podiumY + 70;
+  const cardsY = podiumY + 60;
 
   const drawPodiumCard = async (
     x: number,
@@ -196,9 +216,7 @@ const createFallbackShareCardBlob = async (
     team: ShareCardTeam,
   ) => {
     // Card bg
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.lineWidth = 2;
+          ctx.lineWidth = 2;
 
     const r = 18;
     ctx.beginPath();
@@ -222,7 +240,7 @@ const createFallbackShareCardBlob = async (
     const textW = cardW - (26 + imgSize + 18) - 26;
 
     ctx.textAlign = "left";
-    ctx.fillStyle = "#a1a1aa";
+    ctx.fillStyle = "#c6f600";
     ctx.font = "24px 'Afacad Flux', sans-serif";
     ctx.fillText(label, textX, y + 56);
 
@@ -235,9 +253,21 @@ const createFallbackShareCardBlob = async (
   await drawPodiumCard(leftX, cardsY, "Segundo lugar", payload.runnerUp);
   await drawPodiumCard(rightX, cardsY, "Tercer lugar", payload.third);
 
-  // vuelve a centrar para lo siguiente
-  ctx.textAlign = "center";
+  
 
+  // Logo Fanatico (90% ancho, alto proporcional)
+  try {
+    const logoImg = await loadImage(logoFanatico);
+    const logoWidth = width * 0.9;
+    const logoHeight = (logoImg.height / logoImg.width) * logoWidth;
+    const logoX = (width - logoWidth) / 2;
+    const logoY = Math.max(height - 140 - logoHeight, headerHeight + 40);
+    ctx.drawImage(logoImg, logoX, logoY, logoWidth, logoHeight);
+  } catch {
+    // ignore logo failures
+  }
+// vuelve a centrar para lo siguiente
+  ctx.textAlign = "center";
   ctx.fillStyle = "#c6f600";
   ctx.font = "bold 24px 'Afacad Flux', sans-serif";
   ctx.fillText("Ver mi pronóstico", width / 2, height - 90);
