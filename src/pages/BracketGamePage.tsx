@@ -127,6 +127,18 @@ type GuestBracketSave = {
   shareUrl?: string;
 };
 
+type SaveResult =
+  | {
+      ok: true;
+      bracketId: string;
+      guestCode?: string;
+      shareUrl?: string;
+    }
+  | {
+      ok: false;
+      error?: string;
+    };
+
 type SaveModalProps = {
   open: boolean;
   onClose: () => void;
@@ -167,7 +179,79 @@ const SaveModal = ({
   const limitReached = savedBrackets.length >= MAX_USER_BRACKETS;
   const showOverwrite = allowOverwrite && savedBrackets.length > 0;
   const showUpdate = allowOverwrite && !!currentSaveId;
-  const hasGuestShare = !isAuthed && !!guestShare?.code;
+  const isGuest = !isAuthed;
+
+  if (isGuest) {
+    return (
+      <div
+        ref={overlayRef}
+        onClick={(e) => {
+          if (e.target === overlayRef.current) onClose();
+        }}
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
+      >
+        <ModalFlipFrame className="bg-neutral-900 border border-neutral-700 rounded-lg w-full md:w-1/2 max-w-lg shadow-lg flex flex-col overflow-hidden modal-glow">
+          <div className="w-full overflow-hidden border-b border-neutral-700" style={{ aspectRatio: "16 / 9" }}>
+            <img src={saveBanner} alt="Guardar" className="w-full h-full object-cover" />
+          </div>
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-[#c6f600]">Tu código de juego</h3>
+              <button onClick={onClose} className="text-sm text-gray-400 hover:text-white">
+                X
+              </button>
+            </div>
+            <div className="rounded-lg border border-neutral-800 bg-black/60 p-3 text-sm text-gray-200">
+              {guestShare?.code ? (
+                <>
+                  <p className="text-xs text-gray-400">Copia tu código y enlace para revisar tu bracket.</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-base text-[#c6f600]">{guestShare.code}</span>
+                    <button
+                      type="button"
+                      onClick={() => onCopy?.(guestShare.code, "Código")}
+                      className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                    >
+                      Copiar código
+                    </button>
+                  </div>
+                  {guestShare.url && (
+                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={guestShare.url}
+                        className="w-full flex-1 rounded-md bg-neutral-900 border border-neutral-800 px-2 py-1 text-xs text-gray-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onCopy?.(guestShare.url, "Enlace")}
+                        className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                      >
+                        Copiar enlace
+                      </button>
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-gray-400">Expira en 7 días.</p>
+                </>
+              ) : (
+                <p className="text-xs text-gray-400">Generando código...</p>
+              )}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-2 rounded-md border border-neutral-700 text-xs text-gray-300 hover:border-[#c6f600]"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </ModalFlipFrame>
+      </div>
+    );
+  }
   return (
     <div
       ref={overlayRef}
@@ -264,60 +348,13 @@ const SaveModal = ({
 
           {saveError && <p className="text-xs text-red-400 mt-3">{saveError}</p>}
 
-          {hasGuestShare && (
-            <div className="mt-3 rounded-lg border border-neutral-800 bg-black/60 p-3 text-sm text-gray-200">
-              <p className="text-xs text-gray-400">Copia tu código y enlace para revisar tu bracket.</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="font-mono text-base text-[#c6f600]">{guestShare?.code}</span>
-                <button
-                  type="button"
-                  onClick={() => guestShare?.code && onCopy?.(guestShare.code, "Código")}
-                  className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-                >
-                  Copiar código
-                </button>
-              </div>
-              {guestShare?.url && (
-                <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={guestShare.url}
-                    className="w-full flex-1 rounded-md bg-neutral-900 border border-neutral-800 px-2 py-1 text-xs text-gray-300"
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onCopy?.(guestShare.url, "Enlace")}
-                      className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-                    >
-                      Copiar enlace
-                    </button>
-                    <a
-                      href={guestShare.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-                    >
-                      Abrir
-                    </a>
-                  </div>
-                </div>
-              )}
-              <p className="mt-2 text-xs text-gray-400">
-                Si guardas de nuevo, se generará un nuevo código.
-              </p>
-              <p className="mt-2 text-xs text-gray-400">Expira en 7 días.</p>
-            </div>
-          )}
-
           <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
               className="px-3 py-2 rounded-md border border-neutral-700 text-xs text-gray-300 hover:border-[#c6f600]"
             >
-              {hasGuestShare ? "Cerrar" : "Cancelar"}
+              Cancelar
             </button>
             <button
               type="button"
@@ -1571,34 +1608,29 @@ export default function BracketGamePage() {
       is_authed: !!authSession?.access_token,
     });
     setSaveError(null);
+    setShowSaveModal(false);
     const autoName = generateBracketCode();
-    if (!authSession?.access_token) {
-      const existing = readGuestSave();
-      if (existing) {
-        guestSaveMetaRef.current = {
-          name: existing.name,
-          updatedAt: existing.updatedAt,
-          shortCode: existing.shortCode,
-          shareId: existing.shareId,
-          shareUrl: existing.shareUrl,
-        };
-      }
-      setSaveMode("new");
-      setSaveName(existing?.shortCode || autoName);
-      setSelectedOverwriteId(null);
-      setShowSaveModal(true);
-      return;
-    }
     setSaveMode("new");
     setSaveName(autoName);
     setSelectedOverwriteId(null);
-    setShowSaveModal(true);
+    const result = await handleConfirmSave({ source: "save" });
+    if (!result.ok) {
+      setSaveNotice(result.error || "No pudimos guardar el bracket.");
+      return;
+    }
+    if (!authSession?.access_token && result.ok) {
+      setShowSaveModal(true);
+    }
   };
 
-  const handleConfirmSave = async () => {
+  const handleConfirmSave = async (options?: {
+    skipShareCard?: boolean;
+    source?: "save" | "share";
+  }): Promise<SaveResult> => {
     trackEvent("save_confirm", {
       mode: saveMode,
       is_authed: !!authSession?.access_token,
+      source: options?.source || "save",
     });
     setSaveBusy(true);
     setSaveError(null);
@@ -1628,7 +1660,10 @@ export default function BracketGamePage() {
           });
           setSaveError(err instanceof Error ? err.message : "No pudimos generar el código de invitado.");
           setSaveBusy(false);
-          return;
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : "No pudimos generar el código de invitado.",
+          };
         }
         const stored = persistGuestSave(payload, shortCode, { shortCode, shareId, shareUrl });
         guestSaveMetaRef.current = {
@@ -1638,50 +1673,52 @@ export default function BracketGamePage() {
           shareId,
           shareUrl,
         };
-        void (async () => {
-          try {
-            const shareUrlForCard = shareUrl || buildSharePageUrl(shareId, API_BASE_URL || undefined);
-            const sharePayload: ShareCardPayload = {
-              champion: {
-                name: championTeam?.nombre || "Por definir",
-                escudo: getTeamEscudo(championTeam),
-              },
-              runnerUp: {
-                name: runnerUpTeam?.nombre || "Por definir",
-                escudo: getTeamEscudo(runnerUpTeam),
-              },
-              third: {
-                name: thirdPlaceWinner?.nombre || "Por definir",
-                escudo: getTeamEscudo(thirdPlaceWinner),
-              },
-              shareUrl: shareUrlForCard,
-            };
-            const blob = await captureShareCardBlob(sharePayload);
-            const uploaded = await uploadShareCard(blob, shareId, shortCode);
-            if (uploaded?.shareCardUrl) {
-              const signature = [
-                shareId,
-                championTeam?.id || "",
-                runnerUpTeam?.id || "",
-                thirdPlaceWinner?.id || "",
-              ].join("|");
-              const nextAsset = {
-                shareCardUrl: uploaded.shareCardUrl,
-                sharePageUrl: uploaded.sharePageUrl || shareUrlForCard,
-                bracketId: shareId,
-                guestCode: shortCode || undefined,
-                signature,
+        if (!options?.skipShareCard) {
+          void (async () => {
+            try {
+              const shareUrlForCard = shareUrl || buildSharePageUrl(shareId, API_BASE_URL || undefined);
+              const sharePayload: ShareCardPayload = {
+                champion: {
+                  name: championTeam?.nombre || "Por definir",
+                  escudo: getTeamEscudo(championTeam),
+                },
+                runnerUp: {
+                  name: runnerUpTeam?.nombre || "Por definir",
+                  escudo: getTeamEscudo(runnerUpTeam),
+                },
+                third: {
+                  name: thirdPlaceWinner?.nombre || "Por definir",
+                  escudo: getTeamEscudo(thirdPlaceWinner),
+                },
+                shareUrl: shareUrlForCard,
               };
-              setShareAsset(nextAsset);
-              shareAssetRef.current = nextAsset;
-              autoShareSignatureRef.current = signature;
+              const blob = await captureShareCardBlob(sharePayload);
+              const uploaded = await uploadShareCard(blob, shareId, shortCode);
+              if (uploaded?.shareCardUrl) {
+                const signature = [
+                  shareId,
+                  championTeam?.id || "",
+                  runnerUpTeam?.id || "",
+                  thirdPlaceWinner?.id || "",
+                ].join("|");
+                const nextAsset = {
+                  shareCardUrl: uploaded.shareCardUrl,
+                  sharePageUrl: uploaded.sharePageUrl || shareUrlForCard,
+                  bracketId: shareId,
+                  guestCode: shortCode || undefined,
+                  signature,
+                };
+                setShareAsset(nextAsset);
+                shareAssetRef.current = nextAsset;
+                autoShareSignatureRef.current = signature;
+              }
+            } catch {
+              // ignore upload failures for guest saves
+            } finally {
+              setActiveShareCard(null);
             }
-          } catch {
-            // ignore upload failures for guest saves
-          } finally {
-            setActiveShareCard(null);
-          }
-        })();
+          })();
+        }
         trackEvent("save_success", {
           mode: saveMode,
           is_authed: false,
@@ -1689,7 +1726,7 @@ export default function BracketGamePage() {
         });
         setSaveNotice(`Copia el código ${shortCode} para revisar tu bracket.`);
         setGuestShareInfo(shortCode, shareId, shareUrl);
-        return;
+        return { ok: true, bracketId: shareId, guestCode: shortCode, shareUrl };
       }
       const name = saveName.trim() || generateBracketCode();
       const userId = requireAuthUserId();
@@ -1706,7 +1743,10 @@ export default function BracketGamePage() {
         });
         setSaveError(`Llegaste al límite de ${MAX_USER_BRACKETS} brackets. Adminístralos en /user.`);
         setSaveBusy(false);
-        return;
+        return {
+          ok: false,
+          error: `Llegaste al límite de ${MAX_USER_BRACKETS} brackets. Adminístralos en /user.`,
+        };
       }
 
       const { data, error } = await supabase
@@ -1728,13 +1768,16 @@ export default function BracketGamePage() {
         save_target: "user",
       });
       setSaveNotice("Bracket guardado correctamente.");
+      return saved?.id ? { ok: true, bracketId: saved.id } : { ok: false, error: "No pudimos guardar." };
     } catch (err) {
       trackEvent("save_error", {
         mode: saveMode,
         is_authed: !!authSession?.access_token,
         reason: "unknown",
       });
-      setSaveError(err instanceof Error ? err.message : "No pudimos guardar el bracket.");
+      const message = err instanceof Error ? err.message : "No pudimos guardar el bracket.";
+      setSaveError(message);
+      return { ok: false, error: message };
     } finally {
       setSaveBusy(false);
     }
@@ -2835,13 +2878,17 @@ const scheduleByMatch = useMemo(() => {
     [championBanner],
   );
   const ensureShareCardReady = useCallback(
-    async (reason: "auto" | "share") => {
+    async (
+      reason: "auto" | "share",
+      overrides?: { bracketId?: string | null; guestCode?: string; sharePageUrl?: string },
+    ) => {
       if (isViewOnly || !championTeam) return null;
       ensureGuestMeta();
       if (autoShareInFlightRef.current) return shareAssetRef.current;
 
+      const signatureId = overrides?.bracketId || currentSaveId || guestSaveMetaRef.current?.shareId || "";
       const signature = [
-        currentSaveId || guestSaveMetaRef.current?.shareId || "",
+        signatureId,
         championTeam?.id || "",
         runnerUpTeam?.id || "",
         thirdPlaceWinner?.id || "",
@@ -2853,15 +2900,17 @@ const scheduleByMatch = useMemo(() => {
       autoShareInFlightRef.current = true;
       showShareInfo(reason === "auto" ? "Generando imagen final..." : "Generando tarjeta...", 0);
 
-      let bracketId = currentSaveId || guestSaveMetaRef.current?.shareId || null;
-      let guestCode: string | undefined = guestSaveMetaRef.current?.shortCode;
-      let sharePageUrl = "";
+      let bracketId = overrides?.bracketId || currentSaveId || guestSaveMetaRef.current?.shareId || null;
+      let guestCode: string | undefined = overrides?.guestCode || guestSaveMetaRef.current?.shortCode;
+      let sharePageUrl = overrides?.sharePageUrl || "";
       if (bracketId) {
-        if (currentSaveId) {
-          sharePageUrl = buildSharePageUrl(bracketId, API_BASE_URL || undefined);
-        } else {
-          sharePageUrl =
-            guestSaveMetaRef.current?.shareUrl || buildSharePageUrl(bracketId, API_BASE_URL || undefined);
+        if (!sharePageUrl) {
+          if (currentSaveId) {
+            sharePageUrl = buildSharePageUrl(bracketId, API_BASE_URL || undefined);
+          } else {
+            sharePageUrl =
+              guestSaveMetaRef.current?.shareUrl || buildSharePageUrl(bracketId, API_BASE_URL || undefined);
+          }
         }
       }
 
@@ -3097,74 +3146,42 @@ const scheduleByMatch = useMemo(() => {
     });
     showShareInfo("Generando tarjeta...", 0);
     ensureGuestMeta();
-    let shareUploadId: string | null = currentSaveId || null;
+    let shareUploadId: string | null = null;
     let shareUploadCode: string | undefined;
-    if (shareAssetRef.current?.bracketId) {
-      shareUploadId = shareAssetRef.current.bracketId || shareUploadId;
-      shareUploadCode = shareAssetRef.current.guestCode || shareUploadCode;
-    }
-    if (!shareUploadId && guestSaveMetaRef.current?.shareId) {
-      shareUploadId = guestSaveMetaRef.current.shareId || null;
-      shareUploadCode = guestSaveMetaRef.current.shortCode;
-    }
-    let sharePageUrl =
-      isViewOnly || !currentSaveId
-        ? buildSharePageUrl(viewBracketId || currentSaveId || "", API_BASE_URL || undefined)
-        : buildSharePageUrl(currentSaveId, API_BASE_URL || undefined);
+    let sharePageUrl = buildSharePageUrl(viewBracketId || currentSaveId || "", API_BASE_URL || undefined);
     let viewUrl = buildShareUrl(isViewOnly ? viewBracketId : currentSaveId);
+    let overrides:
+      | {
+          bracketId: string;
+          guestCode?: string;
+          sharePageUrl?: string;
+        }
+      | undefined;
 
-    if (!isViewOnly && !currentSaveId) {
-      if (authSession?.access_token) {
-        setShareInfo("Guarda tu pronóstico para poder compartirlo.");
-        void handleSaveClick();
+    if (!isViewOnly) {
+      const saved = await handleConfirmSave({ source: "share", skipShareCard: true });
+      if (!saved.ok) {
+        setShareInfo(saved.error || "No pudimos guardar tu bracket.");
         return;
       }
-      if (guestSaveMetaRef.current?.shareId) {
-        shareUploadId = guestSaveMetaRef.current.shareId;
-        shareUploadCode = guestSaveMetaRef.current.shortCode;
-        sharePageUrl =
-          guestSaveMetaRef.current.shareUrl ||
-          buildSharePageUrl(guestSaveMetaRef.current.shareId, API_BASE_URL || undefined);
-        viewUrl = sharePageUrl || viewUrl;
-      } else {
-        const payload = buildSavePayload();
-        try {
-          const guestShare = await createGuestShare({
-            apiBaseUrl: API_BASE_URL || undefined,
-            name: "",
-            data: payload,
-          });
-          if (!guestShare?.id) {
-            setShareInfo("No pudimos crear el enlace de invitado. Intenta de nuevo.");
-            return;
-          }
-          const shortCode = guestShare.shortCode ? guestShare.shortCode.toUpperCase() : "";
-          const stored = persistGuestSave(payload, shortCode, {
-            shortCode,
-            shareId: guestShare.id,
-            shareUrl: guestShare.sharePageUrl,
-          });
-          guestSaveMetaRef.current = {
-            name: stored?.name || shortCode,
-            updatedAt: stored?.updatedAt || new Date().toISOString(),
-            shortCode,
-            shareId: guestShare.id,
-            shareUrl: guestShare.sharePageUrl,
-          };
-          shareUploadId = guestShare.id;
-          shareUploadCode = shortCode || undefined;
-          setSaveNotice(`Copia el código ${shortCode} para revisar tu bracket.`);
-          setGuestShareInfo(shortCode, guestShare.id, guestShare.sharePageUrl);
-          sharePageUrl = guestShare.sharePageUrl || buildSharePageUrl(guestShare.id, API_BASE_URL || undefined);
-          viewUrl = sharePageUrl || viewUrl;
-        } catch (err) {
-          setShareInfo(err instanceof Error ? err.message : "No pudimos crear el enlace de invitado.");
-          return;
-        }
+      if (shareAssetRef.current?.bracketId && shareAssetRef.current.bracketId !== saved.bracketId) {
+        setShareAsset(null);
+        shareAssetRef.current = null;
+        autoShareSignatureRef.current = "";
       }
+      shareUploadId = saved.bracketId;
+      shareUploadCode = saved.guestCode;
+      sharePageUrl = saved.shareUrl || buildSharePageUrl(saved.bracketId, API_BASE_URL || undefined);
+      viewUrl = sharePageUrl || viewUrl;
+      overrides = {
+        bracketId: saved.bracketId,
+        guestCode: saved.guestCode,
+        sharePageUrl,
+      };
     }
+
     if (!shareAssetRef.current?.shareCardUrl) {
-      await ensureShareCardReady("share");
+      await ensureShareCardReady("share", overrides);
     }
 
     const cachedSharePageUrl = shareAssetRef.current?.sharePageUrl;
@@ -3479,12 +3496,37 @@ const scheduleByMatch = useMemo(() => {
       }
       try {
         showShareInfo("Preparando para compartir...", 0);
+        let saved: SaveResult | null = null;
+        if (!isViewOnly) {
+          saved = await handleConfirmSave({ source: "share", skipShareCard: true });
+          if (!saved.ok) {
+            showShareInfo(saved.error || "No pudimos guardar tu bracket.", 3000);
+            return;
+          }
+          if (shareAssetRef.current?.bracketId && shareAssetRef.current.bracketId !== saved.bracketId) {
+            setShareAsset(null);
+            shareAssetRef.current = null;
+            autoShareSignatureRef.current = "";
+          }
+        }
+        const overrides =
+          saved && saved.ok
+            ? {
+                bracketId: saved.bracketId,
+                guestCode: saved.guestCode,
+                sharePageUrl: saved.shareUrl,
+              }
+            : undefined;
         if (!shareAssetRef.current?.shareCardUrl) {
-          await ensureShareCardReady("share");
+          await ensureShareCardReady("share", overrides);
         }
         const shareUrl =
+          overrides?.sharePageUrl ||
           shareAssetRef.current?.sharePageUrl ||
-          buildSharePageUrl(shareAssetRef.current?.bracketId || currentSaveId || "", API_BASE_URL || undefined) ||
+          buildSharePageUrl(
+            overrides?.bracketId || shareAssetRef.current?.bracketId || currentSaveId || viewBracketId || "",
+            API_BASE_URL || undefined,
+          ) ||
           window.location.href;
         const championPick = targetChampion || championTeam;
         const messageParts = [
@@ -3520,10 +3562,13 @@ const scheduleByMatch = useMemo(() => {
       API_BASE_URL,
       championTeam,
       currentSaveId,
+      handleConfirmSave,
       ensureShareCardReady,
       fetchShareCardBlob,
+      isViewOnly,
       runnerUpTeam?.nombre,
       thirdPlaceWinner?.nombre,
+      viewBracketId,
       showShareInfo,
     ],
   );
