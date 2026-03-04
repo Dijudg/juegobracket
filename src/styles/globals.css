@@ -309,6 +309,16 @@ html {
   justify-content: center;
 }
 
+.share-card-flip--spin {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.share-card-flip--spin:focus-visible {
+  outline: 2px solid #c6f600;
+  outline-offset: 6px;
+}
+
 .share-card-flip__card {
   position: relative;
   width: 16rem;
@@ -318,6 +328,15 @@ html {
   transform-origin: center;
   animation: share-card-spin 30s linear infinite;
   will-change: transform;
+}
+
+.share-card-flip__card--manual {
+  animation: none;
+  transition: transform 0.7s ease;
+}
+
+.share-card-flip__card--flipped {
+  transform: rotateY(180deg);
 }
 
 .share-card-flip__face {
@@ -376,6 +395,10 @@ html {
 @media (prefers-reduced-motion: reduce) {
   .share-card-flip__card {
     animation: none;
+  }
+
+  .share-card-flip__card--manual {
+    transition: none;
   }
 
   .share-card--holo::before,

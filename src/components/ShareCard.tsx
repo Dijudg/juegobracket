@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import modalBackImage from "../assets/fondo.jpg";
 import shareBackLogo from "../assets/7flapollalog.png";
 
@@ -99,7 +101,12 @@ const ShareCardBack = () => (
 );
 
 export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, variant = "static" }: ShareCardProps) => {
-  if (variant !== "spin") {
+  const isSpin = variant === "spin";
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+
+  if (!isSpin) {
     return (
       <ShareCardFront
         coverUrl={coverUrl}
@@ -111,12 +118,37 @@ export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, varia
     );
   }
 
+  const isManual = isFlipped || isHovered || isFocused;
+  const toggleFlip = () => setIsFlipped((prev) => !prev);
+  const cardClassName = [
+    "share-card-flip__card",
+    isManual ? "share-card-flip__card--manual" : "",
+    isFlipped ? "share-card-flip__card--flipped" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div
       className="share-card-flip share-card-flip--spin"
       style={{ ["--share-card-back" as any]: `url(${modalBackImage})` }}
+      role="button"
+      tabIndex={0}
+      aria-pressed={isFlipped}
+      aria-label="Girar tarjeta compartida"
+      onClick={toggleFlip}
+      onPointerEnter={() => setIsHovered(true)}
+      onPointerLeave={() => setIsHovered(false)}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggleFlip();
+        }
+      }}
     >
-      <div className="share-card-flip__card">
+      <div className={cardClassName}>
         <div className="share-card-flip__face share-card-flip__face--back" aria-hidden="true">
           <ShareCardBack />
         </div>
