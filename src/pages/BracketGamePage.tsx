@@ -167,7 +167,7 @@ const SaveModal = ({
   const limitReached = savedBrackets.length >= MAX_USER_BRACKETS;
   const showOverwrite = allowOverwrite && savedBrackets.length > 0;
   const showUpdate = allowOverwrite && !!currentSaveId;
-  const guestShareReady = !isAuthed && !!guestShare?.code;
+  const hasGuestShare = !isAuthed && !!guestShare?.code;
   return (
     <div
       ref={overlayRef}
@@ -193,7 +193,7 @@ const SaveModal = ({
           </p>
 
           <div className="flex flex-col gap-2 text-sm text-gray-200">
-            {showUpdate && !guestShareReady && (
+            {showUpdate && (
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -204,7 +204,7 @@ const SaveModal = ({
                 Actualizar este bracket
               </label>
             )}
-            {!limitReached && !guestShareReady && (
+            {!limitReached && (
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -215,7 +215,7 @@ const SaveModal = ({
                 Guardar como nuevo
               </label>
             )}
-            {showOverwrite && !guestShareReady && (
+            {showOverwrite && (
               <label className="flex items-center gap-2">
                 <input
                   type="radio"
@@ -228,7 +228,7 @@ const SaveModal = ({
             )}
           </div>
 
-          {limitReached && !guestShareReady && (
+          {limitReached && (
             <p className="mt-2 text-xs text-yellow-400">
               Límite de {MAX_USER_BRACKETS} brackets alcanzado. Debes sobrescribir uno.
             </p>
@@ -241,7 +241,7 @@ const SaveModal = ({
           )}
 
 
-          {saveMode === "overwrite" && showOverwrite && !guestShareReady && (
+          {saveMode === "overwrite" && showOverwrite && (
             <div className="mt-3 flex flex-col gap-2 max-h-40 overflow-y-auto">
               {savedBrackets.map((item) => (
                 <label key={item.id} className="flex items-center gap-2 text-sm text-gray-200">
@@ -264,7 +264,7 @@ const SaveModal = ({
 
           {saveError && <p className="text-xs text-red-400 mt-3">{saveError}</p>}
 
-          {guestShareReady && (
+          {hasGuestShare && (
             <div className="mt-3 rounded-lg border border-neutral-800 bg-black/60 p-3 text-sm text-gray-200">
               <p className="text-xs text-gray-400">Copia tu código y enlace para revisar tu bracket.</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -304,6 +304,9 @@ const SaveModal = ({
                   </div>
                 </div>
               )}
+              <p className="mt-2 text-xs text-gray-400">
+                Si guardas de nuevo, se generará un nuevo código.
+              </p>
               <p className="mt-2 text-xs text-gray-400">Expira en 7 días.</p>
             </div>
           )}
@@ -314,20 +317,18 @@ const SaveModal = ({
               onClick={onClose}
               className="px-3 py-2 rounded-md border border-neutral-700 text-xs text-gray-300 hover:border-[#c6f600]"
             >
-              {guestShareReady ? "Cerrar" : "Cancelar"}
+              {hasGuestShare ? "Cerrar" : "Cancelar"}
             </button>
-            {!guestShareReady && (
-              <button
-                type="button"
-                onClick={onConfirm}
-                disabled={saveBusy}
-                className={`px-3 py-2 rounded-md text-xs font-semibold ${
-                  saveBusy ? "bg-neutral-700 text-gray-400" : "bg-[#c6f600] text-black hover:brightness-95"
-                }`}
-              >
-                {saveBusy ? "Guardando..." : "Guardar"}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={saveBusy}
+              className={`px-3 py-2 rounded-md text-xs font-semibold ${
+                saveBusy ? "bg-neutral-700 text-gray-400" : "bg-[#c6f600] text-black hover:brightness-95"
+              }`}
+            >
+              {saveBusy ? "Guardando..." : "Guardar"}
+            </button>
           </div>
         </div>
       </ModalFlipFrame>
