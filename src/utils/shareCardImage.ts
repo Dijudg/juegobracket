@@ -139,7 +139,7 @@ const createFallbackShareCardBlob = async (
   if (coverUrl) {
     try {
       const coverImg = await loadImage(coverUrl);
-      ctx.drawImage(coverImg, 0, 0, width, headerHeight);
+      drawImageCover(ctx, coverImg, 0, 0, width, headerHeight);
       const gradient = ctx.createLinearGradient(0, 0, 0, headerHeight);
       gradient.addColorStop(0, "rgba(0,0,0,0)");
       gradient.addColorStop(0.6, "rgba(0,0,0,0.3)");
@@ -157,7 +157,7 @@ const createFallbackShareCardBlob = async (
 
   const avatarSize = 250;
   const avatarX = width / 2;
-  const avatarYOffset = 45; 
+  const avatarYOffset = 60; 
   const avatarY = headerHeight - avatarSize / 2 + avatarYOffset;
   ctx.fillStyle = "#0b0b0b";
   ctx.beginPath();
@@ -226,8 +226,7 @@ const createFallbackShareCardBlob = async (
     ctx.arcTo(x, y + cardH, x, y, r);
     ctx.arcTo(x, y, x + cardW, y, r);
     ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+ 
 
     // Escudo (tu “bandera”)
     const imgSize = 64;

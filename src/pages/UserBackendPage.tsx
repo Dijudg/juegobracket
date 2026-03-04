@@ -790,14 +790,12 @@ export default function UserBackendPage() {
       }
       const sharePageUrl = buildSharePageUrl(payload.id, API_BASE_URL || undefined) || payload.shareUrl;
       const messageParts = [
-        `Mi prónosticos Mundialista: campeón ${payload.champion.name}.`,
+        `Mi pronósticos Mundialista: campeón ${payload.champion.name}.`,
         payload.runnerUp.name !== "Por definir" ? `Segundo: ${payload.runnerUp.name}.` : "",
         payload.third.name !== "Por definir" ? `Tercero: ${payload.third.name}.` : "",
-        `Mira mi cuadro aquí: ${sharePageUrl}`,
       ].filter(Boolean);
       const baseMessage = messageParts.join(" ");
       const shareTitle = "Mi pronóstico Mundialista";
-      const shareTarget = sharePageUrl;
       setShareBusyId(payload.id);
       showShareStatus("Generando tarjeta...", 0);
       flushSync(() => setActiveShareCard(payload));
@@ -811,7 +809,7 @@ export default function UserBackendPage() {
           forceFallback: true,
         });
 
-        let finalSharePageUrl = shareTarget;
+        let finalSharePageUrl = sharePageUrl;
         if (session?.access_token) {
           try {
             showShareStatus("Subiendo imagen...", 0);
@@ -828,7 +826,7 @@ export default function UserBackendPage() {
           }
         }
 
-        const finalMessage = baseMessage.replace(shareTarget, finalSharePageUrl || shareTarget);
+        const finalMessage = baseMessage;
         const file = new File([blob], `pronostico-${payload.id}.png`, { type: "image/png" });
         const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [file] }));
         if (canShareFile) {
@@ -855,7 +853,7 @@ export default function UserBackendPage() {
     if (!items.length) return [];
     const map = new Map<string, { name: string; count: number; latest: string; latestId: string }>();
     items.forEach((item) => {
-      const name = extractGameName(item.name || "Mi Pron?stico del Mundial 2026");
+      const name = extractGameName(item.name || "Mi Pronóstico del Mundial 2026");
       const current = map.get(name) || {
         name,
         count: 0,
