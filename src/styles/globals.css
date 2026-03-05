@@ -330,8 +330,8 @@ html {
   transform-style: preserve-3d;
   -webkit-transform-style: preserve-3d;
   transform-origin: center;
-  animation: share-card-spin var(--share-spin-duration, 30s) linear infinite;
-  animation-direction: var(--share-spin-direction, normal);
+  animation: none;
+  transform: rotateX(var(--share-rot-x, 0deg)) rotateY(var(--share-rot-y, 0deg));
   will-change: transform;
 }
 
@@ -447,7 +447,8 @@ html {
   width: 8rem;
   height: 8rem;
   position: absolute;
-  left: 72px;
+  left: 0%;
+  transform: translateX(0%);
   top: 87px;
   border-radius: 9999px;
   border: 8px solid #1d1d1b;
@@ -480,6 +481,7 @@ html {
   align-self: stretch;
   height: 2.5rem;
   display: inline-flex;
+  margin-top: 0.75rem;
   justify-content: flex-start;
   align-items: center;
   gap: 0.75rem;
@@ -718,6 +720,41 @@ html.view-only *::-webkit-scrollbar-thumb:hover {
 }
 .with-auth-cta {
   padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+.share-cta-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  padding: 0 16px 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.share-cta-bar__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid #27272a;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.share-cta-bar__text {
+  color: #e5e7eb;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.with-share-cta {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Estilos para react-slick carrusel */
@@ -1276,6 +1313,17 @@ body{
   align-items: center;
   justify-content: center;
   width: 100%;
+}
+
+.modal-flip-tilt {
+  transform-style: preserve-3d;
+  transform: rotateX(var(--modal-rot-x, 0deg)) rotateY(var(--modal-rot-y, 0deg));
+  will-change: transform;
+  cursor: grab;
+}
+
+.modal-flip-tilt.is-dragging {
+  cursor: grabbing;
 }
 
 .modal-flip-card {
@@ -1858,7 +1906,7 @@ body{
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  z-index: 5;
+  z-index: -1;
   pointer-events: none;
   mix-blend-mode: screen;
   mask-image: var(--holo-metafy);
@@ -1910,7 +1958,7 @@ body{
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  opacity: 1;
+  opacity: 0.1;
   pointer-events: none;
 }
 
@@ -2068,6 +2116,22 @@ body{
       hsl(248, 25%, 80%) 12%,
       hsla(240, 87%, 3%, 0.8) 90%
     );
+}
+
+/* Keep share card layout intact when using holo-header */
+.share-card__header.holo-header .share-card__cover {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.share-card__header.holo-header::before,
+.share-card__header.holo-header::after {
+  z-index: 1;
+}
+
+.share-card__header.holo-header .share-card__champion {
+  z-index: 2;
 }
 
 @keyframes holo-pan {

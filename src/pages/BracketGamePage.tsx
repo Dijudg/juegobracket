@@ -1,5 +1,6 @@
 ﻿import { Crown, ChevronDown, CalendarDays } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
 import { createShareCardBlob } from "../utils/shareCardImage";
@@ -110,6 +111,20 @@ const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundiali
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 const generateBracketCode = () =>
   `FM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+const isTouch =
+  typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+
+const deg2rad = (value: number) => (value * Math.PI) / 180;
+const rad2deg = (value: number) => (value * 180) / Math.PI;
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const MODAL_ROTATE_SPEED = 0.005;
+const MODAL_INERTIA = 0.92;
+const MODAL_AUTO_ROTATE_SPEED = 0.35;
+const MODAL_MAX_TILT = deg2rad(25);
+const MODAL_HOVER_MAG = deg2rad(6);
+const MODAL_HOVER_EASE = 0.15;
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
@@ -675,6 +690,13 @@ export default function BracketGamePage() {
   const goHome = () => {
     window.location.href = homeUrl;
   };
+  const goNewBracket = () => {
+    if (typeof window === "undefined") return;
+    const basePath = window.location.pathname.replace(/\/share\/[^/]+\/?$/, "/");
+    const target = new URL(basePath || "/", window.location.origin);
+    target.searchParams.set("reset", Date.now().toString());
+    window.location.href = target.toString();
+  };
     const { navigateTo, pageParams } = useNavigation();
     const viewParams = useMemo(() => {
       if (typeof window === "undefined") return null;
@@ -1000,6 +1022,150 @@ export default function BracketGamePage() {
   >(null);
   const championModalRef = useRef<HTMLDivElement>(null);
   const championHolo = useHoloPointer();
+  const championMotionRef = useRef<HTMLDivElement>(null);
+  const championDragRef = useRef({ active: false, lastX: 0, lastY: 0 });
+  const championDraggingRef = useRef(false);
+  const championPausedRef = useRef(false);
+  const championInsideRef = useRef(false);
+  const championAutoDirRef = useRef(1);
+  const championAutoSpeedRef = useRef(MODAL_AUTO_ROTATE_SPEED);
+  const championBaseRotRef = useRef({ x: 0, y: 0 });
+  const championVelRef = useRef({ x: 0, y: 0 });
+  const championHoverTargetRef = useRef({ x: 0, y: 0 });
+  const championHoverCurrentRef = useRef({ x: 0, y: 0 });
+  const championLastTimeRef = useRef<number | null>(null);
+  const [isChampionDragging, setIsChampionDragging] = useState(false);
+
+  const applyChampionTransform = useCallback((x: number, y: number) => {
+    const node = championMotionRef.current;
+    if (!node) return;
+    node.style.setProperty("--modal-rot-x", `${rad2deg(x)}deg`);
+    node.style.setProperty("--modal-rot-y", `${rad2deg(y)}deg`);
+  }, []);
+
+  useEffect(() => {
+    if (!showChampionModal) return;
+    championPausedRef.current = false;
+    championInsideRef.current = false;
+    championDraggingRef.current = false;
+    setIsChampionDragging(false);
+    championLastTimeRef.current = null;
+    championBaseRotRef.current = { x: 0, y: 0 };
+    championVelRef.current = { x: 0, y: 0 };
+    championHoverTargetRef.current = { x: 0, y: 0 };
+    championHoverCurrentRef.current = { x: 0, y: 0 };
+    championAutoSpeedRef.current = MODAL_AUTO_ROTATE_SPEED;
+    championAutoDirRef.current = 1;
+    applyChampionTransform(0, 0);
+
+    let rafId = 0;
+    const tick = (time: number) => {
+      if (championLastTimeRef.current === null) championLastTimeRef.current = time;
+      const dt = Math.min((time - championLastTimeRef.current) / 1000, 0.05);
+      championLastTimeRef.current = time;
+
+      if (!championPausedRef.current && !championDraggingRef.current) {
+        championBaseRotRef.current.y += championAutoDirRef.current * championAutoSpeedRef.current * dt;
+        championBaseRotRef.current.y += championVelRef.current.x;
+        championBaseRotRef.current.x = clamp(
+          championBaseRotRef.current.x + championVelRef.current.y,
+          -MODAL_MAX_TILT,
+          MODAL_MAX_TILT,
+        );
+        championVelRef.current.x *= MODAL_INERTIA;
+        championVelRef.current.y *= MODAL_INERTIA;
+      }
+
+      const hoverTarget = championPausedRef.current ? { x: 0, y: 0 } : championHoverTargetRef.current;
+      championHoverCurrentRef.current.x +=
+        (hoverTarget.x - championHoverCurrentRef.current.x) * MODAL_HOVER_EASE;
+      championHoverCurrentRef.current.y +=
+        (hoverTarget.y - championHoverCurrentRef.current.y) * MODAL_HOVER_EASE;
+
+      const renderX = championBaseRotRef.current.x + championHoverCurrentRef.current.x;
+      const renderY = championBaseRotRef.current.y + championHoverCurrentRef.current.y;
+      applyChampionTransform(renderX, renderY);
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [applyChampionTransform, showChampionModal]);
+
+  const handleChampionPointerEnter = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") return;
+    championInsideRef.current = true;
+    championPausedRef.current = true;
+    championVelRef.current = { x: 0, y: 0 };
+    championHoverTargetRef.current = { x: 0, y: 0 };
+  }, []);
+
+  const handleChampionPointerLeave = useCallback(() => {
+    championInsideRef.current = false;
+    championPausedRef.current = false;
+    championDraggingRef.current = false;
+    setIsChampionDragging(false);
+    championHoverTargetRef.current = { x: 0, y: 0 };
+  }, []);
+
+  const handleChampionPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    championDragRef.current = { active: true, lastX: event.clientX, lastY: event.clientY };
+    championDraggingRef.current = true;
+    setIsChampionDragging(true);
+    championPausedRef.current = true;
+    championVelRef.current = { x: 0, y: 0 };
+    championHoverTargetRef.current = { x: 0, y: 0 };
+  }, []);
+
+  const handleChampionPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (championDraggingRef.current) {
+      const dx = event.clientX - championDragRef.current.lastX;
+      const dy = event.clientY - championDragRef.current.lastY;
+      championDragRef.current.lastX = event.clientX;
+      championDragRef.current.lastY = event.clientY;
+
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        event.preventDefault();
+        championBaseRotRef.current.y += dx * MODAL_ROTATE_SPEED;
+        championBaseRotRef.current.x = clamp(
+          championBaseRotRef.current.x + dy * MODAL_ROTATE_SPEED,
+          -MODAL_MAX_TILT,
+          MODAL_MAX_TILT,
+        );
+        championVelRef.current = { x: dx * MODAL_ROTATE_SPEED, y: dy * MODAL_ROTATE_SPEED };
+        if (Math.abs(dx) > 1) championAutoDirRef.current = dx >= 0 ? 1 : -1;
+      }
+      return;
+    }
+
+    if (championPausedRef.current || isTouch) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const nx = (event.clientX - rect.left) / rect.width;
+    const ny = (event.clientY - rect.top) / rect.height;
+    const px = clamp(nx * 2 - 1, -1, 1);
+    const py = clamp(ny * 2 - 1, -1, 1);
+    championHoverTargetRef.current = { x: -py * MODAL_HOVER_MAG, y: px * MODAL_HOVER_MAG };
+  }, []);
+
+  const handleChampionPointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    championDraggingRef.current = false;
+    setIsChampionDragging(false);
+    if (event.pointerType === "touch") {
+      championPausedRef.current = false;
+    } else if (!championInsideRef.current) {
+      championPausedRef.current = false;
+    }
+  }, []);
+
+  const handleChampionPointerCancel = useCallback(() => {
+    championDraggingRef.current = false;
+    championInsideRef.current = false;
+    championPausedRef.current = false;
+    setIsChampionDragging(false);
+    championHoverTargetRef.current = { x: 0, y: 0 };
+  }, []);
   const autoSwitchedPlayoffRef = useRef(false);
   const autoSwitchTimeoutRef = useRef<number | null>(null);
   const [autoSwitchNotice, setAutoSwitchNotice] = useState(false);
@@ -2560,6 +2726,19 @@ export default function BracketGamePage() {
     if (pageParams?.resetGame) return;
     skipAutoLoadRef.current = false;
   }, [authSession?.access_token, pageParams?.resetGame]);
+  const resetQueryRef = useRef<string | null>(null);
+  useEffect(() => {
+    const resetParam = viewParams?.get("reset");
+    if (!resetParam) return;
+    if (resetQueryRef.current === resetParam) return;
+    resetQueryRef.current = resetParam;
+    handleNewGame("deeplink");
+    if (typeof window !== "undefined") {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("reset");
+      window.history.replaceState({}, "", cleanUrl.toString());
+    }
+  }, [viewParams, handleNewGame]);
   useEffect(() => {
     const resetToken = pageParams?.resetGame as number | undefined;
     if (!resetToken) return;
@@ -4173,27 +4352,9 @@ const scheduleByMatch = useMemo(() => {
     <div
       className={`max-w-7xl mx-auto bg-neutral-900 text-white p-2 md:px-36 flex flex-col gap-8 bracket-stable ${
         showAuthCta ? "with-auth-cta" : ""
-      }`}
+      } ${isSharePath && !isEmbedded ? "with-share-cta" : ""}`}
     >
       {!isEmbedded && <Header authSlot={authSlot} showNav={false} showSearch={false} />}
-      {isSharePath && !isEmbedded && (
-        <div className="px-2 sm:px-6 lg:px-10 xl:px-16">
-          <div className="max-w-7xl mx-auto">
-            <div className="rounded-2xl border border-neutral-800 bg-black/50 p-4 flex flex-col md:flex-row items-center justify-between gap-3">
-              <p className="text-sm text-gray-300">
-                ¿Quieres jugar tu propio bracket? Arma tu pronóstico ahora.
-              </p>
-              <button
-                type="button"
-                onClick={goHome}
-                className="px-4 py-2 rounded-md bg-[#c6f600] text-black text-sm font-semibold hover:brightness-95"
-              >
-                Jugar mi bracket
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <main className="max-w-7xl px-2 sm:px-6 lg:px-10 xl:px-16">
           <div className="max-w-7xl mx-auto">
             {showSharedHeader && (
@@ -5006,6 +5167,20 @@ const scheduleByMatch = useMemo(() => {
         </div>
       )}
       {!isEmbedded && <Footer />}
+      {isSharePath && !isEmbedded && (
+        <div className="share-cta-bar">
+          <div className="bg-black/60 shadow-xl backdrop-blur-sm rounded-full px-4 py-2 flex items-center justify-between max-w-md mx-auto">
+            <div className="text-xl leading-none text-balance w-2/3 px-2">¿Quieres hacer tu pronóstico?</div>
+            <button
+              type="button"
+              onClick={goNewBracket}
+              className="w-1/3 px-4 py-2 rounded-full uppercase bg-[#c6f600] text-black text-xl font-black hover:brightness-95"
+            >
+              Jugar
+            </button>
+          </div>
+        </div>
+      )}
         <NewGamePromptModal
           open={showNewGamePrompt && !isViewOnly}
           onCancel={() => {
@@ -5229,6 +5404,17 @@ const scheduleByMatch = useMemo(() => {
               ref={championModalRef}
               className="relative z-10"
             >
+              <div
+                ref={championMotionRef}
+                className={`modal-flip-tilt${isChampionDragging ? " is-dragging" : ""}`}
+                style={{ touchAction: "pan-y" }}
+                onPointerEnter={handleChampionPointerEnter}
+                onPointerLeave={handleChampionPointerLeave}
+                onPointerDown={handleChampionPointerDown}
+                onPointerMove={handleChampionPointerMove}
+                onPointerUp={handleChampionPointerUp}
+                onPointerCancel={handleChampionPointerCancel}
+              >
               <div className="modal-flip-card">
               <div
                 className="modal-flip-back w-full max-w-lg mx-auto bg-neutral-900 text-white rounded-xl border border-neutral-700 shadow-2xl flex flex-col text-center overflow-hidden modal-glow"
@@ -5291,7 +5477,7 @@ const scheduleByMatch = useMemo(() => {
               </div>
               <div className="w-full flex flex-col items-center gap-2 text-xs text-gray-300">
                 <div className="flex flex-wrap items-center justify-center gap-3 w-full">
-                  <div className="flex items-center gap-2 px-3 py-2 ">
+                <div className="flex items-center gap-2 px-3 py-2 ">
                     <div className="relative w-10 h-10 rounded-full overflow-hidden bg-neutral-700 ring-2 ring-[#c0c0c0]">
                       {runnerUpTeam?.escudo ? (
                         <img
@@ -5388,6 +5574,7 @@ const scheduleByMatch = useMemo(() => {
               >
                 Cerrar
               </button>
+              </div>
               </div>
               </div>
               </div>

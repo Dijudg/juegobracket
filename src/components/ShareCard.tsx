@@ -22,12 +22,19 @@ type ShareCardProps = {
 
 export type { ShareCardTeam, ShareCardProps };
 
-const DEFAULT_SPIN_DURATION = 30;
-const MIN_SPIN_DURATION = 14;
-const MAX_SPIN_DURATION = 60;
-const MAX_SPIN_VELOCITY = 4;
+const isTouch =
+  typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
 
+const deg2rad = (value: number) => (value * Math.PI) / 180;
+const rad2deg = (value: number) => (value * 180) / Math.PI;
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const ROTATE_SPEED = 0.005;
+const INERTIA = 0.92;
+const AUTO_ROTATE_SPEED = 0.35;
+const MAX_TILT = deg2rad(25);
+const HOVER_MAG = deg2rad(6);
+const HOVER_EASE = 0.15;
 
 const HoloCard = ({ className, children }: { className: string; children: ReactNode }) => {
   const holo = useHoloPointer();
@@ -41,7 +48,7 @@ const HoloCard = ({ className, children }: { className: string; children: ReactN
     >
       <div className="holo-surface" aria-hidden="true" />
       <div className="holo-glare" aria-hidden="true" />
-      <div className="holo-content">{children}</div>
+      <div className="holo-content   ">{children}</div>
     </div>
   );
 };
@@ -53,7 +60,7 @@ const ShareCardFrontContent = ({
   third,
 }: Pick<ShareCardProps, "coverUrl" | "champion" | "runnerUp" | "third">) => (
   <>
-    <div className="share-card__header">
+    <div className="share-card__header holo-header">
       {coverUrl && (
         <img
           className="share-card__cover"
@@ -70,10 +77,10 @@ const ShareCardFrontContent = ({
           alt={champion.name}
         />
       ) : (
-        <div className="share-card__champion share-card__champion--fallback">N/A</div>
+        <div className="share-card__champion share-card__champion--fallback ">N/A</div>
       )}
     </div>
-    <div className="share-card__body">
+    <div className="share-card__body  ">
       <div className="share-card__title">
         <div className="share-card__title-name">{champion.name}</div>
         <div className="share-card__title-label">Campeón</div>
@@ -93,7 +100,7 @@ const ShareCardFrontContent = ({
           <div className="share-card__podium-text">
             <div className="share-card__podium-name">{runnerUp.name}</div>
             <div className="share-card__podium-label share-card__podium-label--second">Segundo lugar</div>
-           
+            
           </div>
         </div>
         <div className="share-card__podium-item">
@@ -110,12 +117,11 @@ const ShareCardFrontContent = ({
           <div className="share-card__podium-text">
             <div className="share-card__podium-name">{third.name}</div>
             <div className="share-card__podium-label share-card__podium-label--third">Tercer lugar</div>
-            
+       
           </div>
-           </div>
-     
+        </div>
       </div>
-     <img className=" mx-auto py-4" src={logoFanatico} alt="Fanatico" />
+    <img className="mx-auto" src={logoFanatico} alt="Fanatico" />
     </div>
   </>
 );
@@ -128,7 +134,7 @@ const ShareCardFront = ({
   variant,
 }: Pick<ShareCardProps, "coverUrl" | "champion" | "runnerUp" | "third" | "variant">) => {
   const baseClass = "share-card";
-  const className = variant === "spin" ? `${baseClass} share-card--holo` : baseClass;
+  const className = variant === "spin" ? `${baseClass}  ` : baseClass;
 
   if (variant === "spin") {
     return (
@@ -156,18 +162,18 @@ const ShareCardFront = ({
 };
 
 const ShareCardBack = ({ variant }: { variant?: ShareCardProps["variant"] }) => {
-  const className = "share-card share-card--back share-card--holo";
+  const className = "share-card share-card--back holo-header";
   if (variant === "spin") {
     return (
-      <HoloCard className={className}>
-        <img className="" src={shareBackLogo} alt="7flapollalog" />
-      </HoloCard>
+      <div className={className}>
+        <img className="items-center justify-center holo-header" src={shareBackLogo} alt="7flapollalog" />
+      </div>
     );
   }
 
   return (
     <div className={className}>
-      <img className="share-card__back-logo" src={shareBackLogo} alt="7flapollalog" />
+      <img className="" src={shareBackLogo} alt="7flapollalog" />
     </div>
   );
 };
@@ -175,85 +181,123 @@ const ShareCardBack = ({ variant }: { variant?: ShareCardProps["variant"] }) => 
 export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, variant = "static" }: ShareCardProps) => {
   const isSpin = variant === "spin";
   const cardRef = useRef<HTMLDivElement>(null);
-  const dragStateRef = useRef({ active: false, lastX: 0, lastTime: 0 });
-  const spinStateRef = useRef({
-    duration: DEFAULT_SPIN_DURATION,
-    direction: "normal" as "normal" | "reverse",
-  });
+  const dragStateRef = useRef({ active: false, lastX: 0, lastY: 0 });
+  const isDraggingRef = useRef(false);
+  const autoDirRef = useRef(1);
+  const autoSpeedRef = useRef(AUTO_ROTATE_SPEED);
+  const baseRotRef = useRef({ x: 0, y: 0 });
+  const velRef = useRef({ x: 0, y: 0 });
+  const hoverTargetRef = useRef({ x: 0, y: 0 });
+  const hoverCurrentRef = useRef({ x: 0, y: 0 });
+  const lastTimeRef = useRef<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const applySpin = useCallback((duration: number, direction: "normal" | "reverse") => {
-    const clampedDuration = clamp(duration, MIN_SPIN_DURATION, MAX_SPIN_DURATION);
-    spinStateRef.current = { duration: clampedDuration, direction };
+  const applyTransform = useCallback((x: number, y: number) => {
     const node = cardRef.current;
     if (!node) return;
-    node.style.setProperty("--share-spin-duration", `${clampedDuration}s`);
-    node.style.setProperty("--share-spin-direction", direction);
+    node.style.setProperty("--share-rot-x", `${rad2deg(x)}deg`);
+    node.style.setProperty("--share-rot-y", `${rad2deg(y)}deg`);
   }, []);
 
   useEffect(() => {
     if (!isSpin) return;
-    applySpin(DEFAULT_SPIN_DURATION, "normal");
-  }, [applySpin, isSpin]);
+    let rafId = 0;
+    const tick = (time: number) => {
+      if (lastTimeRef.current === null) lastTimeRef.current = time;
+      const dt = Math.min((time - lastTimeRef.current) / 1000, 0.05);
+      lastTimeRef.current = time;
 
-  const handlePointerEnter = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    dragStateRef.current = { active: true, lastX: event.clientX, lastTime: event.timeStamp };
-  }, []);
+      if (!isDraggingRef.current) {
+        baseRotRef.current.y += autoDirRef.current * autoSpeedRef.current * dt;
+        baseRotRef.current.y += velRef.current.x;
+        baseRotRef.current.x = clamp(baseRotRef.current.x + velRef.current.y, -MAX_TILT, MAX_TILT);
+        velRef.current.x *= INERTIA;
+        velRef.current.y *= INERTIA;
+      }
+
+      hoverCurrentRef.current.x +=
+        (hoverTargetRef.current.x - hoverCurrentRef.current.x) * HOVER_EASE;
+      hoverCurrentRef.current.y +=
+        (hoverTargetRef.current.y - hoverCurrentRef.current.y) * HOVER_EASE;
+
+      const renderX = baseRotRef.current.x + hoverCurrentRef.current.x;
+      const renderY = baseRotRef.current.y + hoverCurrentRef.current.y;
+      applyTransform(renderX, renderY);
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [applyTransform, isSpin]);
 
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    dragStateRef.current = { active: true, lastX: event.clientX, lastTime: event.timeStamp };
+    dragStateRef.current = { active: true, lastX: event.clientX, lastY: event.clientY };
+    isDraggingRef.current = true;
     setIsDragging(true);
+    hoverTargetRef.current = { x: 0, y: 0 };
   }, []);
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      if (!dragStateRef.current.active) return;
-      const deltaX = event.clientX - dragStateRef.current.lastX;
-      const deltaTime = Math.max(event.timeStamp - dragStateRef.current.lastTime, 16);
-      const velocity = deltaX / deltaTime;
-      const absVelocity = clamp(Math.abs(velocity), 0, MAX_SPIN_VELOCITY);
-      const normalized = absVelocity / MAX_SPIN_VELOCITY;
-      const t = normalized * normalized;
-      const nextDuration = MAX_SPIN_DURATION - t * (MAX_SPIN_DURATION - MIN_SPIN_DURATION);
-      const nextDirection = velocity >= 0 ? "normal" : "reverse";
-      applySpin(nextDuration, nextDirection);
-      dragStateRef.current.lastX = event.clientX;
-      dragStateRef.current.lastTime = event.timeStamp;
+      if (isDraggingRef.current) {
+        const dx = event.clientX - dragStateRef.current.lastX;
+        const dy = event.clientY - dragStateRef.current.lastY;
+        dragStateRef.current.lastX = event.clientX;
+        dragStateRef.current.lastY = event.clientY;
+
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          event.preventDefault();
+          baseRotRef.current.y += dx * ROTATE_SPEED;
+          baseRotRef.current.x = clamp(baseRotRef.current.x + dy * ROTATE_SPEED, -MAX_TILT, MAX_TILT);
+          velRef.current = { x: dx * ROTATE_SPEED, y: dy * ROTATE_SPEED };
+          if (Math.abs(dx) > 1) autoDirRef.current = dx >= 0 ? 1 : -1;
+        }
+        return;
+      }
+
+      if (isTouch) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const nx = (event.clientX - rect.left) / rect.width;
+      const ny = (event.clientY - rect.top) / rect.height;
+      const px = clamp(nx * 2 - 1, -1, 1);
+      const py = clamp(ny * 2 - 1, -1, 1);
+      hoverTargetRef.current = { x: -py * HOVER_MAG, y: px * HOVER_MAG };
     },
-    [applySpin],
+    [],
   );
 
   const handlePointerUp = useCallback(() => {
+    isDraggingRef.current = false;
     setIsDragging(false);
   }, []);
 
   const handlePointerLeave = useCallback(() => {
+    isDraggingRef.current = false;
     dragStateRef.current.active = false;
     setIsDragging(false);
+    hoverTargetRef.current = { x: 0, y: 0 };
   }, []);
 
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      const { duration, direction } = spinStateRef.current;
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        applySpin(duration, "reverse");
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        applySpin(duration, "normal");
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        applySpin(duration - 4, direction);
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        applySpin(duration + 4, direction);
-      }
-    },
-    [applySpin],
-  );
+  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      autoDirRef.current = -1;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      autoDirRef.current = 1;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      autoSpeedRef.current = clamp(autoSpeedRef.current + 0.05, 0.05, 1.2);
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      autoSpeedRef.current = clamp(autoSpeedRef.current - 0.05, 0.05, 1.2);
+    }
+  }, []);
 
   if (!isSpin) {
     return (
@@ -274,7 +318,6 @@ export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, varia
       role="group"
       tabIndex={0}
       aria-label="Controla la rotación de la tarjeta compartida"
-      onPointerEnter={handlePointerEnter}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
