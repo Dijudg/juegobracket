@@ -1717,6 +1717,36 @@ body{
 .hover\:opacity-100:hover {
   opacity: 1;
 }
+.hover\:opacity-80:hover {
+  opacity: 0.8;
+}
+.hover\:brightness-95:hover {
+  filter: brightness(0.95);
+}
+.hover\:shadow-md:hover {
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -2px rgba(0, 0, 0, 0.1);
+}
+.hover\:bg-neutral-900:hover {
+  background-color: #171717;
+}
+.hover\:border-\[\#c6f600\]:hover {
+  border-color: #c6f600;
+}
+.hover\:border-red-500:hover {
+  border-color: #ef4444;
+}
+.hover\:text-\[\#c6f600\]:hover,
+.hover\:text-\[\#C6F600\]:hover {
+  color: #c6f600;
+}
+.hover\:text-black:hover {
+  color: #000000;
+}
+.hover\:text-white:hover {
+  color: #ffffff;
+}
 
 /* Stabilize flag rendering during hover/transitions */
 .bracket-stable img {

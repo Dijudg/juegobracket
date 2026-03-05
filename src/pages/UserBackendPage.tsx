@@ -34,6 +34,20 @@ import { createShareCardBlob } from "../utils/shareCardImage";
 import { buildSharePageUrl, uploadShareCardImage } from "../utils/shareCardApi";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 
+function BackIcon() {
+  return (
+    <svg className="size-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M11.5 5L6.5 10L11.5 15"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 const AVATAR_BUCKET = import.meta.env.VITE_SUPABASE_AVATAR_BUCKET || "avatars";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
@@ -1476,6 +1490,16 @@ export default function UserBackendPage() {
                     Crear cuenta
                   </button>
                 </div>
+                <div className="mt-3 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("home", { resetGame: Date.now() })}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md uppercase text-sm font-semibold bg-[#c6f600] text-black hover:brightness-95"
+                  >
+                    <BackIcon />
+                    Volver al juego
+                  </button>
+                </div>
               </section>
             </div>
           </main>
@@ -1574,8 +1598,9 @@ export default function UserBackendPage() {
                         <button
                           type="button"
                           onClick={() => navigateTo("home", { resetGame: Date.now() })}
-                          className="px-3 py-2 rounded-md uppercase text-xs font-semibold text-left bg-[#c6f600] text-black hover:brightness-95"
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-md uppercase text-xs font-semibold text-left bg-[#c6f600] text-black hover:brightness-95"
                         >
+                          <BackIcon />
                           Volver al juego
                         </button>
                       </div>
@@ -1653,8 +1678,9 @@ export default function UserBackendPage() {
                        <button
                       type="button"
                       onClick={() => navigateTo("home", { resetGame: Date.now() })}
-                      className="px-3 py-2 rounded-md text-left uppercase text-base  font-semibold text-black bg-[#c6f600]"
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-md text-left uppercase text-base  font-semibold text-black bg-[#c6f600]"
                     >
+                      <BackIcon />
                       Volver al juego
                     </button>
                   </div>

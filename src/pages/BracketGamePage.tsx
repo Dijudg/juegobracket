@@ -4176,6 +4176,24 @@ const scheduleByMatch = useMemo(() => {
       }`}
     >
       {!isEmbedded && <Header authSlot={authSlot} showNav={false} showSearch={false} />}
+      {isSharePath && !isEmbedded && (
+        <div className="px-2 sm:px-6 lg:px-10 xl:px-16">
+          <div className="max-w-7xl mx-auto">
+            <div className="rounded-2xl border border-neutral-800 bg-black/50 p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+              <p className="text-sm text-gray-300">
+                ¿Quieres jugar tu propio bracket? Arma tu pronóstico ahora.
+              </p>
+              <button
+                type="button"
+                onClick={goHome}
+                className="px-4 py-2 rounded-md bg-[#c6f600] text-black text-sm font-semibold hover:brightness-95"
+              >
+                Jugar mi bracket
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <main className="max-w-7xl px-2 sm:px-6 lg:px-10 xl:px-16">
           <div className="max-w-7xl mx-auto">
             {showSharedHeader && (
