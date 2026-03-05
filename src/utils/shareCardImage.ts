@@ -1,6 +1,6 @@
 ﻿import type { ShareCardTeam } from "../components/ShareCard";
 import fondoCompartir from "../assets/fondo-compartir.png";
-import logoFanatico from "../assets/logofanatico.svg";
+import logoFanatico from "../assets/Logofanatico.svg";
 
 type ShareCardPayload = {
   champion: ShareCardTeam;
