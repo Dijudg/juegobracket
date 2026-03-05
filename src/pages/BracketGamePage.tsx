@@ -212,16 +212,16 @@ const SaveModal = ({
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-[#c6f600]">Tu código de juego</h3>
-              <button onClick={onClose} className="text-sm text-gray-400 hover:text-white">
+              <button onClick={onClose} className="text-sm text-gray-400 hover:text-white bg-[#c6f600] rounded-full">
                 X
               </button>
             </div>
-            <div className="rounded-lg border border-neutral-800 bg-black/60 p-3 text-sm text-gray-200">
+            <div className="rounded-lg border  bg-[#c6f600] p-3 text-sm text-black hover:text-white">
               {guestShare?.code ? (
                 <>
                   <p className="text-xs text-gray-400">Copia tu código y enlace para revisar tu bracket.</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-base text-[#c6f600]">{guestShare.code}</span>
+                    <span className="font-mono text-2xl text-[#c6f600]">{guestShare.code}</span>
                     <button
                       type="button"
                       onClick={() => onCopy?.(guestShare.code, "Código")}
@@ -1054,7 +1054,7 @@ export default function BracketGamePage() {
     championVelRef.current = { x: 0, y: 0 };
     championHoverTargetRef.current = { x: 0, y: 0 };
     championHoverCurrentRef.current = { x: 0, y: 0 };
-    championAutoSpeedRef.current = MODAL_AUTO_ROTATE_SPEED;
+    championAutoSpeedRef.current = 0;
     championAutoDirRef.current = 1;
     applyChampionTransform(0, 0);
 
@@ -1065,7 +1065,9 @@ export default function BracketGamePage() {
       championLastTimeRef.current = time;
 
       if (!championPausedRef.current && !championDraggingRef.current) {
-        championBaseRotRef.current.y += championAutoDirRef.current * championAutoSpeedRef.current * dt;
+        if (championAutoSpeedRef.current !== 0) {
+          championBaseRotRef.current.y += championAutoDirRef.current * championAutoSpeedRef.current * dt;
+        }
         championBaseRotRef.current.y += championVelRef.current.x;
         championBaseRotRef.current.x = clamp(
           championBaseRotRef.current.x + championVelRef.current.y,
@@ -4347,12 +4349,16 @@ const scheduleByMatch = useMemo(() => {
     );
   }
 
+  const isGuestShared = !viewSharedBy?.userId;
+  const showGuestCodeSticky =
+    !isViewOnly && !authSession?.access_token && !!guestSharePanel && !!championTeam && !anyModalOpen;
+
   return (
      <div className=" bg-neutral-900">
     <div
       className={`max-w-7xl mx-auto bg-neutral-900 text-white p-2 md:px-36 flex flex-col gap-8 bracket-stable ${
         showAuthCta ? "with-auth-cta" : ""
-      } ${isSharePath && !isEmbedded ? "with-share-cta" : ""}`}
+      } ${isSharePath && !isEmbedded ? "with-share-cta" : ""} ${showGuestCodeSticky ? "with-guest-code" : ""}`}
     >
       {!isEmbedded && <Header authSlot={authSlot} showNav={false} showSearch={false} />}
       <main className="max-w-7xl px-2 sm:px-6 lg:px-10 xl:px-16">
@@ -4378,35 +4384,37 @@ const scheduleByMatch = useMemo(() => {
                     <div className="absolute -left-16 -bottom-16 w-40 h-40 rounded-full bg-[#c6f600]/20 blur-3xl" />
                     <div className="absolute right-0 top-0 w-32 h-32 rounded-full bg-white/10 blur-3xl" />
                   </div>
-                  <div className="relative px-4 pb-4 rounded">
-                    <div className="flex items-center gap-4 mt-4 justify-center items-center">
-                      <div className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-neutral-900 bg-neutral-800 shrink-0">
-                        {viewSharedBy?.avatarUrl ? (
-                          <img
-                            src={viewSharedBy.avatarUrl}
-                            alt={viewSharedBy.alias || viewSharedBy.name || "Usuario"}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <span className="w-full h-full flex items-center justify-center text-2xl font-bold text-[#c6f600]">
-                            {(viewSharedBy?.alias || viewSharedBy?.name || "U").trim().charAt(0).toUpperCase()}
+                  {!isGuestShared && (
+                    <div className="relative px-4 pb-4 rounded">
+                      <div className="flex items-center gap-4 mt-4 justify-center items-center">
+                        <div className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-neutral-900 bg-neutral-800 shrink-0">
+                          {viewSharedBy?.avatarUrl ? (
+                            <img
+                              src={viewSharedBy.avatarUrl}
+                              alt={viewSharedBy.alias || viewSharedBy.name || "Usuario"}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="w-full h-full flex items-center justify-center text-2xl font-bold text-[#c6f600]">
+                              {(viewSharedBy?.alias || viewSharedBy?.name || "U").trim().charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-col">
+                        
+                          <span className="text-xs uppercase bg-[#c6f600]  tracking-wider text-black px-2 rounded">
+                            Pronóstico compartido por:
                           </span>
-                        )}
+                          
+                          <span className="text-5xl md:text-3xl font-black text-white">
+                            {viewSharedBy?.alias || viewSharedBy?.name || "Usuario"}
+                          </span>
+                          
+                        </div>
                       </div>
-                      <div className="flex flex-col">
                       
-                        <span className="text-xs uppercase bg-[#c6f600]  tracking-wider text-black px-2 rounded">
-                          Pronóstico compartido por:
-                        </span>
-                        
-                        <span className="text-5xl md:text-3xl font-black text-white">
-                          {viewSharedBy?.alias || viewSharedBy?.name || "Usuario"}
-                        </span>
-                        
-                      </div>
                     </div>
-                    
-                  </div>
+                  )}
                 </div>
                 <div className="w-full lg:w-auto flex justify-center">
                   <ShareCard
@@ -4527,62 +4535,69 @@ const scheduleByMatch = useMemo(() => {
               </div>
             )}
 
-            {!isViewOnly &&
-              !authSession?.access_token &&
-              guestSharePanel &&
-              championTeam &&
-              !anyModalOpen && (
-              <div className="mb-4 rounded-lg border border-neutral-800 bg-black/50 px-3 py-3 text-sm text-gray-200">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold">Tu código de juego</span>
-                  <button
-                    type="button"
-                    onClick={() => setGuestSharePanel(null)}
-                    className="text-xs text-gray-400 hover:text-white"
-                  >
-                    X
-                  </button>
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-base text-[#c6f600]">{guestSharePanel.code}</span>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(guestSharePanel.code, "Código")}
-                    className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-                  >
-                    Copiar código
-                  </button>
-                </div>
-                {guestSharePanel.url && (
-                  <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={guestSharePanel.url}
-                      className="w-full flex-1 rounded-md bg-neutral-900 border border-neutral-800 px-2 py-1 text-xs text-gray-300"
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(guestSharePanel.url, "Enlace")}
-                        className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-                      >
-                        Copiar enlace
-                      </button>
-                      <a
-                        href={guestSharePanel.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
-                      >
-                        Abrir
-                      </a>
-                    </div>
+            <AnimatePresence>
+            {showGuestCodeSticky && guestSharePanel && (
+                <motion.div
+                  key={`guest-code-${guestSharePanel.code}`}
+                  className="guest-code-bar"
+                  initial={{ opacity: 0, y: 42 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 92 }}
+                  transition={{ duration: 0.28, ease: "easeInOut" }}
+                >
+                <div className="guest-code-bar__inner">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-2xl font-semibold text-center">Tu código de juego</span>
+                    <button
+                      type="button"
+                      onClick={() => setGuestSharePanel(null)}
+                      className="text-base font-bold px-2 text-black hover:text-white bg-[#c6f600] rounded-full"
+                    >
+                      X
+                    </button>
                   </div>
-                )}
-                <p className="mt-2 text-xs text-gray-400">Guárdalo. Expira en 7 días.</p>
-              </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-2xl font-black text-[#c6f600]">{guestSharePanel.code}</span>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(guestSharePanel.code, "Código")}
+                      className="px-2 py-1 rounded-md border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                    >
+                      Copiar código
+                    </button>
+                  </div>
+                  {guestSharePanel.url && (
+                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={guestSharePanel.url}
+                        className="w-full flex-1 rounded-full text-center bg-neutral-900 border border-neutral-800 px-2 py-1 text-sm md:text-lg text-gray-300"
+                      />
+                      <div className="flex items-center  gap-2">
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(guestSharePanel.url, "Enlace")}
+                          className="px-2 py-1 w-1/2 rounded-full bg-[#c6f600] text-sm font-semibold text-black hover:border-[#c6f600] hover:bg-black"
+                        >
+                          Copiar enlace
+                        </button>
+                        <a
+                          href={guestSharePanel.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2 py-1 w-1/2 text-center rounded-full border border-neutral-700 text-xs font-semibold text-gray-200 hover:border-[#c6f600]"
+                        >
+                          Abrir
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-gray-400">Guárdalo. Expira en 7 días.</p>
+                </div>
+                </motion.div>
             )}
+            </AnimatePresence>
 
           <AnimatePresence mode="wait">
             {activeTab === "repechajes" ? (
@@ -5261,21 +5276,27 @@ const scheduleByMatch = useMemo(() => {
         />
         <AnimatePresence>
           {showIntercontinentalModal && !showNewGamePrompt && !isViewOnly && (
-            <motion.div
-              className="fixed inset-0 z-50 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+          <motion.div
+            className="fixed inset-0 z-50 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={closeIntercontinentalModal}
           >
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <Confetti
-              key={intercontinentalConfettiKey}
-              width={width || 0}
-              height={height || 0}
-              recycle={false}
-              numberOfPieces={320}
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={closeIntercontinentalModal}
+              aria-hidden="true"
             />
+            <div className="pointer-events-none">
+              <Confetti
+                key={intercontinentalConfettiKey}
+                width={width || 0}
+                height={height || 0}
+                recycle={false}
+                numberOfPieces={320}
+              />
+            </div>
             <div className="modal-flip" style={{ ["--modal-back" as any]: `url(${modalBackImage})` }}>
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
@@ -5386,14 +5407,20 @@ const scheduleByMatch = useMemo(() => {
             exit={{ opacity: 0 }}
             onClick={() => setShowChampionModal(false)}
           >
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <Confetti
-              key={confettiKey}
-              width={width || 0}
-              height={height || 0}
-              recycle={false}
-              numberOfPieces={450}
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setShowChampionModal(false)}
+              aria-hidden="true"
             />
+            <div className="pointer-events-none">
+              <Confetti
+                key={confettiKey}
+                width={width || 0}
+                height={height || 0}
+                recycle={false}
+                numberOfPieces={450}
+              />
+            </div>
             <div className="modal-flip" style={{ ["--modal-back" as any]: `url(${modalBackImage})` }}>
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}

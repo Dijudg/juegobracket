@@ -35,6 +35,7 @@ const AUTO_ROTATE_SPEED = 0.35;
 const MAX_TILT = deg2rad(25);
 const HOVER_MAG = deg2rad(6);
 const HOVER_EASE = 0.15;
+const DEVICE_TILT_MAG = deg2rad(10);
 
 const HoloCard = ({ className, children }: { className: string; children: ReactNode }) => {
   const holo = useHoloPointer();
@@ -190,6 +191,8 @@ export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, varia
   const hoverTargetRef = useRef({ x: 0, y: 0 });
   const hoverCurrentRef = useRef({ x: 0, y: 0 });
   const lastTimeRef = useRef<number | null>(null);
+  const orientationEnabledRef = useRef(false);
+  const orientationRequestedRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
 
   const applyTransform = useCallback((x: number, y: number) => {
@@ -231,12 +234,57 @@ export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, varia
     return () => cancelAnimationFrame(rafId);
   }, [applyTransform, isSpin]);
 
+  const enableDeviceTilt = useCallback(async () => {
+    if (!isSpin || !isTouch || typeof window === "undefined") return;
+    if (orientationRequestedRef.current) return;
+    orientationRequestedRef.current = true;
+    const DeviceOrientationEventRef = (window as Window & { DeviceOrientationEvent?: any })
+      .DeviceOrientationEvent;
+    if (!DeviceOrientationEventRef) return;
+    if (typeof DeviceOrientationEventRef.requestPermission === "function") {
+      try {
+        const result = await DeviceOrientationEventRef.requestPermission();
+        orientationEnabledRef.current = result === "granted";
+      } catch {
+        orientationEnabledRef.current = false;
+      }
+    } else {
+      orientationEnabledRef.current = true;
+    }
+  }, [isSpin]);
+
+  useEffect(() => {
+    if (!isSpin || !isTouch || typeof window === "undefined") return;
+    const DeviceOrientationEventRef = (window as Window & { DeviceOrientationEvent?: any })
+      .DeviceOrientationEvent;
+    if (!DeviceOrientationEventRef) return;
+
+    if (typeof DeviceOrientationEventRef.requestPermission !== "function") {
+      orientationEnabledRef.current = true;
+    }
+
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      if (!orientationEnabledRef.current || isDraggingRef.current) return;
+      const beta = typeof event.beta === "number" ? event.beta : 0;
+      const gamma = typeof event.gamma === "number" ? event.gamma : 0;
+      const nx = clamp(beta / 45, -1, 1);
+      const ny = clamp(gamma / 45, -1, 1);
+      hoverTargetRef.current = { x: nx * DEVICE_TILT_MAG, y: ny * DEVICE_TILT_MAG };
+    };
+
+    window.addEventListener("deviceorientation", handleOrientation, true);
+    return () => window.removeEventListener("deviceorientation", handleOrientation, true);
+  }, [isSpin]);
+
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     dragStateRef.current = { active: true, lastX: event.clientX, lastY: event.clientY };
     isDraggingRef.current = true;
     setIsDragging(true);
     hoverTargetRef.current = { x: 0, y: 0 };
-  }, []);
+    if (event.pointerType === "touch") {
+      void enableDeviceTilt();
+    }
+  }, [enableDeviceTilt]);
 
   const handlePointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {

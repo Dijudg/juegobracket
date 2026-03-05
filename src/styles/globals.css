@@ -757,6 +757,40 @@ html.view-only *::-webkit-scrollbar-thumb:hover {
   padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
 }
 
+.guest-code-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  padding: 0 16px 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+}
+
+.guest-code-bar__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  border-radius: 12px;
+  border: 1px solid #27272a;
+  background: rgba(0, 0, 0, 0.88);
+  padding: 12px;
+  color: #e5e7eb;
+  pointer-events: auto;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+}
+
+.with-guest-code {
+  padding-bottom: calc(190px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 640px) {
+  .with-guest-code {
+    padding-bottom: calc(220px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* Estilos para react-slick carrusel */
 .slick-slider {
   position: relative;
