@@ -310,13 +310,17 @@ html {
 }
 
 .share-card-flip--spin {
-  cursor: pointer;
-  touch-action: manipulation;
+  cursor: grab;
+  touch-action: pan-y;
 }
 
 .share-card-flip--spin:focus-visible {
   outline: 2px solid #c6f600;
   outline-offset: 6px;
+}
+
+.share-card-flip--spin.is-dragging {
+  cursor: grabbing;
 }
 
 .share-card-flip__card {
@@ -326,7 +330,8 @@ html {
   transform-style: preserve-3d;
   -webkit-transform-style: preserve-3d;
   transform-origin: center;
-  animation: share-card-spin 30s linear infinite;
+  animation: share-card-spin var(--share-spin-duration, 30s) linear infinite;
+  animation-direction: var(--share-spin-direction, normal);
   will-change: transform;
 }
 
@@ -1972,6 +1977,23 @@ body{
   display: flex;
   flex-direction: column;
   min-height: 100%;
+}
+
+.share-card.holo-card {
+  width: 16rem;
+  height: 24rem;
+  border-radius: 1.5rem;
+}
+
+.share-card.holo-card .holo-content {
+  gap: 4rem;
+  width: 100%;
+}
+
+.share-card.holo-card.share-card--back {
+  background-image: var(--share-card-back), linear-gradient(135deg, #0f0f0f, #1c1c1a);
+  background-size: cover;
+  background-position: center;
 }
 
 .holo-header {
