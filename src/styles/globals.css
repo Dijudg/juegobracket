@@ -566,6 +566,14 @@ html {
   color: #c48716;
 }
 
+.share-card__podium-logo {
+  margin-top: 0.25rem;
+  width: 3.5rem;
+  height: auto;
+  object-fit: contain;
+  opacity: 0.9;
+}
+
 .share-card__cta {
   align-self: stretch;
   padding: 0.625rem;

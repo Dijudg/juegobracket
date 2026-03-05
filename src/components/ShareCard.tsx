@@ -3,6 +3,7 @@ import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 
 import modalBackImage from "../assets/fondo.jpg";
 import shareBackLogo from "../assets/7flapollalog.png";
+import logoFanatico from "../assets/Logofanatico.svg";
 import { useHoloPointer } from "../features/bracket/hooks/useHoloPointer";
 
 type ShareCardTeam = {
@@ -22,9 +23,9 @@ type ShareCardProps = {
 export type { ShareCardTeam, ShareCardProps };
 
 const DEFAULT_SPIN_DURATION = 30;
-const MIN_SPIN_DURATION = 8;
+const MIN_SPIN_DURATION = 14;
 const MAX_SPIN_DURATION = 60;
-const MAX_SPIN_VELOCITY = 1.5;
+const MAX_SPIN_VELOCITY = 4;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -92,6 +93,7 @@ const ShareCardFrontContent = ({
           <div className="share-card__podium-text">
             <div className="share-card__podium-name">{runnerUp.name}</div>
             <div className="share-card__podium-label share-card__podium-label--second">Segundo lugar</div>
+           
           </div>
         </div>
         <div className="share-card__podium-item">
@@ -108,9 +110,12 @@ const ShareCardFrontContent = ({
           <div className="share-card__podium-text">
             <div className="share-card__podium-name">{third.name}</div>
             <div className="share-card__podium-label share-card__podium-label--third">Tercer lugar</div>
+            
           </div>
-        </div>
+           </div>
+     
       </div>
+     <img className=" mx-auto py-4" src={logoFanatico} alt="Fanatico" />
     </div>
   </>
 );
@@ -155,7 +160,7 @@ const ShareCardBack = ({ variant }: { variant?: ShareCardProps["variant"] }) => 
   if (variant === "spin") {
     return (
       <HoloCard className={className}>
-        <img className="share-card__back-logo" src={shareBackLogo} alt="7flapollalog" />
+        <img className="" src={shareBackLogo} alt="7flapollalog" />
       </HoloCard>
     );
   }
@@ -204,11 +209,11 @@ export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, varia
     (event: PointerEvent<HTMLDivElement>) => {
       if (!dragStateRef.current.active) return;
       const deltaX = event.clientX - dragStateRef.current.lastX;
-      const deltaTime = event.timeStamp - dragStateRef.current.lastTime;
-      if (deltaTime <= 0) return;
+      const deltaTime = Math.max(event.timeStamp - dragStateRef.current.lastTime, 16);
       const velocity = deltaX / deltaTime;
       const absVelocity = clamp(Math.abs(velocity), 0, MAX_SPIN_VELOCITY);
-      const t = absVelocity / MAX_SPIN_VELOCITY;
+      const normalized = absVelocity / MAX_SPIN_VELOCITY;
+      const t = normalized * normalized;
       const nextDuration = MAX_SPIN_DURATION - t * (MAX_SPIN_DURATION - MIN_SPIN_DURATION);
       const nextDirection = velocity >= 0 ? "normal" : "reverse";
       applySpin(nextDuration, nextDirection);
