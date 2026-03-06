@@ -24,6 +24,8 @@ import {
   getTeamEscudo,
   resolveRepechajeCode,
 } from "../features/bracket/utils";
+import { useBracketScore } from "../features/bracket/score";
+import { EmbeddedViewerMenu } from "../features/bracket/components/EmbeddedViewerMenu";
 import thirdLookup from "../data/third_lookup.json";
 import winnerCardBg from "../assets/final.jpg";
 import logofanatico from "../assets/Logofanatico.svg";
@@ -668,6 +670,33 @@ export default function UserBackendPage() {
   );
 
   const selectedItem = selectedId ? detailsMap[selectedId] : null;
+  const selectedPayload = useMemo<BracketSavePayload | null>(() => {
+    if (!selectedItem?.data) return null;
+    if (typeof selectedItem.data === "string") {
+      try {
+        return JSON.parse(selectedItem.data) as BracketSavePayload;
+      } catch {
+        return null;
+      }
+    }
+    return selectedItem.data as BracketSavePayload;
+  }, [selectedItem?.data]);
+  const selectedBracketCode = useMemo(
+    () => (selectedItem?.short_code || selectedItem?.id || "").toString().toUpperCase(),
+    [selectedItem?.id, selectedItem?.short_code],
+  );
+  const selectedScoreInput = useMemo(
+    () => ({
+      picks: selectedPayload?.picks || {},
+      intercontinentalPicks: selectedPayload?.intercontinentalPicks || {},
+      uefaPicks: selectedPayload?.uefaPicks || {},
+    }),
+    [selectedPayload],
+  );
+  const { summary: selectedScoreSummary, loading: selectedScoreLoading } = useBracketScore(
+    selectedScoreInput,
+    !!selectedItem && viewerId === selectedItem.id,
+  );
 
   const userLabel = useMemo(() => user?.email || user?.id || "Usuario", [user]);
   const teamIndex = useMemo(() => {
@@ -858,7 +887,7 @@ export default function UserBackendPage() {
     [shareCoverUrl, session?.access_token],
   );
   const canEdit = !!session?.access_token;
-  const showRepechajeSubnav = false;
+  const showRepechajeSubnav = true;
   const avatarInitial = useMemo(() => {
     const base = profileAlias || profileName || user?.email || "U";
     return base.trim().charAt(0).toUpperCase() || "U";
@@ -1027,6 +1056,7 @@ export default function UserBackendPage() {
             <span className="text-3xl font-black uppercase text-white">{championName}</span>
             <span className="text-3xl font-black uppercase text-[#c6f600]">Campeón</span>
           </div>
+
           <button
             type="button"
             onClick={async () => {
@@ -1710,7 +1740,7 @@ export default function UserBackendPage() {
               <>
                 <section className="rounded-2xl border border-neutral-800 bg-black/40 overflow-hidden">
                   <div
-                    className="relative md:h-96  h-48"
+                    className="relative h-48"
                     style={
                       coverUrl
                         ? {
@@ -1872,91 +1902,24 @@ export default function UserBackendPage() {
                         </div>
                         {viewerId === selectedItem.id ? (
                           <div className="mt-4 flex flex-col gap-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => sendViewerNav("repechajes", viewerPlayoffTab)}
-                                className={`px-3 py-2 rounded-md border text-xs font-semibold transition ${
-                                  viewerTab === "repechajes"
-                                    ? "bg-[#c6f600] text-black border-[#c6f600]"
-                                    : "border-neutral-700 text-gray-300 hover:text-white"
-                                }`}
-                              >
-                                Liguilla de repechajes
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => sendViewerNav("grupos")}
-                                className={`px-3 py-2 rounded-md border text-xs font-semibold transition ${
-                                  viewerTab === "grupos"
-                                    ? "bg-[#c6f600] text-black border-[#c6f600]"
-                                    : "border-neutral-700 text-gray-300 hover:text-white"
-                                }`}
-                              >
-                                Fase de grupos
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => sendViewerNav("dieciseisavos")}
-                                className={`px-3 py-2 rounded-md border text-xs font-semibold transition ${
-                                  viewerTab === "dieciseisavos"
-                                    ? "bg-[#c6f600] text-black border-[#c6f600]"
-                                    : "border-neutral-700 text-gray-300 hover:text-white"
-                                }`}
-                              >
-                                Eliminatorias
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => sendViewerNav("llaves")}
-                                className={`px-3 py-2 rounded-md border text-xs font-semibold transition ${
-                                  viewerTab === "llaves"
-                                    ? "bg-[#c6f600] text-black border-[#c6f600]"
-                                    : "border-neutral-700 text-gray-300 hover:text-white"
-                                }`}
-                              >
-                                Llaves finales
-                              </button>
-                            </div>
-                            {showRepechajeSubnav && viewerTab === "repechajes" && (
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => sendViewerNav("repechajes", "uefa")}
-                                  className={`px-3 py-2 rounded-md border text-xs font-semibold transition ${
-                                    viewerPlayoffTab === "uefa"
-                                      ? "bg-[#c6f600] text-black border-[#c6f600]"
-                                      : "border-neutral-700 text-gray-300 hover:text-white"
-                                  }`}
-                                >
-                                  Liguilla UEFA
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => sendViewerNav("repechajes", "intercontinental")}
-                                  className={`px-3 py-2 rounded-md border text-xs font-semibold transition ${
-                                    viewerPlayoffTab === "intercontinental"
-                                      ? "bg-[#c6f600] text-black border-[#c6f600]"
-                                      : "border-neutral-700 text-gray-300 hover:text-white"
-                                  }`}
-                                >
-                                  Liguilla Intercontinental
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    sendViewerNav(
-                                      "repechajes",
-                                      viewerPlayoffTab,
-                                      "repechaje-winners-all",
-                                    )
-                                  }
-                                  className="px-3 py-2 rounded-md border text-xs font-semibold border-neutral-700 text-gray-300 hover:text-white"
-                                >
-                                  Tus clasificados
-                                </button>
+                            <div className="rounded-lg border border-neutral-800 bg-black/50 px-3 py-3">
+                              <div className="text-xs uppercase tracking-wide text-gray-400">
+                                Tus puntos totales de esta polla mundialista
                               </div>
-                            )}
+                              <div className="mt-1 text-2xl font-black text-[#c6f600]">
+                                {selectedScoreLoading ? "..." : `${selectedScoreSummary?.totalPoints || 0} pts`}
+                              </div>
+                              <div className="mt-2 text-xs text-gray-400">
+                                Código del bracket:{" "}
+                                <span className="font-semibold text-white">{selectedBracketCode || "--"}</span>
+                              </div>
+                            </div>
+                            <EmbeddedViewerMenu
+                              tab={viewerTab}
+                              playoffTab={viewerPlayoffTab}
+                              onNavigate={sendViewerNav}
+                              showRepechajeSubnav={showRepechajeSubnav}
+                            />
                             <div className="rounded-lg overflow-hidden border border-neutral-800">
                               <iframe
                                 ref={viewerFrameRef}

@@ -10,6 +10,7 @@ export const PlayoffKeyBlock = ({
   onPick,
   disabled,
   showFinalHint,
+  scoreByMatchId,
 }: {
   title: string;
   subtitle?: string;
@@ -18,6 +19,7 @@ export const PlayoffKeyBlock = ({
   onPick: (matchId: string, teamCode: string) => void;
   disabled?: boolean;
   showFinalHint?: boolean;
+  scoreByMatchId?: Record<string, number | undefined>;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -33,6 +35,7 @@ export const PlayoffKeyBlock = ({
 
   const renderRepechajeMatch = (match?: PlayoffMatchData) => {
     if (!match) return null;
+    const scorePoints = scoreByMatchId?.[match.id] || 0;
     const teams = [match.homeTeam, match.awayTeam];
     const isIntercontinentalSemi =
       match.id.startsWith("int-") && match.id.includes("-sf");
@@ -52,6 +55,7 @@ export const PlayoffKeyBlock = ({
           </div>
         )}
         <div className="matchNumber">{match.title}</div>
+        {scorePoints > 0 && <div className="score-hit-badge">+{scorePoints} puntos</div>}
         {teams.map((team, idx) => {
           const code = getTeamCode(team);
           const isSelected = !!code && match.winnerCode === code;
@@ -67,7 +71,7 @@ export const PlayoffKeyBlock = ({
               onClick={() => !isMatchLocked && code && onPick(match.id, code)}
               className={`teamBtn ${spacingClass} ${isSelected ? "selected" : ""} ${
                 hardDisabled ? "disabled" : ""
-              } ${isMatchLocked ? "locked" : ""}`}
+              } ${isMatchLocked ? "locked" : ""} ${scorePoints > 0 && isSelected ? "modal-glow score-glow-team" : ""}`}
             >
               <span className="badge">
                 {escudo ? (

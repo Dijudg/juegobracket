@@ -61,6 +61,7 @@ import { DieciseisavosKeyBlock } from "../features/bracket/components/Dieciseisa
 import { PlayoffKeyBlock } from "../features/bracket/components/PlayoffKeyBlock";
 import { RepechajeWinnerBadge } from "../features/bracket/components/RepechajeWinnerBadge";
 import { KnockoutBracket } from "../features/bracket/components/KnockoutBracket";
+import { useBracketScore } from "../features/bracket/score";
 import { GroupFixturesModal } from "../features/bracket/components/GroupFixturesModal";
 import { BestThirdsModal } from "../features/bracket/components/BestThirdsModal";
 import { useHoloPointer } from "../features/bracket/hooks/useHoloPointer";
@@ -855,6 +856,16 @@ export default function BracketGamePage() {
   const [viewSharedBy, setViewSharedBy] = useState<BracketSavePayload["sharedBy"] | null>(null);
   const [viewBracketMeta, setViewBracketMeta] = useState<{ name?: string; updatedAt?: string; shortCode?: string } | null>(null);
   const [phaseBlock, setPhaseBlock] = useState<{ title: string; missing: string[] } | null>(null);
+  const bracketScoreInput = useMemo(
+    () => ({
+      picks,
+      intercontinentalPicks,
+      uefaPicks,
+    }),
+    [picks, intercontinentalPicks, uefaPicks],
+  );
+  const { summary: bracketScoreSummary } = useBracketScore(bracketScoreInput, isViewOnly);
+  const scoreByMatchId = bracketScoreSummary?.pointsByMatchId || {};
   const phaseBlockBannerPick = useMemo(() => pickStopBanner(), [!!phaseBlock]);
   const r32BannerPick = useMemo(() => pickStopBanner(), [showR32Warning]);
   const bracketCaptureRef = useRef<HTMLDivElement>(null);
@@ -1502,7 +1513,7 @@ export default function BracketGamePage() {
             name: baseShared.name || "Invitado",
             alias: baseShared.alias || "",
             avatarUrl: isGuestShared ? baseShared.avatarUrl || guestAvatar : baseShared.avatarUrl || "",
-            coverUrl: isGuestShared ? baseShared.coverUrl || guestCover : baseShared.coverUrl || "",
+            coverUrl: baseShared.coverUrl || guestCover,
           });
           setViewBracketMeta({
             name: data.name || "Pronóstico compartido",
@@ -3965,12 +3976,13 @@ const scheduleByMatch = useMemo(() => {
               locked={isLocked}
               mirror={mirror}
               seedLabel={getSeedLabelR32}
+              scoreByMatchId={scoreByMatchId}
             />,
         );
       }
       return items;
     },
-    [applyWinner, isLocked, scheduleByMatch],
+    [applyWinner, isLocked, scheduleByMatch, scoreByMatchId],
   );
 
   useEffect(() => {
@@ -4360,7 +4372,7 @@ const scheduleByMatch = useMemo(() => {
         showAuthCta ? "with-auth-cta" : ""
       } ${isSharePath && !isEmbedded ? "with-share-cta" : ""} ${showGuestCodeSticky ? "with-guest-code" : ""}`}
     >
-      {!isEmbedded && <Header authSlot={authSlot} showNav={false} showSearch={false} />}
+      {!isEmbedded && <Header authSlot={authSlot} showNav={isSharePath} showSearch={false} />}
       <main className="max-w-7xl px-2 sm:px-6 lg:px-10 xl:px-16">
           <div className="max-w-7xl mx-auto">
             {showSharedHeader && (
@@ -4368,18 +4380,11 @@ const scheduleByMatch = useMemo(() => {
                 <div className="flex-1 rounded-2xl  rounded-xl  overflow-hidden">
                   <div
                     className="relative h-40"
-                    style={
-                      viewSharedBy?.coverUrl
-                        ? {
-                            backgroundImage: `url(${viewSharedBy.coverUrl})`,
-                            backgroundSize: "cover",
-                            backgroundPosition: "center",
-                          }
-                        : {
-                            background:
-                              "linear-gradient(135deg, rgba(8,8,8,1) 0%, rgba(17,24,39,1) 45%, rgba(31,42,18,1) 100%)",
-                          }
-                    }
+                    style={{
+                      backgroundImage: `url(${viewSharedBy?.coverUrl || guestCover})`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }}
                   >
                     <div className="absolute -left-16 -bottom-16 w-40 h-40 rounded-full bg-[#c6f600]/20 blur-3xl" />
                     <div className="absolute right-0 top-0 w-32 h-32 rounded-full bg-white/10 blur-3xl" />
@@ -4536,7 +4541,7 @@ const scheduleByMatch = useMemo(() => {
             )}
 
             <AnimatePresence>
-            {showGuestCodeSticky && guestSharePanel && (
+              {showGuestCodeSticky && guestSharePanel && (
                 <motion.div
                   key={`guest-code-${guestSharePanel.code}`}
                   className="guest-code-bar"
@@ -4621,7 +4626,7 @@ const scheduleByMatch = useMemo(() => {
                   </div>
                 )}
 
-              {isEmbedded ? (
+              {isEmbedded && !isViewOnly ? (
                 <div
                   id="repechaje-winners-all"
                   className="bg-neutral-900 rounded-lg p-3 flex flex-col gap-2 modal-glow"
@@ -4638,30 +4643,32 @@ const scheduleByMatch = useMemo(() => {
                 </div>
               ) : (
                 <>
-                  <div className="flex  items-center gap-2 justify-center w-full">
-                    <button
-                      type="button"
-                      onClick={() => handlePlayoffTabClick("uefa")}
-                      className={`px-5 py-3 rounded-full text-base  md:text-lg font-bold tracking-wide w-1/2 transition ${
-                        activePlayoffTab === "uefa"
-                          ? "bg-[#c6f600] text-black  "
-                          : " text-gray-200 bg-neutral-900/70 hover:text-white "
-                      }`}
-                    >
-                      Liguilla UEFA
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handlePlayoffTabClick("intercontinental")}
-                      className={` py-2 rounded-full  text-base  md:text-lg font-bold tracking-wide w-1/2 transition ${
-                        activePlayoffTab === "intercontinental"
-                          ? "bg-[#c6f600] text-black border-[#c6f600] shadow-[0_0_16px_rgba(198,246,0,0.35)]"
-                          : "border-neutral-700 text-gray-200 bg-neutral-900/70 hover:text-white hover:border-[#c6f600]"
-                      }`}
-                    >
-                      Liguilla Intercontinental
-                    </button>
-                  </div>
+                  {!(isEmbedded && isViewOnly) && (
+                    <div className="flex  items-center gap-2 justify-center w-full">
+                      <button
+                        type="button"
+                        onClick={() => handlePlayoffTabClick("uefa")}
+                        className={`px-5 py-3 rounded-full text-base  md:text-lg font-bold tracking-wide w-1/2 transition ${
+                          activePlayoffTab === "uefa"
+                            ? "bg-[#c6f600] text-black  "
+                            : " text-gray-200 bg-neutral-900/70 hover:text-white "
+                        }`}
+                      >
+                        Liguilla UEFA
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePlayoffTabClick("intercontinental")}
+                        className={` py-2 rounded-full  text-base  md:text-lg font-bold tracking-wide w-1/2 transition ${
+                          activePlayoffTab === "intercontinental"
+                            ? "bg-[#c6f600] text-black border-[#c6f600] shadow-[0_0_16px_rgba(198,246,0,0.35)]"
+                            : "border-neutral-700 text-gray-200 bg-neutral-900/70 hover:text-white hover:border-[#c6f600]"
+                        }`}
+                      >
+                        Liguilla Intercontinental
+                      </button>
+                    </div>
+                  )}
                   <AnimatePresence>
                     {!isViewOnly && autoSwitchNotice && (
                       <motion.div
@@ -4677,79 +4684,81 @@ const scheduleByMatch = useMemo(() => {
                   </AnimatePresence>
 
                   <AnimatePresence mode="wait">
-                    <motion.div
-                      key={activePlayoffTab}
-                      initial={{ opacity: 0, y: 24 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -12 }}
-                      transition={{ duration: 0.3, ease: "easeOut" }}
-                      className="flex flex-col gap-4"
-                    >
-                      {activePlayoffTab === "intercontinental" ? (
-                        <>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            {intercontinentalBlocks.map((block) => (
-                          <PlayoffKeyBlock
-                            key={block.id}
-                            title={block.title}
-                            subtitle={block.subtitle}
-                            mapGroup={block.mapGroup}
-                            matches={block.matches}
-                            onPick={handleIntercontinentalPick}
-                            disabled={repechajesLocked}
-                            showFinalHint={showRepechajeFinalHint}
-                          />
-                            ))}
-                          </div>
-
-                          <div
-                            id="repechaje-winners-intercontinental"
-                            className="bg-neutral-900  rounded-lg p-3 flex flex-col gap-2 modal-glow"
-                          >
-                            <p className="text-3xl font-semibold text-center text-[#c6f600]  py-4">
-                              Tus clasificados Intercontinental
-                            </p>
-                            <div className="grid gap-2 sm:grid-cols-2 text-sm text-gray-200 items-center justify-center">
-                              <RepechajeWinnerBadge label="Clasificado al Grupo I" team={winnerI} />
-                              <RepechajeWinnerBadge label="Clasificado al Grupo K" team={winnerK} />
+                      <motion.div
+                        key={activePlayoffTab}
+                        initial={{ opacity: 0, y: 24 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -12 }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                        className="flex flex-col gap-4"
+                      >
+                        {activePlayoffTab === "intercontinental" ? (
+                          <>
+                            <div className="grid gap-4 md:grid-cols-2">
+                              {intercontinentalBlocks.map((block) => (
+                                <PlayoffKeyBlock
+                                  key={block.id}
+                                  title={block.title}
+                                  subtitle={block.subtitle}
+                                  mapGroup={block.mapGroup}
+                                  matches={block.matches}
+                                  onPick={handleIntercontinentalPick}
+                                  disabled={repechajesLocked}
+                                  showFinalHint={showRepechajeFinalHint}
+                                  scoreByMatchId={scoreByMatchId}
+                                />
+                              ))}
                             </div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            {uefaBlocks.map((block) => (
-                          <PlayoffKeyBlock
-                            key={block.id}
-                            title={block.title}
-                            subtitle={block.subtitle}
-                            mapGroup={block.mapGroup}
-                            matches={block.matches}
-                            onPick={handleUefaPick}
-                            disabled={repechajesLocked}
-                            showFinalHint={showRepechajeFinalHint}
-                          />
-                            ))}
-                          </div>
 
-                          <div
-                            id="repechaje-winners-uefa"
-                            className="bg-neutral-900  rounded-lg p-3 flex flex-col gap-2 modal-glow "
-                          >
-                            <p className="text-3xl font-semibold text-[#c6f600] text-center py-4">
-                              Tus clasificados UEFA
-                            </p>
-                            <div className="grid gap-2 sm:grid-cols-2 text-sm text-gray-200 items-center justify-center">
-                              <RepechajeWinnerBadge label="Clasificado al Grupo A" team={winnerA} />
-                              <RepechajeWinnerBadge label="Clasificado al Grupo B" team={winnerB} />
-                              <RepechajeWinnerBadge label="Clasificado al Grupo D" team={winnerD} />
-                              <RepechajeWinnerBadge label="Clasificado al Grupo F" team={winnerF} />
+                            <div
+                              id="repechaje-winners-intercontinental"
+                              className="bg-neutral-900  rounded-lg p-3 flex flex-col gap-2 modal-glow"
+                            >
+                              <p className="text-3xl font-semibold text-center text-[#c6f600]  py-4">
+                                Tus clasificados Intercontinental
+                              </p>
+                              <div className="grid gap-2 sm:grid-cols-2 text-sm text-gray-200 items-center justify-center">
+                                <RepechajeWinnerBadge label="Clasificado al Grupo I" team={winnerI} />
+                                <RepechajeWinnerBadge label="Clasificado al Grupo K" team={winnerK} />
+                              </div>
                             </div>
-                          </div>
-                        </>
-                      )}
-                    </motion.div>
-                  </AnimatePresence>
+                          </>
+                        ) : (
+                          <>
+                            <div className="grid gap-4 md:grid-cols-2">
+                              {uefaBlocks.map((block) => (
+                                <PlayoffKeyBlock
+                                  key={block.id}
+                                  title={block.title}
+                                  subtitle={block.subtitle}
+                                  mapGroup={block.mapGroup}
+                                  matches={block.matches}
+                                  onPick={handleUefaPick}
+                                  disabled={repechajesLocked}
+                                  showFinalHint={showRepechajeFinalHint}
+                                  scoreByMatchId={scoreByMatchId}
+                                />
+                              ))}
+                            </div>
+
+                            <div
+                              id="repechaje-winners-uefa"
+                              className="bg-neutral-900  rounded-lg p-3 flex flex-col gap-2 modal-glow "
+                            >
+                              <p className="text-3xl font-semibold text-[#c6f600] text-center py-4">
+                                Tus clasificados UEFA
+                              </p>
+                              <div className="grid gap-2 sm:grid-cols-2 text-sm text-gray-200 items-center justify-center">
+                                <RepechajeWinnerBadge label="Clasificado al Grupo A" team={winnerA} />
+                                <RepechajeWinnerBadge label="Clasificado al Grupo B" team={winnerB} />
+                                <RepechajeWinnerBadge label="Clasificado al Grupo D" team={winnerD} />
+                                <RepechajeWinnerBadge label="Clasificado al Grupo F" team={winnerF} />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </motion.div>
+                    </AnimatePresence>
                 </>
               )}
             </motion.div>
@@ -5149,6 +5158,7 @@ const scheduleByMatch = useMemo(() => {
                   locked={isLocked}
                   navTarget={bracketNavTarget}
                   onNavHandled={clearBracketNavTarget}
+                  scoreByMatchId={scoreByMatchId}
                   onChampionClick={(team) => {
                     if (!team) return;
                     setChampionTeam(team);

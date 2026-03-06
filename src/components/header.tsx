@@ -211,16 +211,16 @@ function Nav({
   type NavItem = { label: string; page: string } | { label: string; href: string };
 
   const links: NavItem[] = [
-    { href: "https://www.eltelegrafo.com.ec", label: "Volver al Telégrafo" },
-    { page: "home", label: "Portada" },
+    { href: "https://www.eltelegrafo.com.ec", label: "Volver al TelÃ©grafo" },
+    { page: "home", label: "Nueva Polla" },
    /* { page: "envivo", label: "En Vivo" }, */
-    { page: "calendario", label: "Calendario" },
-    { page: "ecuador", label: "Ecuador" },
-    { page: "grupos", label: "Grupos" },
-    { page: "noticias", label: "Noticias" },
-    { page: "polla", label: "Tu Mundial" },
+    { href: "https://especiales.eltelegrafo.com.ec/fanaticomundialista/", label: "Calendario" },
+    { href: "https://especiales.eltelegrafo.com.ec/fanaticomundialista/", label: "Ecuador" },
+    { href: "https://especiales.eltelegrafo.com.ec/fanaticomundialista/", label: "Grupos" },
+    { href: "https://especiales.eltelegrafo.com.ec/fanaticomundialista/", label: "Noticias" },
+   
    /* { page: "resultados", label: "Resultados" }, */
-    { page: "selecciones", label: "Selecciones" },
+    { href: "https://especiales.eltelegrafo.com.ec/fanaticomundialista/", label: "Selecciones" },
   ];
 
   return (
@@ -241,7 +241,7 @@ function Nav({
                     className="box-border content-stretch flex items-center justify-center px-3 py-1 relative shrink-0 rounded transition-colors text-white hover:text-[#C6F600]"
                   >
                     <span className="flex items-center gap-2">
-                      <BackIcon />
+                     
                       <p className="font-semibold leading-6 not-italic relative shrink-0 text-base text-nowrap whitespace-pre">
                         {link.label}
                       </p>

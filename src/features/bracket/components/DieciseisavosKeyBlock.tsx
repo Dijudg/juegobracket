@@ -17,6 +17,7 @@ export const DieciseisavosKeyBlock = ({
   mirror = false,
   seedLabel,
   onBlockedPick,
+  scoreByMatchId,
 }: {
   semiMatches: BlockMatch[];
   finalMatch?: Match;
@@ -26,6 +27,7 @@ export const DieciseisavosKeyBlock = ({
   mirror?: boolean;
   seedLabel?: (team?: Team) => string;
   onBlockedPick?: () => void;
+  scoreByMatchId?: Record<string, number | undefined>;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -42,18 +44,20 @@ export const DieciseisavosKeyBlock = ({
     selected,
     readOnly,
     lockedMatch,
+    scoreGlow,
   }: {
     team?: Team;
     matchId: string;
     selected: boolean;
     readOnly?: boolean;
     lockedMatch?: boolean;
+    scoreGlow?: boolean;
   }) => {
     const escudo = getTeamEscudo(team);
     const code = getTeamCode(team) || "--";
     if (readOnly) {
       return (
-        <div className={`teamBtn readonly ${selected ? "selected" : ""}`}>
+        <div className={`teamBtn readonly ${selected ? "selected" : ""} ${scoreGlow ? "modal-glow score-glow-team" : ""}`}>
           <span className="badge">
             {escudo ? (
               <img src={escudo} alt={team?.nombre} className="badgeImg" />
@@ -78,7 +82,7 @@ export const DieciseisavosKeyBlock = ({
         onClick={() => !locked && !lockedMatch && team && onPick(matchId, team)}
         className={`teamBtn ${selected ? "selected" : ""} ${hardDisabled ? "disabled" : ""} ${
           lockedMatch ? "locked" : ""
-        }`}
+        } ${scoreGlow ? "modal-glow score-glow-team" : ""}`}
       >
         {showSeed && <span className="seedTag">{seed}</span>}
         <span className="badge">
@@ -95,6 +99,7 @@ export const DieciseisavosKeyBlock = ({
 
   const renderMatch = ({ match, schedule, readOnly }: BlockMatch) => {
     if (!match) return null;
+    const scorePoints = scoreByMatchId?.[match.id] || 0;
     const label = match.label || match.id;
     const dateLabel = formatFixtureDate(schedule?.fecha) || "\u00A0";
     const winnerId = match.ganador?.id;
@@ -119,12 +124,14 @@ export const DieciseisavosKeyBlock = ({
         }
       >
         <div className="matchNumber">Partido {label}</div>
+        {scorePoints > 0 && <div className="score-hit-badge">+{scorePoints} puntos</div>}
         {renderTeam({
           team: match.equipoA,
           matchId: match.id,
           selected: !!winnerId && winnerId === match.equipoA?.id,
           readOnly,
           lockedMatch: matchLocked,
+          scoreGlow: scorePoints > 0 && !!winnerId && winnerId === match.equipoA?.id,
         })}
         {renderTeam({
           team: match.equipoB,
@@ -132,6 +139,7 @@ export const DieciseisavosKeyBlock = ({
           selected: !!winnerId && winnerId === match.equipoB?.id,
           readOnly,
           lockedMatch: matchLocked,
+          scoreGlow: scorePoints > 0 && !!winnerId && winnerId === match.equipoB?.id,
         })}
         <div className="matchDate">{dateLabel}</div>
       </div>

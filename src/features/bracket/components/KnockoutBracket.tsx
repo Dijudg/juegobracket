@@ -31,6 +31,7 @@ export const KnockoutBracket = ({
   onNavHandled,
   onChampionClick,
   locked = false,
+  scoreByMatchId,
 }: {
   r32: Match[];
   r16: Match[];
@@ -48,6 +49,7 @@ export const KnockoutBracket = ({
   onNavHandled?: () => void;
   onChampionClick?: (team?: Team) => void;
   locked?: boolean;
+  scoreByMatchId?: Record<string, number | undefined>;
 }) => {
   const BRACKET_CONSTANTS = {
     matchHeight: 130,
@@ -269,6 +271,7 @@ export const KnockoutBracket = ({
   const TeamButton = ({
     team,
     isWinner,
+    scoreGlow,
     onClick,
     disabled,
     onHover,
@@ -277,6 +280,7 @@ export const KnockoutBracket = ({
   }: {
     team?: Team;
     isWinner: boolean;
+    scoreGlow?: boolean;
     onClick: () => void;
     disabled?: boolean;
     onHover?: (label: string, event: MouseEvent<HTMLButtonElement>) => void;
@@ -304,8 +308,8 @@ export const KnockoutBracket = ({
         onMouseMove={(event) => onMove?.(event)}
         onMouseLeave={onLeave}
         className={`flex flex-col items-center gap-1 w-10 transition-all ${
-          isWinner ? "opacity-100" : "opacity-70 hover:opacity-100"
-        } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+          isWinner || scoreGlow ? "opacity-100" : "opacity-70 hover:opacity-100"
+        } ${disabled ? "cursor-not-allowed" : "cursor-pointer"} ${scoreGlow ? "modal-glow score-glow-team" : ""}`}
       >
         {escudo ? (
           <img
@@ -337,6 +341,7 @@ export const KnockoutBracket = ({
     label?: string;
   }) => {
     if (!match) return null;
+    const scorePoints = scoreByMatchId?.[match.id] || 0;
     const hardLocked = !!locked;
     const teamA = match.equipoA;
     const teamB = match.equipoB;
@@ -361,10 +366,12 @@ export const KnockoutBracket = ({
                 : "bg-neutral-800 border-full border-gray-300 hover:shadow-md"
             }`}
           >
+            {scorePoints > 0 && <div className="score-hit-badge score-hit-badge--compact">+{scorePoints} puntos</div>}
             <div className="flex items-center justify-evenly w-full">
               <TeamButton
                 team={teamA}
                 isWinner={match.ganador?.id === teamA?.id}
+                scoreGlow={scorePoints > 0 && match.ganador?.id === teamA?.id}
                 onClick={() => canPick && teamA && onPick(match.id, teamA)}
                 disabled={!canPick || !teamA}
                 onHover={showTeamHover}
@@ -374,6 +381,7 @@ export const KnockoutBracket = ({
               <TeamButton
                 team={teamB}
                 isWinner={match.ganador?.id === teamB?.id}
+                scoreGlow={scorePoints > 0 && match.ganador?.id === teamB?.id}
                 onClick={() => canPick && teamB && onPick(match.id, teamB)}
                 disabled={!canPick || !teamB}
                 onHover={showTeamHover}

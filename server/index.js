@@ -104,6 +104,17 @@ const resolveProfileAlias = (meta = {}, email = "") => {
   return alias || email || "Usuario";
 };
 
+const resolveSharedByFromUser = (user) => {
+  const meta = user?.user_metadata || {};
+  return {
+    userId: user?.id || "",
+    name: resolveProfileAlias(meta, user?.email || ""),
+    alias: meta.alias || meta.nickname || "",
+    avatarUrl: resolveProfileAvatar(meta),
+    coverUrl: meta.cover_url || "",
+  };
+};
+
 const toCsvValue = (value) => {
   if (value === null || value === undefined) return "";
   const str = String(value);
@@ -568,7 +579,7 @@ app.post("/api/guest-brackets/claim", requireAuth, async (req, res) => {
     const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from("bracket_saves")
-      .select("id,expires_at,short_code")
+      .select("id,expires_at,short_code,data")
       .eq("short_code", shortCode)
       .eq("user_id", guestBracketUserId)
       .eq("is_public", true)
@@ -593,9 +604,25 @@ app.post("/api/guest-brackets/claim", requireAuth, async (req, res) => {
       return res.status(409).json({ error: "Limit reached (max 5 brackets)" });
     }
 
+    let nextPayload = data.data;
+    if (typeof nextPayload === "string") {
+      try {
+        nextPayload = JSON.parse(nextPayload);
+      } catch {
+        nextPayload = {};
+      }
+    }
+    if (!nextPayload || typeof nextPayload !== "object" || Array.isArray(nextPayload)) {
+      nextPayload = {};
+    }
+    nextPayload = {
+      ...nextPayload,
+      sharedBy: resolveSharedByFromUser(req.user),
+    };
+
     const { data: updated, error: updateError } = await supabase
       .from("bracket_saves")
-      .update({ user_id: req.user.id, expires_at: null })
+      .update({ user_id: req.user.id, expires_at: null, data: nextPayload })
       .eq("id", data.id)
       .eq("user_id", guestBracketUserId)
       .select("id,name,updated_at")
