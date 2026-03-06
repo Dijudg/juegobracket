@@ -18,6 +18,7 @@ export const DieciseisavosKeyBlock = ({
   seedLabel,
   onBlockedPick,
   scoreByMatchId,
+  isMatchLocked,
 }: {
   semiMatches: BlockMatch[];
   finalMatch?: Match;
@@ -28,6 +29,7 @@ export const DieciseisavosKeyBlock = ({
   seedLabel?: (team?: Team) => string;
   onBlockedPick?: () => void;
   scoreByMatchId?: Record<string, number | undefined>;
+  isMatchLocked?: (matchId: string) => boolean;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -103,7 +105,7 @@ export const DieciseisavosKeyBlock = ({
     const label = match.label || match.id;
     const dateLabel = formatFixtureDate(schedule?.fecha) || "\u00A0";
     const winnerId = match.ganador?.id;
-    const matchLocked = !!match.ganador;
+    const matchLocked = !!match.ganador || !!isMatchLocked?.(match.id);
     const showBlocked = !!readOnly && !!onBlockedPick;
     return (
       <div

@@ -227,19 +227,28 @@ const loadFallbackTeamsFromCsv = async () => {
   return rows;
 };
 
-const resolveTeamCard = (token: string | undefined, teamIndex: Map<string, TeamIndexValue>): ShareCardTeam => {
+const resolveTeamCardById = (token: string | undefined, teamIndex: Map<string, TeamIndexValue>): ShareCardTeam => {
   const key = normalizeKey(token);
   if (!key || key === "EMPATE" || key.includes("/")) {
     return { name: "Por definir" };
   }
   const match = teamIndex.get(key) || teamIndex.get(normalizeComparable(key));
-  if (match) {
-    return {
-      name: match.name || key,
-      escudo: match.escudo,
-    };
+  return {
+    name: key,
+    escudo: match?.escudo,
+  };
+};
+
+const resolveTeamCardByName = (token: string | undefined, teamIndex: Map<string, TeamIndexValue>): ShareCardTeam => {
+  const key = normalizeKey(token);
+  if (!key || key === "EMPATE" || key.includes("/")) {
+    return { name: "Por definir" };
   }
-  return { name: key };
+  const match = teamIndex.get(key) || teamIndex.get(normalizeComparable(key));
+  return {
+    name: match?.name || key,
+    escudo: match?.escudo,
+  };
 };
 
 const buildBestCard = (
@@ -269,9 +278,9 @@ const buildBestCard = (
   return {
     bracketId,
     points,
-    champion: resolveTeamCard(championToken, teamIndex),
-    runnerUp: resolveTeamCard(runnerKey, teamIndex),
-    third: resolveTeamCard(thirdToken, teamIndex),
+    champion: resolveTeamCardByName(championToken, teamIndex),
+    runnerUp: resolveTeamCardById(runnerKey, teamIndex),
+    third: resolveTeamCardById(thirdToken, teamIndex),
     shareUrl,
   };
 };
@@ -462,6 +471,7 @@ export default function LeaderboardPage() {
   }, [rows]);
 
   const slides = useMemo(() => chunk(topCards, cardsPerSlide), [topCards, cardsPerSlide]);
+  const topFiveRows = useMemo(() => rows.slice(0, 5), [rows]);
   const filteredRows = useMemo(() => {
     const query = usersSearch.trim();
     if (!query) return rows;
@@ -625,26 +635,19 @@ export default function LeaderboardPage() {
                     <h1 className="w-2/3 text-2xl font-black md:text-3xl">Top 5</h1>
                    
                   </div>
-                  {filteredRows.length === 0 && (
+                  {topFiveRows.length === 0 && (
                     <div className="rounded-xl border border-white/10 bg-black/30 p-4 text-sm text-gray-300">
-                      {usersSearch.trim()
-                        ? "No encontramos usuarios con ese alias, nombre o correo."
-                        : "No hay brackets suficientes para construir el ranking."}
+                      No hay brackets suficientes para construir el ranking.
                     </div>
                   )}
-                  {visibleRows.map((entry, idx) => {
+                  {topFiveRows.map((entry, idx) => {
                     const rank = rankByUserId.get(entry.userId) ?? idx + 1;
                     const initial = entry.displayName.trim().charAt(0).toUpperCase() || "U";
                     const tone = rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "default";
-                    const isExpanded = expandedUserId === entry.userId;
                     return (
                       <div key={entry.userId} className="overflow-hidden rounded-xl  border-b-white/10 border-b ">
                         <div className="leaderboard-card flex items-center justify-between gap-3 rounded-none border-0 p-3 md:p-4">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedUserId((current) => (current === entry.userId ? null : entry.userId))}
-                            className="min-w-0 flex items-center gap-3 text-left transition-opacity hover:opacity-90"
-                          >
+                          <div className="min-w-0 flex items-center gap-3 text-left">
                             <div className={`leaderboard-accent leaderboard-accent--${tone} w-8 text-center text-sm font-black`}>#{rank}</div>
                             {entry.avatarUrl ? (
                               <img src={entry.avatarUrl} alt={entry.displayName} className="size-8 rounded-full border border-white/20 object-cover" />
@@ -656,46 +659,19 @@ export default function LeaderboardPage() {
                             <div className="min-w-0">
                               <p className="truncate text-2xl font-semibold">{entry.displayName}</p>
                               <p className="text-xs text-[#c6f600] ">
-                                {entry.totalHits}/{entry.totalEvaluated} aciertos  <span className=" ml-2 px-2 text-black rounded-full font-black text-sm bg-[#c6f600]">{isExpanded ? " < Ocultar" : " > Ver Juegos"}</span>
+                                {entry.bracketCount} juegos jugados
                               </p>
                             </div>
-                          </button>
+                          </div>
                           <div className="text-right">
+                            <p className="text-xs text-gray-300">{entry.totalHits}/{entry.totalEvaluated} aciertos</p>
                             <p className={`leaderboard-accent leaderboard-accent--${tone} text-lg font-black md:text-2xl`}>{entry.totalPoints} pts</p>
                           
                           </div>
                         </div>
-
-                        {isExpanded && (
-                          <div className="border-t border-white/10 bg-white px-3 py-2 md:px-4">
-                            <p className="mb-2 text-[11px] uppercase tracking-wide text-gray-400">Juegos Realizados</p>
-                            <div className="flex flex-wrap gap-2">
-                              {entry.brackets.map((bracket, index) => (
-                                <a
-                                  key={`${entry.userId}-${bracket.id}-${index}`}
-                                  href={bracket.shareUrl}
-                                  className=" px-2 py-1 text-xs font-semibold text-[#c6f600] transition-colors hover:border-[#c6f600] hover:bg-[#c6f600]/10"
-                                >
-                                  {`Juego ${index + 1}`}
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
-                  {filteredRows.length > visibleRows.length && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setVisibleUsers((current) => current + 6)}
-                        className="w-full rounded-xl border border-white/20 bg-black/30 px-4 py-2 text-sm font-semibold transition-colors hover:border-[#c6f600] hover:text-[#c6f600]"
-                      >
-                        Más usuarios
-                      </button>
-                    </div>
-                  )}
                 </div>
               )}
             </div>

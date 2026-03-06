@@ -32,6 +32,7 @@ export const KnockoutBracket = ({
   onChampionClick,
   locked = false,
   scoreByMatchId,
+  isMatchLocked,
 }: {
   r32: Match[];
   r16: Match[];
@@ -50,6 +51,7 @@ export const KnockoutBracket = ({
   onChampionClick?: (team?: Team) => void;
   locked?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
+  isMatchLocked?: (matchId: string) => boolean;
 }) => {
   const BRACKET_CONSTANTS = {
     matchHeight: 130,
@@ -343,10 +345,11 @@ export const KnockoutBracket = ({
     if (!match) return null;
     const scorePoints = scoreByMatchId?.[match.id] || 0;
     const hardLocked = !!locked;
+    const deadlineLocked = !!isMatchLocked?.(match.id);
     const teamA = match.equipoA;
     const teamB = match.equipoB;
     const hasWinner = !!match.ganador;
-    const canPick = !hardLocked && !hasWinner;
+    const canPick = !hardLocked && !deadlineLocked && !hasWinner;
 
     return (
       <div className="relative flex items-center">

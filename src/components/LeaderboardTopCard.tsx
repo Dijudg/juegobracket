@@ -45,6 +45,8 @@ export function LeaderboardTopCard({
           third={third}
           shareUrl={shareUrl}
           variant="spin"
+          runnerUpLabel="Plata"
+          thirdLabel="Bronce"
         />
       </div>
       <a

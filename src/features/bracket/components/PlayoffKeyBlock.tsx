@@ -11,6 +11,7 @@ export const PlayoffKeyBlock = ({
   disabled,
   showFinalHint,
   scoreByMatchId,
+  isMatchLocked,
 }: {
   title: string;
   subtitle?: string;
@@ -20,6 +21,7 @@ export const PlayoffKeyBlock = ({
   disabled?: boolean;
   showFinalHint?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
+  isMatchLocked?: (matchId: string) => boolean;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -36,11 +38,12 @@ export const PlayoffKeyBlock = ({
   const renderRepechajeMatch = (match?: PlayoffMatchData) => {
     if (!match) return null;
     const scorePoints = scoreByMatchId?.[match.id] || 0;
+    const deadlineLocked = !!isMatchLocked?.(match.id);
     const teams = [match.homeTeam, match.awayTeam];
     const isIntercontinentalSemi =
       match.id.startsWith("int-") && match.id.includes("-sf");
     const spacingClass = isIntercontinentalSemi ? "my-6" : "";
-    const canPickFinal = !disabled && !!match.homeTeam && !!match.awayTeam;
+    const canPickFinal = !disabled && !deadlineLocked && !!match.homeTeam && !!match.awayTeam;
     const shouldShowFinalHint =
       !!showFinalHint && !!match.highlightFinal && canPickFinal && !match.winnerCode;
     return (
@@ -59,19 +62,19 @@ export const PlayoffKeyBlock = ({
         {teams.map((team, idx) => {
           const code = getTeamCode(team);
           const isSelected = !!code && match.winnerCode === code;
-          const isMatchLocked = !!match.winnerCode;
+          const isLockedByWinner = !!match.winnerCode;
           const hardDisabled = disabled || !team || !code;
-          const isDisabled = hardDisabled || isMatchLocked;
+          const isDisabled = hardDisabled || isLockedByWinner || deadlineLocked;
           const escudo = getTeamEscudo(team);
           return (
             <button
               key={`${match.id}-${idx}`}
               type="button"
               disabled={isDisabled}
-              onClick={() => !isMatchLocked && code && onPick(match.id, code)}
+              onClick={() => !isLockedByWinner && !deadlineLocked && code && onPick(match.id, code)}
               className={`teamBtn ${spacingClass} ${isSelected ? "selected" : ""} ${
                 hardDisabled ? "disabled" : ""
-              } ${isMatchLocked ? "locked" : ""} ${scorePoints > 0 && isSelected ? "modal-glow score-glow-team" : ""}`}
+              } ${isLockedByWinner || deadlineLocked ? "locked" : ""} ${scorePoints > 0 && isSelected ? "modal-glow score-glow-team" : ""}`}
             >
               <span className="badge">
                 {escudo ? (

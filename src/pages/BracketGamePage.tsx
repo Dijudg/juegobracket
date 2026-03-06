@@ -62,6 +62,7 @@ import { PlayoffKeyBlock } from "../features/bracket/components/PlayoffKeyBlock"
 import { RepechajeWinnerBadge } from "../features/bracket/components/RepechajeWinnerBadge";
 import { KnockoutBracket } from "../features/bracket/components/KnockoutBracket";
 import { useBracketScore } from "../features/bracket/score";
+import { computeBracketDeadlineState, isMatchLockedByDeadline, type BracketTab } from "../features/bracket/deadlines";
 import { GroupFixturesModal } from "../features/bracket/components/GroupFixturesModal";
 import { BestThirdsModal } from "../features/bracket/components/BestThirdsModal";
 import { useHoloPointer } from "../features/bracket/hooks/useHoloPointer";
@@ -823,12 +824,13 @@ export default function BracketGamePage() {
   const [selections, setSelections] = useState<GroupSelections>({});
   const [bestThirdIds, setBestThirdIds] = useState<string[]>([]);
   const [picks, setPicks] = useState<Record<string, string | undefined>>({});
-  const [activeTab, setActiveTab] = useState<"repechajes" | "grupos" | "dieciseisavos" | "llaves">("repechajes");
+  const [activeTab, setActiveTab] = useState<BracketTab>("repechajes");
   const [activeR32Tab, setActiveR32Tab] = useState<"llave1" | "llave2">("llave1");
   const [activePlayoffTab, setActivePlayoffTab] = useState<"intercontinental" | "uefa">("uefa");
   const [intercontinentalPicks, setIntercontinentalPicks] = useState<PlayoffPickState>({});
   const [uefaPicks, setUefaPicks] = useState<PlayoffPickState>({});
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
+  const [nowTs, setNowTs] = useState(() => Date.now());
   const [showFixturesGroup, setShowFixturesGroup] = useState<string | undefined>(undefined);
   const [bracketError, setBracketError] = useState<string | undefined>(undefined);
   const [showThirdsModal, setShowThirdsModal] = useState(false);
@@ -925,6 +927,10 @@ export default function BracketGamePage() {
       audio.preload = "auto";
       rulesAudioRef.current = audio;
     }
+  }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowTs(Date.now()), 30 * 1000);
+    return () => window.clearInterval(timer);
   }, []);
   const scrollToTop = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (typeof window === "undefined") return;
@@ -2368,14 +2374,82 @@ export default function BracketGamePage() {
   const winnerD = useMemo(() => resolveTeamForGroup(winnerDCode, "D"), [winnerDCode, resolveTeamForGroup]);
   const winnerA = useMemo(() => resolveTeamForGroup(winnerACode, "A"), [winnerACode, resolveTeamForGroup]);
 
+  const deadlineState = useMemo(
+    () => computeBracketDeadlineState(fixtures, new Date(nowTs)),
+    [fixtures, nowTs],
+  );
+  const deadlineHiddenTabs = useMemo<Record<BracketTab, boolean>>(
+    () =>
+      isViewOnly
+        ? { repechajes: false, grupos: false, dieciseisavos: false, llaves: false }
+        : deadlineState.hiddenTabs,
+    [deadlineState.hiddenTabs, isViewOnly],
+  );
+  const phaseDeadlineLocked = useMemo<Record<BracketTab, boolean>>(
+    () =>
+      isViewOnly
+        ? { repechajes: false, grupos: false, dieciseisavos: false, llaves: false }
+        : deadlineState.phaseLocked,
+    [deadlineState.phaseLocked, isViewOnly],
+  );
+  const isMatchBlockedByDeadline = useCallback(
+    (matchId: string) => (!isViewOnly ? isMatchLockedByDeadline(matchId, deadlineState) : false),
+    [deadlineState, isViewOnly],
+  );
+  const openDeadlinePhaseBlock = useCallback(
+    (phase: BracketTab) => {
+      const titleByPhase: Record<BracketTab, string> = {
+        repechajes: "Repechajes cerrados",
+        grupos: "Fase de grupos cerrada",
+        dieciseisavos: "Eliminatorias cerradas",
+        llaves: "Llaves finales cerradas",
+      };
+      if (phase === "grupos" && deadlineState.groupCutoff) {
+        const cutoffLabel = deadlineState.groupCutoff.toLocaleString("es-EC", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        setPhaseBlock({
+          title: titleByPhase[phase],
+          missing: [`Esta fase se cerró el ${cutoffLabel}.`],
+        });
+        return;
+      }
+      setPhaseBlock({
+        title: titleByPhase[phase],
+        missing: ["La hora oficial de esta fase ya venció."],
+      });
+    },
+    [deadlineState.groupCutoff],
+  );
+  const getFirstVisibleTabFrom = useCallback(
+    (start: BracketTab): BracketTab => {
+      const order: BracketTab[] = ["repechajes", "grupos", "dieciseisavos", "llaves"];
+      const startIdx = order.indexOf(start);
+      const forward = order.slice(Math.max(0, startIdx));
+      const fallback = [...forward, ...order];
+      for (const tab of fallback) {
+        if (!deadlineHiddenTabs[tab]) return tab;
+      }
+      return "repechajes";
+    },
+    [deadlineHiddenTabs],
+  );
+
   const repechajesLocked = uefaComplete && intercontinentalComplete;
+  const repechajesReady = repechajesLocked || phaseDeadlineLocked.repechajes;
 
   const repechajesMissing = useMemo(() => {
     const missing: string[] = [];
-    if (!uefaComplete) missing.push("UEFA");
-    if (!intercontinentalComplete) missing.push("Intercontinental");
+    if (!phaseDeadlineLocked.repechajes) {
+      if (!uefaComplete) missing.push("UEFA");
+      if (!intercontinentalComplete) missing.push("Intercontinental");
+    }
     return missing;
-  }, [uefaComplete, intercontinentalComplete]);
+  }, [uefaComplete, intercontinentalComplete, phaseDeadlineLocked.repechajes]);
 
   const groupCompletion = useMemo(() => {
     const missing: string[] = [];
@@ -2402,6 +2476,10 @@ export default function BracketGamePage() {
       setActivePlayoffTab(tab);
       return;
     }
+    if (phaseDeadlineLocked.repechajes) {
+      openDeadlinePhaseBlock("repechajes");
+      return;
+    }
     if (tab === "intercontinental" && !uefaComplete) {
       setActivePlayoffTab("uefa");
       setPhaseBlock({
@@ -2423,7 +2501,12 @@ export default function BracketGamePage() {
       setActiveTab("grupos");
       return true;
     }
-    if (uefaComplete && intercontinentalComplete) {
+    if (deadlineHiddenTabs.grupos) {
+      const nextTab = getFirstVisibleTabFrom("dieciseisavos");
+      setActiveTab(nextTab);
+      return false;
+    }
+    if (repechajesReady) {
       setActiveTab("grupos");
       return true;
     }
@@ -2433,7 +2516,7 @@ export default function BracketGamePage() {
       missing: repechajesMissing.length ? repechajesMissing : ["UEFA", "Intercontinental"],
     });
     return false;
-    }, [showNewGamePrompt, isViewOnly, uefaComplete, intercontinentalComplete, repechajesMissing]);
+    }, [showNewGamePrompt, isViewOnly, deadlineHiddenTabs.grupos, getFirstVisibleTabFrom, repechajesReady, repechajesMissing]);
 
   const goToDieciseisavosIfReady = useCallback(() => {
     if (showNewGamePrompt) {
@@ -2445,10 +2528,15 @@ export default function BracketGamePage() {
       setActiveTab("dieciseisavos");
       return true;
     }
-    if (!(uefaComplete && intercontinentalComplete)) {
+    if (deadlineHiddenTabs.dieciseisavos) {
+      const nextTab = getFirstVisibleTabFrom("llaves");
+      setActiveTab(nextTab);
+      return false;
+    }
+    if (!repechajesReady) {
       return goToGroupsIfReady();
     }
-    if (!groupCompletion.complete) {
+    if (!phaseDeadlineLocked.grupos && !groupCompletion.complete) {
       setActiveTab("grupos");
       setPhaseBlock({
         title: "Completa la fase de grupos",
@@ -2458,7 +2546,7 @@ export default function BracketGamePage() {
       });
       return false;
     }
-    if (!thirdsComplete) {
+    if (!phaseDeadlineLocked.grupos && !thirdsComplete) {
       setActiveTab("grupos");
       setPhaseBlock({
         title: "Selecciona los 8 mejores terceros",
@@ -2471,9 +2559,11 @@ export default function BracketGamePage() {
     }, [
       showNewGamePrompt,
       isViewOnly,
-      uefaComplete,
-      intercontinentalComplete,
+      deadlineHiddenTabs.dieciseisavos,
+      getFirstVisibleTabFrom,
+      repechajesReady,
       goToGroupsIfReady,
+      phaseDeadlineLocked.grupos,
       groupCompletion.complete,
       groupCompletion.missing,
       thirdsComplete,
@@ -2490,8 +2580,12 @@ export default function BracketGamePage() {
       setActiveTab("llaves");
       return true;
     }
+    if (deadlineHiddenTabs.llaves) {
+      openDeadlinePhaseBlock("llaves");
+      return false;
+    }
     if (!goToDieciseisavosIfReady()) return false;
-    if (!r32CompleteRef.current) {
+    if (!phaseDeadlineLocked.dieciseisavos && !r32CompleteRef.current) {
       setActiveTab("dieciseisavos");
       setPhaseBlock({
         title: "Completa dieciseisavos para avanzar",
@@ -2501,7 +2595,27 @@ export default function BracketGamePage() {
     }
     setActiveTab("llaves");
     return true;
-  }, [showNewGamePrompt, isViewOnly, goToDieciseisavosIfReady, missingMatchLabels]);
+  }, [
+    showNewGamePrompt,
+    isViewOnly,
+    deadlineHiddenTabs.llaves,
+    openDeadlinePhaseBlock,
+    goToDieciseisavosIfReady,
+    phaseDeadlineLocked.dieciseisavos,
+    missingMatchLabels,
+  ]);
+
+  useEffect(() => {
+    if (isViewOnly) return;
+    if (!deadlineHiddenTabs[activeTab]) return;
+    const order: BracketTab[] = ["repechajes", "grupos", "dieciseisavos", "llaves"];
+    const fallback = order.find((tab) => !deadlineHiddenTabs[tab]);
+    if (fallback) {
+      setActiveTab(fallback);
+      return;
+    }
+    setActiveTab("repechajes");
+  }, [activeTab, deadlineHiddenTabs, isViewOnly]);
 
   const closeIntercontinentalModal = useCallback(() => {
     setShowIntercontinentalModal(false);
@@ -2646,6 +2760,7 @@ export default function BracketGamePage() {
 
   const handlePick = (grupo: string, team: Team) => {
     if (isLocked) return;
+    if (phaseDeadlineLocked.grupos) return;
     const order: Array<keyof NonNullable<GroupSelections[string]>> = ["primero", "segundo", "tercero"];
     setSelections((prev) => {
       const current = prev[grupo] || {};
@@ -2670,6 +2785,8 @@ export default function BracketGamePage() {
   const togglePlayoffPick =
     (setState: React.Dispatch<React.SetStateAction<PlayoffPickState>>, context: string) =>
     (matchId: string, teamCode: string) => {
+      if (phaseDeadlineLocked.repechajes) return;
+      if (isMatchBlockedByDeadline(matchId)) return;
       setState((prev) => {
         if (prev[matchId]) return prev;
         return { ...prev, [matchId]: teamCode };
@@ -2764,6 +2881,7 @@ export default function BracketGamePage() {
 
   const toggleThirdChoice = (team: Team) => {
     if (isLocked) return;
+    if (phaseDeadlineLocked.grupos) return;
     setBestThirdIds((prev) => {
       if (prev.includes(team.id)) return prev;
       if (prev.length >= MAX_THIRD) return prev;
@@ -2900,16 +3018,17 @@ export default function BracketGamePage() {
       const finalMatch = block.matches[block.matches.length - 1];
       if (!finalMatch?.highlightFinal) return false;
       if (!finalMatch.homeTeam || !finalMatch.awayTeam) return false;
+      if (isMatchBlockedByDeadline(finalMatch.id)) return false;
       return !finalMatch.winnerCode;
     });
-  }, [activePlayoffBlocks]);
+  }, [activePlayoffBlocks, isMatchBlockedByDeadline]);
 
   useEffect(() => {
     setShowRepechajeFinalHint(false);
   }, [activeTab, activePlayoffTab]);
 
   useEffect(() => {
-    if (activeTab !== "repechajes" || repechajesLocked) {
+    if (activeTab !== "repechajes" || repechajesLocked || phaseDeadlineLocked.repechajes) {
       setShowRepechajeFinalHint(false);
       return;
     }
@@ -2924,7 +3043,7 @@ export default function BracketGamePage() {
     }, 10000);
 
     return () => window.clearTimeout(timer);
-  }, [activeTab, repechajesLocked, hasPickableFinalMissing, showRepechajeFinalHint]);
+  }, [activeTab, repechajesLocked, phaseDeadlineLocked.repechajes, hasPickableFinalMissing, showRepechajeFinalHint]);
 
   const seeds = useMemo(() => buildSeedsFromSelections(selections), [selections]);
 
@@ -3266,6 +3385,7 @@ const scheduleByMatch = useMemo(() => {
   const applyWinner = (matchId: string, team?: Team) => {
     if (isViewOnly) return;
     if (isLocked) return;
+    if (isMatchBlockedByDeadline(matchId)) return;
     if (!team) return;
     if (picks[matchId]) return;
 
@@ -3860,13 +3980,25 @@ const scheduleByMatch = useMemo(() => {
     [final, picks],
   );
   const menuSteps = useMemo(
-    () => [
-      { id: "repechajes", completed: repechajesLocked },
-      { id: "grupos", completed: groupCompletion.complete },
-      { id: "dieciseisavos", completed: r32Complete },
-      { id: "llaves", completed: finalComplete },
+    () =>
+      [
+        { id: "repechajes" as BracketTab, completed: repechajesLocked || phaseDeadlineLocked.repechajes },
+        { id: "grupos" as BracketTab, completed: groupCompletion.complete || phaseDeadlineLocked.grupos },
+        { id: "dieciseisavos" as BracketTab, completed: r32Complete || phaseDeadlineLocked.dieciseisavos },
+        { id: "llaves" as BracketTab, completed: finalComplete || phaseDeadlineLocked.llaves },
+      ].filter((step) => isViewOnly || !deadlineHiddenTabs[step.id]),
+    [
+      repechajesLocked,
+      groupCompletion.complete,
+      r32Complete,
+      finalComplete,
+      phaseDeadlineLocked.repechajes,
+      phaseDeadlineLocked.grupos,
+      phaseDeadlineLocked.dieciseisavos,
+      phaseDeadlineLocked.llaves,
+      isViewOnly,
+      deadlineHiddenTabs,
     ],
-    [repechajesLocked, groupCompletion.complete, r32Complete, finalComplete],
   );
   const menuCompletedCount = useMemo(
     () => menuSteps.filter((step) => step.completed).length,
@@ -3884,7 +4016,7 @@ const scheduleByMatch = useMemo(() => {
         return;
       }
       if (isViewOnly) return;
-      if (!thirdsComplete) {
+      if (!thirdsComplete && !phaseDeadlineLocked.grupos) {
         autoSwitchLlavesRef.current = false;
         return;
       }
@@ -3896,7 +4028,7 @@ const scheduleByMatch = useMemo(() => {
       setActiveTab("dieciseisavos");
       autoSwitchLlavesRef.current = true;
     }
-    }, [thirdsComplete, activeTab, showNewGamePrompt, isViewOnly]);
+    }, [thirdsComplete, phaseDeadlineLocked.grupos, activeTab, showNewGamePrompt, isViewOnly]);
 
   useEffect(() => {
     if (activeTab === "dieciseisavos") {
@@ -3977,12 +4109,13 @@ const scheduleByMatch = useMemo(() => {
               mirror={mirror}
               seedLabel={getSeedLabelR32}
               scoreByMatchId={scoreByMatchId}
+              isMatchLocked={isMatchBlockedByDeadline}
             />,
         );
       }
       return items;
     },
-    [applyWinner, isLocked, scheduleByMatch, scoreByMatchId],
+    [isLocked, scheduleByMatch, scoreByMatchId, isMatchBlockedByDeadline],
   );
 
   useEffect(() => {
@@ -4459,28 +4592,33 @@ const scheduleByMatch = useMemo(() => {
 
           {!isEmbedded && (
             <div className="flex items-center mb-3 overflow-x-auto flex-nowrap scrollbar-hide">
-            <button
-              type="button"
-              onClick={() => setActiveTab("repechajes")}
-              className={`px-3 py-2 rounded-b-xl rounded-t-none whitespace-nowrap text-base font-semibold transition ${
-                activeTab === "repechajes"
-                  ? "bg-[#c6f600] text-black  "
-                  : " text-gray-400 hover:text-white"
-              }`}
-            >
-              Liguilla de Repechajes
-            </button>
-            <button
-              type="button"
-              onClick={() => (isViewOnly ? setActiveTab("grupos") : goToGroupsIfReady())}
-              className={`px-3 py-2 rounded-b-xl rounded-t-none whitespace-nowrap text-base font-semibold transition ${
-                activeTab === "grupos"
-                  ? "bg-[#c6f600] text-black text-base "
-                  : "text-gray-400"
-              }`}
-            >
-              Fase de grupos
-            </button>
+            {!deadlineHiddenTabs.repechajes && (
+              <button
+                type="button"
+                onClick={() => setActiveTab("repechajes")}
+                className={`px-3 py-2 rounded-b-xl rounded-t-none whitespace-nowrap text-base font-semibold transition ${
+                  activeTab === "repechajes"
+                    ? "bg-[#c6f600] text-black "
+                    : " text-gray-400 hover:text-white"
+                }`}
+              >
+                Liguilla de Repechajes
+              </button>
+            )}
+            {!deadlineHiddenTabs.grupos && (
+              <button
+                type="button"
+                onClick={() => (isViewOnly ? setActiveTab("grupos") : goToGroupsIfReady())}
+                className={`px-3 py-2 rounded-b-xl rounded-t-none whitespace-nowrap text-base font-semibold transition ${
+                  activeTab === "grupos"
+                    ? "bg-[#c6f600] text-black text-base "
+                    : "text-gray-400"
+                }`}
+              >
+                Fase de grupos
+              </button>
+            )}
+            {!deadlineHiddenTabs.dieciseisavos && (
               <button
                 type="button"
                 onClick={() => {
@@ -4502,6 +4640,8 @@ const scheduleByMatch = useMemo(() => {
             >
               Eliminatorias
             </button>
+            )}
+            {!deadlineHiddenTabs.llaves && (
               <button
                 type="button"
                 onClick={() => (isViewOnly ? setActiveTab("llaves") : goToLlavesIfReady())}
@@ -4513,6 +4653,7 @@ const scheduleByMatch = useMemo(() => {
               >
                 Llaves finales
               </button>
+            )}
             </div>
           )}
 
@@ -4703,9 +4844,10 @@ const scheduleByMatch = useMemo(() => {
                                   mapGroup={block.mapGroup}
                                   matches={block.matches}
                                   onPick={handleIntercontinentalPick}
-                                  disabled={repechajesLocked}
+                                  disabled={repechajesLocked || isLocked || phaseDeadlineLocked.repechajes}
                                   showFinalHint={showRepechajeFinalHint}
                                   scoreByMatchId={scoreByMatchId}
+                                  isMatchLocked={isMatchBlockedByDeadline}
                                 />
                               ))}
                             </div>
@@ -4734,9 +4876,10 @@ const scheduleByMatch = useMemo(() => {
                                   mapGroup={block.mapGroup}
                                   matches={block.matches}
                                   onPick={handleUefaPick}
-                                  disabled={repechajesLocked}
+                                  disabled={repechajesLocked || isLocked || phaseDeadlineLocked.repechajes}
                                   showFinalHint={showRepechajeFinalHint}
                                   scoreByMatchId={scoreByMatchId}
+                                  isMatchLocked={isMatchBlockedByDeadline}
                                 />
                               ))}
                             </div>
@@ -4867,11 +5010,11 @@ const scheduleByMatch = useMemo(() => {
                         <button
                           key={team.id}
                           type="button"
-                          disabled={isLocked}
+                          disabled={isLocked || phaseDeadlineLocked.grupos}
                           onClick={() => handlePick(grupo, team)}
                           className={`flex items-center justify-between gap-1 rounded-md px-2 py-1 transition-colors ${
                             picked ? "bg-[#c6f600] text-black" : "border-neutral-700 hover:border-[#c6f600]"
-                          } ${isLocked ? "opacity-60 cursor-not-allowed" : ""}`}
+                          } ${isLocked || phaseDeadlineLocked.grupos ? "opacity-60 cursor-not-allowed" : ""}`}
                           aria-label={`Seleccionar ${team.nombre}`}
                         >
                           <div className="flex items-center gap-2">
@@ -5159,6 +5302,7 @@ const scheduleByMatch = useMemo(() => {
                   navTarget={bracketNavTarget}
                   onNavHandled={clearBracketNavTarget}
                   scoreByMatchId={scoreByMatchId}
+                  isMatchLocked={isMatchBlockedByDeadline}
                   onChampionClick={(team) => {
                     if (!team) return;
                     setChampionTeam(team);
@@ -5231,7 +5375,7 @@ const scheduleByMatch = useMemo(() => {
           thirdsAvailable={thirdsAvailable}
           bestThirdIds={bestThirdIds}
           maxThird={MAX_THIRD}
-          isLocked={isLocked}
+          isLocked={isLocked || phaseDeadlineLocked.grupos}
           onToggleTeam={toggleThirdChoice}
         />
         <R32InfoModal

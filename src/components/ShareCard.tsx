@@ -18,6 +18,8 @@ type ShareCardProps = {
   third: ShareCardTeam;
   shareUrl: string;
   variant?: "static" | "spin";
+  runnerUpLabel?: string;
+  thirdLabel?: string;
 };
 
 export type { ShareCardTeam, ShareCardProps };
@@ -59,7 +61,9 @@ const ShareCardFrontContent = ({
   champion,
   runnerUp,
   third,
-}: Pick<ShareCardProps, "coverUrl" | "champion" | "runnerUp" | "third">) => (
+  runnerUpLabel = "Segundo lugar",
+  thirdLabel = "Tercer lugar",
+}: Pick<ShareCardProps, "coverUrl" | "champion" | "runnerUp" | "third" | "runnerUpLabel" | "thirdLabel">) => (
   <>
     <div className="share-card__header holo-header">
       {coverUrl && (
@@ -100,7 +104,7 @@ const ShareCardFrontContent = ({
           )}
           <div className="share-card__podium-text">
             <div className="share-card__podium-name">{runnerUp.name}</div>
-            <div className="share-card__podium-label share-card__podium-label--second">Segundo lugar</div>
+            <div className="share-card__podium-label share-card__podium-label--second">{runnerUpLabel}</div>
             
           </div>
         </div>
@@ -117,7 +121,7 @@ const ShareCardFrontContent = ({
           )}
           <div className="share-card__podium-text">
             <div className="share-card__podium-name">{third.name}</div>
-            <div className="share-card__podium-label share-card__podium-label--third">Tercer lugar</div>
+            <div className="share-card__podium-label share-card__podium-label--third">{thirdLabel}</div>
        
           </div>
         </div>
@@ -133,7 +137,9 @@ const ShareCardFront = ({
   runnerUp,
   third,
   variant,
-}: Pick<ShareCardProps, "coverUrl" | "champion" | "runnerUp" | "third" | "variant">) => {
+  runnerUpLabel,
+  thirdLabel,
+}: Pick<ShareCardProps, "coverUrl" | "champion" | "runnerUp" | "third" | "variant" | "runnerUpLabel" | "thirdLabel">) => {
   const baseClass = "share-card";
   const className = variant === "spin" ? `${baseClass}  ` : baseClass;
 
@@ -145,6 +151,8 @@ const ShareCardFront = ({
           champion={champion}
           runnerUp={runnerUp}
           third={third}
+          runnerUpLabel={runnerUpLabel}
+          thirdLabel={thirdLabel}
         />
       </HoloCard>
     );
@@ -157,6 +165,8 @@ const ShareCardFront = ({
         champion={champion}
         runnerUp={runnerUp}
         third={third}
+        runnerUpLabel={runnerUpLabel}
+        thirdLabel={thirdLabel}
       />
     </div>
   );
@@ -179,7 +189,16 @@ const ShareCardBack = ({ variant }: { variant?: ShareCardProps["variant"] }) => 
   );
 };
 
-export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, variant = "static" }: ShareCardProps) => {
+export const ShareCard = ({
+  coverUrl,
+  champion,
+  runnerUp,
+  third,
+  shareUrl,
+  variant = "static",
+  runnerUpLabel = "Segundo lugar",
+  thirdLabel = "Tercer lugar",
+}: ShareCardProps) => {
   const isSpin = variant === "spin";
   const cardRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef({ active: false, lastX: 0, lastY: 0 });
@@ -355,6 +374,8 @@ export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, varia
         runnerUp={runnerUp}
         third={third}
         variant={variant}
+        runnerUpLabel={runnerUpLabel}
+        thirdLabel={thirdLabel}
       />
     );
   }
@@ -384,6 +405,8 @@ export const ShareCard = ({ coverUrl, champion, runnerUp, third, shareUrl, varia
             runnerUp={runnerUp}
             third={third}
             variant={variant}
+            runnerUpLabel={runnerUpLabel}
+            thirdLabel={thirdLabel}
           />
         </div>
       </div>
