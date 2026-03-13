@@ -8,6 +8,11 @@ import { SpeedInsights } from "@vercel/speed-insights/react";
 import { FlagValues } from "flags/react";
 import { flagValues } from "./flags";
 
+declare global {
+  interface Window {
+    gtag_report_conversion?: (url?: string) => boolean;
+  }
+}
 
 export default function App() {
   const resolvePageFromPath = (path: string) => {
@@ -22,10 +27,21 @@ export default function App() {
   const [pageParams, setPageParams] = useState<Record<string, any>>({});
 
   const navigateTo = (page: string, params: Record<string, any> = {}) => {
+    const nextPath = page === "backend" ? "/user" : page === "leaderboard" ? "/ranking" : "/";
+
+    if (
+      typeof window !== "undefined" &&
+      nextPath === "/user" &&
+      window.location.pathname !== nextPath &&
+      typeof window.gtag_report_conversion === "function"
+    ) {
+      window.gtag_report_conversion(nextPath);
+      return;
+    }
+
     setCurrentPage(page);
     setPageParams(params);
     if (typeof window === "undefined") return;
-    const nextPath = page === "backend" ? "/user" : page === "leaderboard" ? "/ranking" : "/";
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, "", nextPath);
     }

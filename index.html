@@ -74,6 +74,30 @@
         }
       }
     </script>
+    <script>
+      function gtag_report_conversion(url) {
+        var callback = function () {
+          if (typeof url === "string") {
+            window.location = url;
+          }
+        };
+
+        if (typeof gtag === "function") {
+          gtag("event", "conversion_event_signup_1", {
+            event_callback: callback,
+            event_timeout: 2000,
+          });
+        } else {
+          callback();
+        }
+
+        return false;
+      }
+
+      function gtagSendEvent(url) {
+        return gtag_report_conversion(url);
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
