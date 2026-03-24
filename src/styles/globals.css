@@ -1904,6 +1904,9 @@ body{
 .w-36 {
   width: 9rem;
 }
+.w-96 {
+  width: 24rem;
+}
 .h-0\.5 {
   height: 0.125rem;
 }

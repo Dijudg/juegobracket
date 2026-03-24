@@ -77,6 +77,10 @@ const SELECCIONES_URL =
 const normalizeKey = (value?: string) => (value || "").toString().trim().toUpperCase();
 const normalizeComparable = (value?: string) =>
   normalizeKey((value || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+const hasResolvedPick = (value?: string) => {
+  const key = normalizeKey(value);
+  return !!key && key !== "EMPATE" && !key.includes("/") && key !== "POR DEFINIR";
+};
 const buildSearchTerms = (payload: BracketSavePayload | null, fallbackDisplayName: string) =>
   [fallbackDisplayName, payload?.sharedBy?.alias || "", payload?.sharedBy?.name || ""]
     .map((value) => value.trim())
@@ -286,6 +290,17 @@ const buildBestCard = (
   };
 };
 
+const isCompletedBracket = (payload: BracketSavePayload | null) => {
+  if (!payload) return false;
+  const picks = payload.picks || {};
+  return (
+    hasResolvedPick(picks["sf-101"]) &&
+    hasResolvedPick(picks["sf-102"]) &&
+    hasResolvedPick(picks["third-103"]) &&
+    hasResolvedPick(picks["final-104"])
+  );
+};
+
 const chunk = <T,>(items: T[], size: number) => {
   if (size <= 0) return [items];
   const output: T[][] = [];
@@ -353,7 +368,7 @@ export default function LeaderboardPage() {
           const userId = (row.user_id || "").toString();
           if (!userId || userId === GUEST_USER_ID) continue;
           const payload = parsePayload(row.data);
-          if (!payload) continue;
+          if (!isCompletedBracket(payload)) continue;
           const sharedUserId = (payload.sharedBy?.userId || "").toString().trim();
           const sharedIdentity = `${payload.sharedBy?.name || ""} ${payload.sharedBy?.alias || ""}`.toLowerCase();
           const isGuestShared =

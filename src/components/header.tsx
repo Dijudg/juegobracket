@@ -86,13 +86,20 @@ function AdBanner() {
   useEffect(() => {
     if (useAdsense) return;
 
+    const scriptId = "eltelegrafo-adserver";
+    const scriptSrc = "//adserver.eltelegrafo.com.ec/www/delivery/asyncjs.php";
+    const existingScript = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if (existingScript) return;
+
     const script = document.createElement("script");
+    script.id = scriptId;
     script.async = true;
-    script.src = "https://publi.eltelegrafo.com.ec/delivery/asyncjs.php";
+    script.src = scriptSrc;
     script.onerror = () => setPreferAdsense(true);
     document.body.appendChild(script);
 
     return () => {
+      if (script.id !== scriptId) return;
       if (document.body.contains(script)) {
         document.body.removeChild(script);
       }

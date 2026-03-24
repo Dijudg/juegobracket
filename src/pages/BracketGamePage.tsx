@@ -124,6 +124,48 @@ const EMPTY_PHASE_LOCKS: PhaseLockState = {
   dieciseisavos: false,
   llaves: false,
 };
+const RULES_STEPS = [
+  {
+    title: "Empieza por los repechajes",
+    body: (
+      <>
+        Empieza con los <span className="text-[#c6f600] font-semibold">Repechajes</span> y elige ganadores en
+        Intercontinental y UEFA.
+      </>
+    ),
+  },
+  {
+    title: "Define cada grupo",
+    body: (
+      <>
+        Selecciona a los líderes de la fase de grupos: elige al{" "}
+        <span className="text-[#c6f600] font-semibold">1º, 2º y 3º puesto de cada grupo</span> de la A a la L.
+      </>
+    ),
+  },
+  {
+    title: "Escoge los mejores terceros",
+    body: (
+      <>
+        Luego elige los <span className="text-[#c6f600] font-semibold">8 mejores terceros</span> para habilitar las
+        eliminatorias.
+      </>
+    ),
+  },
+  {
+    title: "Completa las llaves",
+    body: (
+      <>
+        Completa los <span className="text-[#c6f600] font-semibold">dieciseisavos de final</span> y avanza las últimas
+        rondas.
+      </>
+    ),
+  },
+  {
+    title: "Cierra tu pronóstico",
+    body: <>Elige al tercer puesto y tu campeón mundial de fútbol 2026.</>,
+  },
+] as const;
 
 const isTouch =
   typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
@@ -854,6 +896,8 @@ export default function BracketGamePage() {
   const [showGroupsIntro, setShowGroupsIntro] = useState(true);
   const [showRepechajeFinalHint, setShowRepechajeFinalHint] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(true);
+  const [rulesStep, setRulesStep] = useState(0);
+  const [rulesStepDirection, setRulesStepDirection] = useState<1 | -1>(1);
   const [championTeam, setChampionTeam] = useState<Team | undefined>(undefined);
   const [showChampionModal, setShowChampionModal] = useState(false);
   const [confettiKey, setConfettiKey] = useState(0);
@@ -1013,6 +1057,8 @@ export default function BracketGamePage() {
       } catch {
         // ignore autoplay errors
       }
+      setRulesStepDirection(1);
+      setRulesStep(0);
     }
     prevRulesOpenRef.current = showRulesModal;
   }, [showRulesModal]);
@@ -4694,8 +4740,11 @@ const scheduleByMatch = useMemo(() => {
     open: boolean;
     onClose: () => void;
   }) => {
-    if (!open) return null;
     const overlayRef = useRef<HTMLDivElement>(null);
+    const currentRule = RULES_STEPS[rulesStep];
+    const isLastRule = rulesStep >= RULES_STEPS.length - 1;
+    const isFirstRule = rulesStep === 0;
+    if (!open) return null;
     return (
       <div
         ref={overlayRef}
@@ -4704,7 +4753,7 @@ const scheduleByMatch = useMemo(() => {
         }}
         className="fixed inset-0 bg-black/70 backdrop-blur-sm z-10 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
       >
-      <ModalFlipFrame className="bg-neutral-900 border border-neutral-700 rounded-lg w-full md:w-2/3 max-w-2xl shadow-lg flex flex-col overflow-hidden modal-glow">
+      <ModalFlipFrame disableFlip className="bg-neutral-900 border border-neutral-700 rounded-lg w-full md:w-2/3 max-w-2xl shadow-lg flex flex-col overflow-hidden modal-glow">
         <div className="w-full overflow-hidden border-b border-neutral-700" style={{ aspectRatio: "16 / 9" }}>
           <img src={rulesBanner} alt="Reglas" className="w-full h-full object-cover" />
         </div>
@@ -4713,42 +4762,87 @@ const scheduleByMatch = useMemo(() => {
             <h3 className="text-3xl font-black  text-[#c6f600]">¿Cómo jugar?</h3>
             <button onClick={onClose} className="text-sm text-gray-900 bg-[#c6f600] hover:text-black rounded-full w-6 h-6 flex items-center justify-center">X</button>
           </div>
-          <ul className="text-base text-gray-200 space-y-4 text-balance gap-5">
-            <li className="flex items-start gap-4">
-                <span className="flex-shrink-0 font-black text-[#c6f600] rounded-full px-3 py-1 bg-black">
-                  1.
-                </span>
-
-                <div>  Empieza con los{" "}
-                  <span className="text-[#c6f600] font-semibold"> Repechajes </span>{" "}
-                  y elige ganadores en Intercontinental y UEFA.
+          
+          <div className="mb-2 flex gap-2">
+            {RULES_STEPS.map((_, index) => (
+              <span
+                key={`rule-step-${index}`}
+                className={`h-1 flex-1 rounded-full transition-colors ${
+                  index <= rulesStep ? "bg-[#c6f600]" : "bg-white/10"
+                }`}
+              />
+            ))}
+          </div>
+          <div className="w-full overflow-hidden">
+            <AnimatePresence mode="wait" custom={rulesStepDirection} initial={false}>
+              <motion.div
+                key={`rule-slide-${rulesStep}`}
+                custom={rulesStepDirection}
+                initial={(direction) => ({
+                  opacity: 0,
+                  x: direction > 0 ? 56 : -56,
+                })}
+                animate={{
+                  opacity: 1,
+                  x: 0,
+                }}
+                exit={(direction) => ({
+                  opacity: 0,
+                  x: direction > 0 ? -56 : 56,
+                })}
+                transition={{ duration: 0.28, ease: "easeOut" }}
+                className="w-full rounded-2xl border border-white/10 bg-black/30 p-2 md:p-6"
+              >
+                <div className="flex items-start gap-4">
+                  <span className="flex-shrink-0 font-black text-[#c6f600] rounded-full px-3 py-1 bg-black">
+                    {`${rulesStep + 1}.`}
+                  </span>
+                  <div className="space-y-3">
+                    <h4 className="text-2xl font-black text-white">{currentRule.title}</h4>
+                    <p className="text-base text-gray-200 leading-relaxed text-balance">{currentRule.body}</p>
+                  </div>
                 </div>
-           </li>
-            <li className="flex items-start gap-4">
-              <span className="flex-shrink-0 font-black text-[#c6f600] rounded-full px-3 py-1 bg-black">2.</span>{" "}
-             <div>  Selecciona a los lí­deres de la fase de grupos: elige al <span className="text-[#c6f600] font-semibold">1º, 2º y 3º puesto de cada grupo</span> de la A a la L.</div>
-           
-            </li>
-            <li className="flex items-start gap-4">
-              <span className="flex-shrink-0 font-black text-[#c6f600] rounded-full px-3 py-1 bg-black">3.</span>{" "}
-             <div>  Luego elige los <span className="text-[#c6f600] font-semibold">8 mejores terceros</span> para habilitar las eliminatorias.</div>
-            </li>
-            <li className="flex items-start gap-4">
-              <span className="flex-shrink-0 font-black text-[#c6f600] rounded-full px-3 py-1 bg-black">4.</span>{" "}
-              <div>Completa los <span className="text-[#c6f600] font-semibold">dieciseisavos de final</span> y avanza las ultimas rondas.</div>
-            </li>
-             <li className="flex items-start gap-4">
-              <span className="flex-shrink-0 font-black text-[#c6f600] rounded-full px-3 py-1 bg-black">5.</span>{" "}
-              <div>Elige al tercer puesto y  tu campéon mundial de fútbol 2026.</div>
-            </li>
-          </ul>
-          <div className="mt-4 flex flex-col items-center gap-2">
-            <button
-              onClick={onClose}
-              className="px-18 py-2 rounded-md bg-[#c6f600] text-black font-semibold hover:brightness-95"
-            >
-              ACEPTAR
-            </button>
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <div className="mt-4 flex justify-center">
+            <ins data-revive-zoneid="31" data-revive-id="60f0b66ffc0f4db66aaad1c14934c701"></ins>
+          </div>
+          <div className="mt-4 flex flex-col items-center gap-3">
+            <div className="flex w-full items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setRulesStepDirection(-1);
+                  setRulesStep((prev) => Math.max(prev - 1, 0));
+                }}
+                disabled={isFirstRule}
+                className="px-5 py-2 rounded-md border border-white/15 bg-white/5 text-white font-semibold hover:border-white/30 hover:bg-white/10 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Atrás
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 rounded-md border border-white/15 bg-white/5 text-white font-semibold hover:border-white/30 hover:bg-white/10 transition"
+              >
+                Skip
+              </button>
+              <button
+                onClick={() => {
+                  if (isLastRule) {
+                    onClose();
+                    return;
+                  }
+                  setRulesStepDirection(1);
+                  setRulesStep((prev) => Math.min(prev + 1, RULES_STEPS.length - 1));
+                }}
+                className="flex-1 px-6 py-2 rounded-md bg-[#c6f600] text-black font-semibold hover:brightness-95"
+              >
+                {isLastRule ? "Empezar" : "Siguiente"}
+              </button>
+            </div>
+            
             {!authUser && (
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <button
