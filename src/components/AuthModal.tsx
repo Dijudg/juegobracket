@@ -1,6 +1,21 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import authBanner from "../assets/Logofanatico.svg";
+import googleIcon from "../assets/google-icon-logo.svg";
 import { ModalFlipFrame } from "../features/bracket/components/ModalFlipFrame";
+
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (options: Record<string, unknown>) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
+          cancel: () => void;
+        };
+      };
+    };
+  }
+}
 
 type AuthModalProps = {
   open: boolean;
@@ -11,6 +26,10 @@ type AuthModalProps = {
   authBusy: boolean;
   authError: string | null;
   authSuccess: string | null;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  googleClientId?: string;
   consentMarketing: boolean;
   consentNews: boolean;
   consentUpdates: boolean;
@@ -22,6 +41,7 @@ type AuthModalProps = {
   onConsentUpdatesChange: (value: boolean) => void;
   onSubmit: () => void;
   onOAuth: (provider: "google") => void;
+  onGoogleCredential?: (credential: string) => void | Promise<void>;
 };
 
 export const AuthModal = ({
@@ -33,6 +53,10 @@ export const AuthModal = ({
   authBusy,
   authError,
   authSuccess,
+  title,
+  description,
+  submitLabel,
+  googleClientId,
   consentMarketing,
   consentNews,
   consentUpdates,
@@ -44,9 +68,65 @@ export const AuthModal = ({
   onConsentUpdatesChange,
   onSubmit,
   onOAuth,
+  onGoogleCredential,
 }: AuthModalProps) => {
-  if (!open) return null;
   const overlayRef = useRef<HTMLDivElement>(null);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open || !googleClientId || !onGoogleCredential) return;
+    let cancelled = false;
+    let removeLoadListener: (() => void) | null = null;
+
+    const renderGoogleButton = () => {
+      const googleId = window.google?.accounts?.id;
+      const mountNode = googleButtonRef.current;
+      if (!googleId || !mountNode || cancelled) return;
+      mountNode.innerHTML = "";
+      googleId.initialize({
+        client_id: googleClientId,
+        callback: async (response: { credential?: string }) => {
+          if (!response?.credential) return;
+          await onGoogleCredential(response.credential);
+        },
+        ux_mode: "popup",
+      });
+      googleId.renderButton(mountNode, {
+        theme: "outline",
+        size: "large",
+        text: "continue_with",
+        shape: "rectangular",
+        width: Math.min(mountNode.clientWidth || 360, 360),
+        logo_alignment: "left",
+      });
+    };
+
+    const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]');
+    if (existingScript) {
+      if (window.google?.accounts?.id) {
+        renderGoogleButton();
+      } else {
+        existingScript.addEventListener("load", renderGoogleButton, { once: true });
+        removeLoadListener = () => existingScript.removeEventListener("load", renderGoogleButton);
+      }
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.onload = renderGoogleButton;
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      cancelled = true;
+      removeLoadListener?.();
+      window.google?.accounts?.id?.cancel?.();
+    };
+  }, [googleClientId, onGoogleCredential, open]);
+
+  if (!open) return null;
+
   return (
     <div
       ref={overlayRef}
@@ -60,12 +140,12 @@ export const AuthModal = ({
         className="bg-neutral-900 border border-neutral-700 rounded-lg w-full max-w-xl md:max-w-none shadow-lg flex flex-col overflow-hidden modal-glow"
       >
         <div className="w-full overflow-hidden border-b p-4 border-neutral-700">
-          <img src={authBanner} alt="Autenticación" className="w-full h-full object-containt" />
+          <img src={authBanner} alt="Autenticacion" className="w-full h-full object-containt" />
         </div>
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold text-[#c6f600]">
-              {authMode === "signup" ? "Crear usuario" : "Iniciar sesión"}
+              {title || (authMode === "signup" ? "Crear usuario" : "Iniciar sesión")}
             </h3>
             <button onClick={onClose} className="text-sm text-gray-400 hover:text-white">
               X
@@ -73,18 +153,28 @@ export const AuthModal = ({
           </div>
 
           <p className="text-xs text-gray-400 mb-3">
-            Crea tu cuenta directamente con Google. Usaremos los datos del proveedor.
+            {description || "Crea tu cuenta directamente con Google. Usaremos los datos del proveedor."}
           </p>
 
           <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => onOAuth("google")}
-              disabled={authBusy}
-              className="w-full px-3 py-2 rounded-md border border-neutral-700 text-sm text-gray-200 hover:border-[#c6f600]"
-            >
-              Continuar con Google
-            </button>
+            {googleClientId && onGoogleCredential ? (
+              <div
+                ref={googleButtonRef}
+                className={`min-h-11 flex items-center justify-center rounded-md bg-white ${authBusy ? "opacity-70 pointer-events-none" : ""}`}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOAuth("google")}
+                disabled={authBusy}
+                className="w-full px-3 py-2 rounded-md border border-white bg-white text-sm font-semibold text-neutral-900 hover:bg-neutral-100 disabled:bg-neutral-200 disabled:text-neutral-500"
+              >
+                <span className="flex items-center justify-center gap-3">
+                  <img src={googleIcon} alt="Google" className="w-5 h-5" />
+                  <span>Continuar con Google</span>
+                </span>
+              </button>
+            )}
           </div>
 
           <div className="my-4 flex items-center gap-2 text-[11px] text-gray-500">
@@ -103,7 +193,7 @@ export const AuthModal = ({
                   : "border-neutral-700 text-gray-300"
               }`}
             >
-              Iniciar sesion
+              Iniciar sesión
             </button>
             <button
               type="button"
@@ -187,7 +277,7 @@ export const AuthModal = ({
               authBusy ? "bg-neutral-700 text-gray-400" : "bg-[#c6f600] text-black hover:brightness-95"
             }`}
           >
-            {authMode === "signup" ? "Crear cuenta" : "Iniciar sesion"}
+            {submitLabel || (authMode === "signup" ? "Crear cuenta" : "Iniciar sesión")}
           </button>
         </div>
       </ModalFlipFrame>

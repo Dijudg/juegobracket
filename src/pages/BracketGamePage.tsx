@@ -37,10 +37,12 @@ import { supabase } from "../utils/supabaseClient";
 import type { Session, User } from "@supabase/supabase-js";
 import type {
   BracketSavePayload,
+  EditablePhase,
   Fixture,
   GroupSelections,
   Match,
   MatchSchedule,
+  PhaseLockState,
   PlayoffKeyBlockData,
   PlayoffPickState,
   SavedBracketMeta,
@@ -108,11 +110,20 @@ const LS_INTERCONTINENTAL = "fm-repechaje-intercontinental";
 const LS_UEFA = "fm-repechaje-uefa";
 const LS_TEAMS = "fm-teams";
 const LS_GUEST_BRACKET = "fm-guest-bracket";
+const LS_PENDING_AUTH_SAVE = "fm-pending-auth-save";
 const GUEST_SAVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 const generateBracketCode = () =>
   `FM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+const EMPTY_PHASE_LOCKS: PhaseLockState = {
+  uefa: false,
+  intercontinental: false,
+  grupos: false,
+  dieciseisavos: false,
+  llaves: false,
+};
 
 const isTouch =
   typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
@@ -142,6 +153,11 @@ type GuestBracketSave = {
   shortCode?: string;
   shareId?: string;
   shareUrl?: string;
+};
+
+type PendingAuthSave = {
+  source: "save";
+  createdAt: string;
 };
 
 type SaveResult =
@@ -1189,9 +1205,12 @@ export default function BracketGamePage() {
   const autoSwitchTimeoutRef = useRef<number | null>(null);
   const [autoSwitchNotice, setAutoSwitchNotice] = useState(false);
   const [showIntercontinentalModal, setShowIntercontinentalModal] = useState(false);
+  const [showSemifinalPrompt, setShowSemifinalPrompt] = useState(false);
   const [intercontinentalConfettiKey, setIntercontinentalConfettiKey] = useState(0);
   const intercontinentalModalShownRef = useRef(false);
+  const semifinalPromptShownRef = useRef(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [phaseLocks, setPhaseLocks] = useState<PhaseLockState>(EMPTY_PHASE_LOCKS);
   const playoffStorageReadyRef = useRef(false);
   const teamsFromApiRef = useRef(false);
   const fixturesFromApiRef = useRef(false);
@@ -1204,6 +1223,7 @@ export default function BracketGamePage() {
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
+  const [authIntent, setAuthIntent] = useState<"default" | "save">("default");
   const [authBusy, setAuthBusy] = useState(false);
   const [consentMarketing, setConsentMarketing] = useState(false);
   const [consentNews, setConsentNews] = useState(false);
@@ -1251,6 +1271,10 @@ export default function BracketGamePage() {
     updateOgTags,
   ]);
   const pendingLoadRef = useRef<BracketSavePayload | null>(null);
+  const pendingAuthSaveRef = useRef(false);
+  const confirmSaveInFlightRef = useRef(false);
+  const oauthPopupRef = useRef<Window | null>(null);
+  const oauthPopupWatchRef = useRef<number | null>(null);
   const guestSaveMetaRef = useRef<{
     name: string;
     updatedAt: string;
@@ -1259,6 +1283,40 @@ export default function BracketGamePage() {
     shareUrl?: string;
   } | null>(null);
   const authInitRef = useRef(false);
+
+  const normalizePhaseLocks = useCallback(
+    (value?: Partial<PhaseLockState> | null, lockAll = false): PhaseLockState => ({
+      uefa: lockAll || !!value?.uefa,
+      intercontinental: lockAll || !!value?.intercontinental,
+      grupos: lockAll || !!value?.grupos,
+      dieciseisavos: lockAll || !!value?.dieciseisavos,
+      llaves: lockAll || !!value?.llaves,
+    }),
+    [],
+  );
+
+  const lockPhase = useCallback((phase: EditablePhase) => {
+    setPhaseLocks((prev) => (prev[phase] ? prev : { ...prev, [phase]: true }));
+  }, []);
+
+  const lockPhases = useCallback((phases: EditablePhase[]) => {
+    setPhaseLocks((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      phases.forEach((phase) => {
+        if (!next[phase]) {
+          next[phase] = true;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  const isPhaseLocked = useCallback(
+    (phase: EditablePhase) => isLocked || phaseLocks[phase],
+    [isLocked, phaseLocks],
+  );
 
   const allTeamsIndex = useMemo(() => {
     const map = new Map<string, Team>();
@@ -1288,6 +1346,7 @@ export default function BracketGamePage() {
     setChampionTeam(undefined);
     setShowChampionModal(false);
     setIsLocked(false);
+    setPhaseLocks(EMPTY_PHASE_LOCKS);
   };
 
   const trackPick = (context: string, matchId: string, teamCode: string) => {
@@ -1423,16 +1482,17 @@ export default function BracketGamePage() {
         }
       : undefined;
     return {
-      version: 1,
+      version: 2,
       selections: selectionPayload,
       bestThirdIds,
       picks,
       intercontinentalPicks,
       uefaPicks,
       isLocked,
+      phaseLocks,
       sharedBy,
     };
-  }, [selections, bestThirdIds, picks, intercontinentalPicks, uefaPicks, isLocked, authUser]);
+  }, [selections, bestThirdIds, picks, intercontinentalPicks, uefaPicks, isLocked, phaseLocks, authUser]);
 
   const applySavedBracket = useCallback(
     (payload: BracketSavePayload) => {
@@ -1450,8 +1510,9 @@ export default function BracketGamePage() {
       setIntercontinentalPicks(payload.intercontinentalPicks || {});
       setUefaPicks(payload.uefaPicks || {});
       setIsLocked(payload.isLocked ?? false);
+      setPhaseLocks(normalizePhaseLocks(payload.phaseLocks, payload.isLocked ?? false));
     },
-    [resolveTeamForGroup],
+    [normalizePhaseLocks, resolveTeamForGroup],
   );
 
   const loadSavedBrackets = useCallback(async () => {
@@ -1535,6 +1596,38 @@ export default function BracketGamePage() {
       // ignore
     }
   }, [applySavedBracket, isViewOnly, teams.length, viewBracketId]);
+
+  const readPendingAuthSave = useCallback((): PendingAuthSave | null => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(LS_PENDING_AUTH_SAVE);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as PendingAuthSave;
+      if (parsed?.source !== "save") return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const persistPendingAuthSave = useCallback((payload: PendingAuthSave) => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(LS_PENDING_AUTH_SAVE, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const clearPendingAuthSaveState = useCallback(() => {
+    pendingAuthSaveRef.current = false;
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.removeItem(LS_PENDING_AUTH_SAVE);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const readGuestSave = useCallback((): GuestBracketSave | null => {
     if (typeof window === "undefined") return null;
@@ -1639,13 +1732,47 @@ export default function BracketGamePage() {
     }
   }, [authSession?.access_token, readGuestSave, setGuestShareInfo]);
 
-  const openAuthModal = (mode: "login" | "signup") => {
+  useEffect(() => {
+    if (isViewOnly || authSession?.access_token || teams.length === 0) return;
+    const existing = readGuestSave();
+    if (!existing?.data) return;
+    const hasProgress =
+      Object.keys(selections).length > 0 ||
+      bestThirdIds.length > 0 ||
+      Object.keys(picks).length > 0 ||
+      Object.keys(intercontinentalPicks).length > 0 ||
+      Object.keys(uefaPicks).length > 0;
+    if (hasProgress) return;
+    applySavedBracket(existing.data);
+    setCurrentSaveName(existing.name || "Mi bracket");
+    guestSaveMetaRef.current = {
+      name: existing.name,
+      updatedAt: existing.updatedAt,
+      shortCode: existing.shortCode,
+      shareId: existing.shareId,
+      shareUrl: existing.shareUrl,
+    };
+  }, [
+    applySavedBracket,
+    authSession?.access_token,
+    bestThirdIds.length,
+    intercontinentalPicks,
+    isViewOnly,
+    picks,
+    readGuestSave,
+    selections,
+    teams.length,
+    uefaPicks,
+  ]);
+
+  const openAuthModal = (mode: "login" | "signup", intent: "default" | "save" = "default") => {
     trackEvent("auth_open", {
       mode,
       view_mode: isViewOnly ? "view_only" : "interactive",
       is_embedded: isEmbedded,
       is_share: isSharePath,
     });
+    setAuthIntent(intent);
     setAuthMode(mode);
     setAuthError(null);
     setAuthSuccess(null);
@@ -1656,6 +1783,14 @@ export default function BracketGamePage() {
     }
     setShowAuthModal(true);
   };
+
+  const clearOAuthPopup = useCallback(() => {
+    if (typeof window !== "undefined" && oauthPopupWatchRef.current !== null) {
+      window.clearInterval(oauthPopupWatchRef.current);
+    }
+    oauthPopupWatchRef.current = null;
+    oauthPopupRef.current = null;
+  }, []);
 
   const handleAuthModeChange = (mode: "login" | "signup") => {
     setAuthMode(mode);
@@ -1673,6 +1808,9 @@ export default function BracketGamePage() {
     setAuthError(null);
     setAuthSuccess(null);
     setAuthPassword("");
+    if (!readPendingAuthSave()) {
+      setAuthIntent("default");
+    }
   };
 
   const closeSaveModal = () => {
@@ -1721,7 +1859,15 @@ export default function BracketGamePage() {
           mode: authMode,
           method: "email",
         });
-        setAuthSuccess("Cuenta creada. Revisa tu correo para confirmar.");
+        if (authIntent === "save" || readPendingAuthSave()) {
+          setAuthSuccess(
+            data.session
+              ? "Cuenta creada. Guardando tu juego..."
+              : "Cuenta creada. Revisa tu correo para confirmar. Conservamos tu partida y la guardaremos cuando inicies sesión.",
+          );
+        } else {
+          setAuthSuccess("Cuenta creada. Revisa tu correo para confirmar.");
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email: authEmail,
@@ -1762,17 +1908,98 @@ export default function BracketGamePage() {
         });
         storePendingConsent(consentPayload);
       }
-      const { error } = await supabase.auth.signInWithOAuth({
+      const redirectUrl = new URL(window.location.href);
+      redirectUrl.hash = "";
+      redirectUrl.searchParams.set("auth_popup", "1");
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
-        options: { redirectTo: window.location.href },
+        options: {
+          redirectTo: redirectUrl.toString(),
+          skipBrowserRedirect: true,
+        },
       });
       if (error) throw error;
+      if (!data?.url) {
+        throw new Error("No pudimos abrir el inicio de sesión con Google.");
+      }
+      clearOAuthPopup();
+      const width = 520;
+      const height = 720;
+      const left = Math.max(0, window.screenX + Math.round((window.outerWidth - width) / 2));
+      const top = Math.max(0, window.screenY + Math.round((window.outerHeight - height) / 2));
+      const popup = window.open(
+        data.url,
+        "fanatico-google-auth",
+        `popup=yes,width=${width},height=${height},left=${left},top=${top}`,
+      );
+      if (!popup) {
+        throw new Error("Tu navegador bloqueó la ventana emergente de Google.");
+      }
+      oauthPopupRef.current = popup;
+      oauthPopupWatchRef.current = window.setInterval(() => {
+        if (!oauthPopupRef.current || oauthPopupRef.current.closed) {
+          clearOAuthPopup();
+          setAuthBusy(false);
+          setAuthSuccess(null);
+        }
+      }, 400);
+      popup.focus();
+      setAuthSuccess("Continúa en la ventana emergente de Google para completar el inicio de sesión.");
     } catch (err) {
+      clearOAuthPopup();
       trackEvent("auth_oauth_error", {
         mode: authMode,
         provider,
       });
       setAuthError(err instanceof Error ? err.message : "No pudimos conectar con el proveedor.");
+      setAuthBusy(false);
+    }
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    trackEvent("auth_oauth_start", {
+      mode: authMode,
+      provider: "google",
+      ux: "popup",
+    });
+    setAuthBusy(true);
+    setAuthError(null);
+    setAuthSuccess(null);
+    try {
+      if (authMode === "signup") {
+        const consentPayload = buildConsentPayload({
+          marketing: consentMarketing,
+          news: consentNews,
+          updates: consentUpdates,
+          source: "signup-oauth:google-popup",
+        });
+        storePendingConsent(consentPayload);
+      }
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: "google",
+        token: credential,
+      });
+      if (error) throw error;
+      trackEvent("auth_success", {
+        mode: authMode,
+        method: "google",
+      });
+      if (authIntent === "save" || readPendingAuthSave()) {
+        setAuthSuccess("Sesion iniciada. Guardando tu juego...");
+      } else {
+        setShowAuthModal(false);
+      }
+      if (!data.session && authIntent !== "save" && !readPendingAuthSave()) {
+        setShowAuthModal(false);
+      }
+    } catch (err) {
+      trackEvent("auth_oauth_error", {
+        mode: authMode,
+        provider: "google",
+        ux: "popup",
+      });
+      setAuthError(err instanceof Error ? err.message : "No pudimos conectar con Google.");
+    } finally {
       setAuthBusy(false);
     }
   };
@@ -1787,17 +2014,51 @@ export default function BracketGamePage() {
     setSaveNotice("Sesión cerrada.");
   };
 
+  const prepareGuestSaveForAuth = useCallback(() => {
+    const autoName = generateBracketCode();
+    const payload = buildSavePayload();
+    const stored = persistGuestSave(payload, autoName);
+    guestSaveMetaRef.current = {
+      name: stored?.name || autoName,
+      updatedAt: stored?.updatedAt || new Date().toISOString(),
+    };
+    persistPendingAuthSave({
+      source: "save",
+      createdAt: new Date().toISOString(),
+    });
+    setSaveMode("new");
+    setSaveName(autoName);
+    setSelectedOverwriteId(null);
+    setSaveError(null);
+    setSaveNotice("Tu juego quedó resguardado en este dispositivo mientras terminas el registro.");
+  }, [buildSavePayload, persistGuestSave, persistPendingAuthSave]);
+
   const handleSaveClick = async () => {
-    setShowChampionModal(false);
+    if (saveBusy || confirmSaveInFlightRef.current || pendingAuthSaveRef.current) {
+      setSaveNotice(currentSaveId ? "Tu juego ya ha sido guardado." : "Estamos guardando tu juego...");
+      return;
+    }
     trackEvent("save_open", {
       is_authed: !!authSession?.access_token,
     });
     setSaveError(null);
     setShowSaveModal(false);
+    if (authSession?.access_token && currentSaveId) {
+      setShowChampionModal(false);
+      setSaveNotice("Tu juego ya ha sido guardado.");
+      return;
+    }
     const autoName = generateBracketCode();
     setSaveMode("new");
     setSaveName(autoName);
     setSelectedOverwriteId(null);
+    if (!authSession?.access_token) {
+      prepareGuestSaveForAuth();
+      setShowChampionModal(false);
+      openAuthModal("signup", "save");
+      return;
+    }
+    setShowChampionModal(false);
     const result = await handleConfirmSave({ source: "save" });
     if (!result.ok) {
       setSaveNotice(result.error || "No pudimos guardar el bracket.");
@@ -1811,7 +2072,17 @@ export default function BracketGamePage() {
   const handleConfirmSave = async (options?: {
     skipShareCard?: boolean;
     source?: "save" | "share";
+    payloadOverride?: BracketSavePayload;
+    nameOverride?: string;
+    clearGuestOnSuccess?: boolean;
   }): Promise<SaveResult> => {
+    if (confirmSaveInFlightRef.current) {
+      return {
+        ok: false,
+        error: currentSaveId ? "Tu juego ya ha sido guardado." : "Estamos guardando tu juego...",
+      };
+    }
+    confirmSaveInFlightRef.current = true;
     trackEvent("save_confirm", {
       mode: saveMode,
       is_authed: !!authSession?.access_token,
@@ -1820,7 +2091,7 @@ export default function BracketGamePage() {
     setSaveBusy(true);
     setSaveError(null);
     try {
-      const payload = buildSavePayload();
+      const payload = options?.payloadOverride || buildSavePayload();
       if (!authSession?.access_token) {
         let shortCode = "";
         let shareId = "";
@@ -1913,8 +2184,21 @@ export default function BracketGamePage() {
         setGuestShareInfo(shortCode, shareId, shareUrl);
         return { ok: true, bracketId: shareId, guestCode: shortCode, shareUrl };
       }
-      const name = saveName.trim() || generateBracketCode();
+      const name = options?.nameOverride || saveName.trim() || generateBracketCode();
       const userId = requireAuthUserId();
+      if (currentSaveId) {
+        if ((options?.source || "save") === "save") {
+          setSaveError("Tu juego ya ha sido guardado.");
+          return {
+            ok: false,
+            error: "Tu juego ya ha sido guardado.",
+          };
+        }
+        return {
+          ok: true,
+          bracketId: currentSaveId,
+        };
+      }
       const { count, error: countError } = await supabase
         .from("bracket_saves")
         .select("id", { count: "exact", head: true })
@@ -1952,7 +2236,12 @@ export default function BracketGamePage() {
         is_authed: true,
         save_target: "user",
       });
-      setSaveNotice("Bracket guardado correctamente.");
+      if (options?.clearGuestOnSuccess) {
+        clearGuestSave();
+      }
+      if (!options?.clearGuestOnSuccess) {
+        setSaveNotice("Bracket guardado correctamente.");
+      }
       return saved?.id ? { ok: true, bracketId: saved.id } : { ok: false, error: "No pudimos guardar." };
     } catch (err) {
       trackEvent("save_error", {
@@ -1964,6 +2253,7 @@ export default function BracketGamePage() {
       setSaveError(message);
       return { ok: false, error: message };
     } finally {
+      confirmSaveInFlightRef.current = false;
       setSaveBusy(false);
     }
   };
@@ -2021,6 +2311,36 @@ export default function BracketGamePage() {
   }, []);
 
   useEffect(() => {
+    if (!authSession?.access_token) return;
+    if (oauthPopupRef.current) {
+      clearOAuthPopup();
+      setAuthBusy(false);
+      if (authIntent === "save" || readPendingAuthSave()) {
+        setAuthSuccess("Sesión iniciada. Guardando tu juego...");
+      } else {
+        setShowAuthModal(false);
+      }
+    }
+  }, [authIntent, authSession?.access_token, clearOAuthPopup, readPendingAuthSave]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("auth_popup") !== "1" || !window.opener || !authSession?.access_token) return;
+    const closeTimer = window.setTimeout(() => {
+      try {
+        window.opener.focus();
+      } catch {
+        // ignore
+      }
+      window.close();
+    }, 150);
+    return () => window.clearTimeout(closeTimer);
+  }, [authSession?.access_token]);
+
+  useEffect(() => () => clearOAuthPopup(), [clearOAuthPopup]);
+
+  useEffect(() => {
     if (!authUser?.id) {
       setResetAttemptsLeft(null);
       return;
@@ -2040,6 +2360,51 @@ export default function BracketGamePage() {
       setResetAttemptsLeft(MAX_RESET_ATTEMPTS);
     }
   }, [authUser?.id]);
+
+  useEffect(() => {
+    if (!authSession?.access_token) {
+      pendingAuthSaveRef.current = false;
+      return;
+    }
+    const pending = readPendingAuthSave();
+    if (!pending || pendingAuthSaveRef.current) return;
+    pendingAuthSaveRef.current = true;
+    const guestDraft = readGuestSave();
+    const payload = guestDraft?.data;
+    if (payload) {
+      applySavedBracket(payload);
+      setCurrentSaveName(guestDraft?.name || "Mi bracket");
+    }
+    void (async () => {
+      const result = await handleConfirmSave({
+        source: "save",
+        skipShareCard: true,
+        payloadOverride: payload,
+        nameOverride: guestDraft?.name,
+        clearGuestOnSuccess: true,
+      });
+      if (result.ok) {
+        clearPendingAuthSaveState();
+        setAuthIntent("default");
+        setShowAuthModal(false);
+        setSaveNotice("Tu juego quedó guardado en tu cuenta.");
+        navigateTo("backend");
+        return;
+      }
+      pendingAuthSaveRef.current = false;
+      const message = result.error || "No pudimos guardar tu juego.";
+      setAuthError(message);
+      setShowAuthModal(true);
+    })();
+  }, [
+    applySavedBracket,
+    authSession?.access_token,
+    clearPendingAuthSaveState,
+    handleConfirmSave,
+    navigateTo,
+    readGuestSave,
+    readPendingAuthSave,
+  ]);
 
     useEffect(() => {
       if (isViewOnly) {
@@ -2488,6 +2853,9 @@ export default function BracketGamePage() {
       });
       return;
     }
+    if (tab === "intercontinental") {
+      lockPhase("uefa");
+    }
     setActivePlayoffTab(tab);
   };
 
@@ -2507,6 +2875,7 @@ export default function BracketGamePage() {
       return false;
     }
     if (repechajesReady) {
+      lockPhases(["uefa", "intercontinental"]);
       setActiveTab("grupos");
       return true;
     }
@@ -2516,7 +2885,15 @@ export default function BracketGamePage() {
       missing: repechajesMissing.length ? repechajesMissing : ["UEFA", "Intercontinental"],
     });
     return false;
-    }, [showNewGamePrompt, isViewOnly, deadlineHiddenTabs.grupos, getFirstVisibleTabFrom, repechajesReady, repechajesMissing]);
+    }, [
+      showNewGamePrompt,
+      isViewOnly,
+      deadlineHiddenTabs.grupos,
+      getFirstVisibleTabFrom,
+      repechajesReady,
+      repechajesMissing,
+      lockPhases,
+    ]);
 
   const goToDieciseisavosIfReady = useCallback(() => {
     if (showNewGamePrompt) {
@@ -2554,6 +2931,7 @@ export default function BracketGamePage() {
       });
       return false;
     }
+    lockPhase("grupos");
     setActiveTab("dieciseisavos");
     return true;
     }, [
@@ -2568,6 +2946,7 @@ export default function BracketGamePage() {
       groupCompletion.missing,
       thirdsComplete,
       bestThirdIds.length,
+      lockPhase,
     ]);
 
   const goToLlavesIfReady = useCallback(() => {
@@ -2593,17 +2972,19 @@ export default function BracketGamePage() {
       });
       return false;
     }
+    lockPhase("dieciseisavos");
     setActiveTab("llaves");
     return true;
   }, [
-    showNewGamePrompt,
-    isViewOnly,
-    deadlineHiddenTabs.llaves,
-    openDeadlinePhaseBlock,
-    goToDieciseisavosIfReady,
-    phaseDeadlineLocked.dieciseisavos,
-    missingMatchLabels,
-  ]);
+      showNewGamePrompt,
+      isViewOnly,
+      deadlineHiddenTabs.llaves,
+      lockPhase,
+      openDeadlinePhaseBlock,
+      goToDieciseisavosIfReady,
+      phaseDeadlineLocked.dieciseisavos,
+      missingMatchLabels,
+    ]);
 
   useEffect(() => {
     if (isViewOnly) return;
@@ -2637,6 +3018,7 @@ export default function BracketGamePage() {
       return;
     }
     if (activePlayoffTab === "uefa" && !autoSwitchedPlayoffRef.current) {
+      lockPhase("uefa");
       setActivePlayoffTab("intercontinental");
       autoSwitchedPlayoffRef.current = true;
       setAutoSwitchNotice(true);
@@ -2648,7 +3030,7 @@ export default function BracketGamePage() {
         autoSwitchTimeoutRef.current = null;
       }, 2200);
     }
-  }, [uefaComplete, activePlayoffTab, isViewOnly]);
+  }, [uefaComplete, activePlayoffTab, isViewOnly, lockPhase]);
 
   useEffect(() => {
     if (isViewOnly) {
@@ -2759,14 +3141,26 @@ export default function BracketGamePage() {
   }, [groups, playoffReplacements]);
 
   const handlePick = (grupo: string, team: Team) => {
-    if (isLocked) return;
+    if (isPhaseLocked("grupos")) return;
     if (phaseDeadlineLocked.grupos) return;
     const order: Array<keyof NonNullable<GroupSelections[string]>> = ["primero", "segundo", "tercero"];
     setSelections((prev) => {
       const current = prev[grupo] || {};
       const pickedSlot = order.find((slot) => current[slot]?.id === team.id);
+      if (pickedSlot) {
+        const remaining = order
+          .map((slot) => current[slot])
+          .filter((selected): selected is Team => !!selected && selected.id !== team.id);
+        return {
+          ...prev,
+          [grupo]: {
+            primero: remaining[0],
+            segundo: remaining[1],
+            tercero: remaining[2],
+          },
+        };
+      }
       const filledCount = order.filter((slot) => current[slot]).length;
-      if (pickedSlot) return prev;
       if (filledCount >= 3) return prev;
       const availableSlot = order.find((slot) => !current[slot]) ?? "tercero";
       const updatedGroup: GroupSelections[string] = { ...current, [availableSlot]: team };
@@ -2783,19 +3177,28 @@ export default function BracketGamePage() {
   };
 
   const togglePlayoffPick =
-    (setState: React.Dispatch<React.SetStateAction<PlayoffPickState>>, context: string) =>
+    (
+      setState: React.Dispatch<React.SetStateAction<PlayoffPickState>>,
+      context: string,
+      phase: "uefa" | "intercontinental",
+    ) =>
     (matchId: string, teamCode: string) => {
+      if (isPhaseLocked(phase)) return;
       if (phaseDeadlineLocked.repechajes) return;
       if (isMatchBlockedByDeadline(matchId)) return;
       setState((prev) => {
-        if (prev[matchId]) return prev;
+        if (prev[matchId] === teamCode) return prev;
         return { ...prev, [matchId]: teamCode };
       });
       trackPick(context, matchId, teamCode);
     };
 
-  const handleIntercontinentalPick = togglePlayoffPick(setIntercontinentalPicks, "repechaje-intercontinental");
-  const handleUefaPick = togglePlayoffPick(setUefaPicks, "repechaje-uefa");
+  const handleIntercontinentalPick = togglePlayoffPick(
+    setIntercontinentalPicks,
+    "repechaje-intercontinental",
+    "intercontinental",
+  );
+  const handleUefaPick = togglePlayoffPick(setUefaPicks, "repechaje-uefa", "uefa");
 
   const resetIntercontinental = () => setIntercontinentalPicks({});
   const resetUEFA = () => setUefaPicks({});
@@ -2833,6 +3236,10 @@ export default function BracketGamePage() {
     trackEvent("new_game", { source });
     resetAll();
     pendingLoadRef.current = null;
+    setShowSemifinalPrompt(false);
+    semifinalPromptShownRef.current = false;
+    clearPendingAuthSaveState();
+    setAuthIntent("default");
     setActiveTab("repechajes");
     setSaveMode("new");
     setSaveName("Mi bracket");
@@ -2880,10 +3287,12 @@ export default function BracketGamePage() {
   }, [pageParams?.resetGame, handleNewGame, navigateTo]);
 
   const toggleThirdChoice = (team: Team) => {
-    if (isLocked) return;
+    if (isPhaseLocked("grupos")) return;
     if (phaseDeadlineLocked.grupos) return;
     setBestThirdIds((prev) => {
-      if (prev.includes(team.id)) return prev;
+      if (prev.includes(team.id)) {
+        return prev.filter((id) => id !== team.id);
+      }
       if (prev.length >= MAX_THIRD) return prev;
       return [...prev, team.id];
     });
@@ -3384,10 +3793,9 @@ const scheduleByMatch = useMemo(() => {
 
   const applyWinner = (matchId: string, team?: Team) => {
     if (isViewOnly) return;
-    if (isLocked) return;
+    if (isPhaseLocked("llaves")) return;
     if (isMatchBlockedByDeadline(matchId)) return;
     if (!team) return;
-    if (picks[matchId]) return;
 
     const prereqMap: Record<string, string[]> = {
       "qf-97": ["r16-89", "r16-90"],
@@ -3433,7 +3841,6 @@ const scheduleByMatch = useMemo(() => {
       setShowChampionModal(true);
       setConfettiKey(Date.now());
       setShareInfo(null);
-      setIsLocked(true);
     }
   };
 
@@ -3712,6 +4119,26 @@ const scheduleByMatch = useMemo(() => {
   const authAlias =
     authMeta.alias || authMeta.nickname || authMeta.full_name || authMeta.name || authUser?.email || "Usuario";
   const authAvatar = authMeta.avatar_url || authMeta.picture || authMeta.avatar || "";
+  const authModalTitle =
+    authIntent === "save"
+      ? authMode === "signup"
+        ? "Crea tu cuenta y guarda tu juego"
+        : "Inicia sesion y guarda tu juego"
+      : authMode === "signup"
+        ? "Crear usuario"
+        : "Iniciar sesion";
+  const authModalDescription =
+    authIntent === "save"
+      ? "Tu partida quedara guardada en tu perfil apenas la sesion quede lista. Mientras tanto la conservamos en este dispositivo."
+      : "Crea tu cuenta directamente con Google. Usaremos los datos del proveedor.";
+  const authModalSubmitLabel =
+    authIntent === "save"
+      ? authMode === "signup"
+        ? "Crear cuenta y guardar"
+        : "Entrar y guardar"
+      : authMode === "signup"
+        ? "Crear cuenta"
+        : "Iniciar sesion";
   const authCtaPortal =
     showAuthCta && typeof document !== "undefined"
       ? createPortal(
@@ -3725,15 +4152,21 @@ const scheduleByMatch = useMemo(() => {
                 aria-label={authUser ? "Cuenta" : "Iniciar sesión"}
               >
                 {authUser ? (
-                  authAvatar ? (
-                    <img src={authAvatar} alt={authAlias} className="auth-fab__avatar" />
-                  ) : (
-                    <span className="auth-fab__initial">
-                      {authAlias.trim().charAt(0).toUpperCase()}
-                    </span>
-                  )
+                  <>
+                    {authAvatar ? (
+                      <img src={authAvatar} alt={authAlias} className="auth-fab__avatar" />
+                    ) : (
+                      <span className="auth-fab__initial">
+                        {authAlias.trim().charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="auth-fab__label">Cuenta</span>
+                  </>
                 ) : (
-                  <img src={userIcon} alt="Usuario" className="auth-fab__icon" />
+                  <>
+                    <img src={userIcon} alt="Usuario" className="auth-fab__icon" />
+                    <span className="auth-fab__label">Iniciar sesión</span>
+                  </>
                 )}
               </button>
               {authFabOpen && (
@@ -3979,6 +4412,10 @@ const scheduleByMatch = useMemo(() => {
     () => final.length > 0 && final.every((m) => !!picks[m.id]),
     [final, picks],
   );
+  const sfComplete = useMemo(
+    () => sf.length > 0 && sf.every((m) => !!picks[m.id]),
+    [sf, picks],
+  );
   const menuSteps = useMemo(
     () =>
       [
@@ -4105,7 +4542,7 @@ const scheduleByMatch = useMemo(() => {
               finalSchedule={getSchedule(preview)}
               onPick={handleR32Pick}
               onBlockedPick={() => setShowR32Warning(true)}
-              locked={isLocked}
+              locked={isPhaseLocked("dieciseisavos")}
               mirror={mirror}
               seedLabel={getSeedLabelR32}
               scoreByMatchId={scoreByMatchId}
@@ -4115,7 +4552,7 @@ const scheduleByMatch = useMemo(() => {
       }
       return items;
     },
-    [isLocked, scheduleByMatch, scoreByMatchId, isMatchBlockedByDeadline],
+    [isMatchBlockedByDeadline, isPhaseLocked, scheduleByMatch, scoreByMatchId],
   );
 
   useEffect(() => {
@@ -4166,7 +4603,6 @@ const scheduleByMatch = useMemo(() => {
       if (!valid) {
         if (championTeam) setChampionTeam(undefined);
         if (showChampionModal) setShowChampionModal(false);
-        if (isLocked && !isViewOnly) setIsLocked(false);
         return;
       }
       const nextChampion =
@@ -4174,13 +4610,31 @@ const scheduleByMatch = useMemo(() => {
       if (nextChampion && championTeam?.id !== nextChampion.id) {
         setChampionTeam(nextChampion);
       }
-    }, [picks, final, championTeam, showChampionModal, isLocked, isViewOnly]);
+    }, [picks, final, championTeam, showChampionModal]);
+
+  useEffect(() => {
+    if (isViewOnly || showNewGamePrompt || activeTab !== "llaves") return;
+    if (!sfComplete) {
+      semifinalPromptShownRef.current = false;
+      setShowSemifinalPrompt(false);
+      return;
+    }
+    if (picks["third-103"] || picks["final-104"]) {
+      setShowSemifinalPrompt(false);
+      semifinalPromptShownRef.current = true;
+      return;
+    }
+    if (semifinalPromptShownRef.current) return;
+    semifinalPromptShownRef.current = true;
+    setShowSemifinalPrompt(true);
+  }, [activeTab, isViewOnly, picks, sfComplete, showNewGamePrompt]);
 
     const anyModalOpen =
       showThirdsModal ||
       !!showFixturesGroup ||
       showRulesModal ||
       showR32Warning ||
+      showSemifinalPrompt ||
       !!phaseBlock ||
       showIntercontinentalModal ||
       showAuthModal ||
@@ -4196,6 +4650,7 @@ const scheduleByMatch = useMemo(() => {
       setShowFixturesGroup(undefined);
       setShowRulesModal(false);
       setShowR32Warning(false);
+      setShowSemifinalPrompt(false);
       setShowChampionModal(false);
       setShowNewGamePrompt(false);
       closeAuthModal();
@@ -4217,6 +4672,7 @@ const scheduleByMatch = useMemo(() => {
     showFixturesGroup,
     showRulesModal,
     showR32Warning,
+    showSemifinalPrompt,
     phaseBlock,
     showIntercontinentalModal,
     showAuthModal,
@@ -4415,6 +4871,56 @@ const scheduleByMatch = useMemo(() => {
                 className="px-18 py-2 rounded-md bg-[#c6f600] text-center text-black font-semibold hover:brightness-95"
               >
                 ACEPTAR
+              </button>
+            </div>
+          </div>
+        </ModalFlipFrame>
+      </div>
+    );
+  };
+
+  const SemifinalPromptModal = ({
+    open,
+    onClose,
+  }: {
+    open: boolean;
+    onClose: () => void;
+  }) => {
+    if (!open) return null;
+    const overlayRef = useRef<HTMLDivElement>(null);
+    return (
+      <div
+        ref={overlayRef}
+        onClick={(e) => {
+          if (e.target === overlayRef.current) onClose();
+        }}
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
+      >
+        <ModalFlipFrame className="bg-neutral-900 border border-neutral-700 rounded-lg w-full md:w-1/2 max-w-xl shadow-lg flex flex-col overflow-hidden modal-glow">
+          <div className="w-full overflow-hidden border-b border-neutral-700" style={{ aspectRatio: "16 / 9" }}>
+            <img src={championBanner} alt="Semifinales completas" className="w-full h-full object-cover" />
+          </div>
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-3xl text-balance uppercase font-black leading-none text-[#c6f600]">
+                Es hora de elegir a tu campeón
+              </h3>
+              <button
+                onClick={onClose}
+                className="text-sm text-gray-900 bg-[#c6f600] hover:text-black rounded-full w-6 h-6 flex items-center justify-center"
+              >
+                X
+              </button>
+            </div>
+            <p className="text-base text-gray-300 text-balance">
+            Define al tercer lugar <span className="font-bold text-[#c6f600]">(bronce)</span> y luego elige tu <span className="font-bold text-[#c6f600]">campeón</span> del mundial!.
+            </p>
+            <div className="mt-4 text-center">
+              <button
+                onClick={onClose}
+                className="px-8 py-2 rounded-md bg-[#c6f600] text-black font-semibold hover:brightness-95"
+              >
+                Elegir bronce y campeón
               </button>
             </div>
           </div>
@@ -4844,7 +5350,7 @@ const scheduleByMatch = useMemo(() => {
                                   mapGroup={block.mapGroup}
                                   matches={block.matches}
                                   onPick={handleIntercontinentalPick}
-                                  disabled={repechajesLocked || isLocked || phaseDeadlineLocked.repechajes}
+                                  disabled={isPhaseLocked("intercontinental") || phaseDeadlineLocked.repechajes}
                                   showFinalHint={showRepechajeFinalHint}
                                   scoreByMatchId={scoreByMatchId}
                                   isMatchLocked={isMatchBlockedByDeadline}
@@ -4876,7 +5382,7 @@ const scheduleByMatch = useMemo(() => {
                                   mapGroup={block.mapGroup}
                                   matches={block.matches}
                                   onPick={handleUefaPick}
-                                  disabled={repechajesLocked || isLocked || phaseDeadlineLocked.repechajes}
+                                  disabled={isPhaseLocked("uefa") || phaseDeadlineLocked.repechajes}
                                   showFinalHint={showRepechajeFinalHint}
                                   scoreByMatchId={scoreByMatchId}
                                   isMatchLocked={isMatchBlockedByDeadline}
@@ -4955,6 +5461,9 @@ const scheduleByMatch = useMemo(() => {
                       Debes seleccionar a los 8 mejores terceros para avanzar a la fase eliminatoria. El orden de selección
                       determinará su posición en el cuadro final.
                     </p>
+                    <p className="text-sm text-gray-400 py-1">
+                      Mientras sigas en esta fase, puedes tocar un equipo ya marcado para quitarlo y volver a elegir.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -5010,11 +5519,11 @@ const scheduleByMatch = useMemo(() => {
                         <button
                           key={team.id}
                           type="button"
-                          disabled={isLocked || phaseDeadlineLocked.grupos}
+                          disabled={isPhaseLocked("grupos") || phaseDeadlineLocked.grupos}
                           onClick={() => handlePick(grupo, team)}
                           className={`flex items-center justify-between gap-1 rounded-md px-2 py-1 transition-colors ${
                             picked ? "bg-[#c6f600] text-black" : "border-neutral-700 hover:border-[#c6f600]"
-                          } ${isLocked || phaseDeadlineLocked.grupos ? "opacity-60 cursor-not-allowed" : ""}`}
+                          } ${isPhaseLocked("grupos") || phaseDeadlineLocked.grupos ? "opacity-60 cursor-not-allowed" : ""}`}
                           aria-label={`Seleccionar ${team.nombre}`}
                         >
                           <div className="flex items-center gap-2">
@@ -5091,8 +5600,8 @@ const scheduleByMatch = useMemo(() => {
             </div>
             {!isViewOnly && (
               <p className="text-[11px] text-gray-400 mb-3 text-center">
-                {isLocked
-                  ? "Pronóstico bloqueado. Usa Reiniciar si deseas empezar de nuevo."
+                {isPhaseLocked("grupos")
+                  ? "Esta fase ya quedó en solo lectura. Puedes revisarla, pero no editarla."
                   : 'Tus mejores terceros elegidos. Si quieres cambiar, abre "Editar".'}
               </p>
             )}
@@ -5298,11 +5807,12 @@ const scheduleByMatch = useMemo(() => {
                   schedule={scheduleByMatch}
                   captureRef={bracketCaptureRef}
                   lockFinalSelection={!picks["third-103"]}
-                  locked={isLocked}
+                  locked={isPhaseLocked("llaves")}
                   navTarget={bracketNavTarget}
                   onNavHandled={clearBracketNavTarget}
                   scoreByMatchId={scoreByMatchId}
                   isMatchLocked={isMatchBlockedByDeadline}
+                  highlightFinalMatch={sfComplete}
                   onChampionClick={(team) => {
                     if (!team) return;
                     setChampionTeam(team);
@@ -5375,7 +5885,7 @@ const scheduleByMatch = useMemo(() => {
           thirdsAvailable={thirdsAvailable}
           bestThirdIds={bestThirdIds}
           maxThird={MAX_THIRD}
-          isLocked={isLocked || phaseDeadlineLocked.grupos}
+          isLocked={isPhaseLocked("grupos") || phaseDeadlineLocked.grupos}
           onToggleTeam={toggleThirdChoice}
         />
         <R32InfoModal
@@ -5383,6 +5893,10 @@ const scheduleByMatch = useMemo(() => {
           title="Calma"
           message="Los partidos de octavos de final se jugarán en las llaves finales."
           onClose={() => setShowR32Warning(false)}
+        />
+        <SemifinalPromptModal
+          open={showSemifinalPrompt && !showNewGamePrompt && !isViewOnly}
+          onClose={() => setShowSemifinalPrompt(false)}
         />
         <AuthModal
           open={showAuthModal && !showNewGamePrompt && !isViewOnly}
@@ -5393,6 +5907,10 @@ const scheduleByMatch = useMemo(() => {
           authBusy={authBusy}
           authError={authError}
           authSuccess={authSuccess}
+          title={authModalTitle}
+          description={authModalDescription}
+          submitLabel={authModalSubmitLabel}
+          googleClientId={GOOGLE_CLIENT_ID || undefined}
           consentMarketing={consentMarketing}
           consentNews={consentNews}
           consentUpdates={consentUpdates}
@@ -5404,6 +5922,7 @@ const scheduleByMatch = useMemo(() => {
           onConsentUpdatesChange={setConsentUpdates}
           onSubmit={handleAuthSubmit}
           onOAuth={handleOAuthSignIn}
+          onGoogleCredential={handleGoogleCredential}
         />
         <SaveModal
           open={showSaveModal && !showNewGamePrompt && !isViewOnly}
@@ -5718,7 +6237,7 @@ const scheduleByMatch = useMemo(() => {
                         onClick={handleSaveClick}
                         className="px-3 py-2 rounded-md border border-[#c6f600] text-[#c6f600] text-sm font-semibold transition"
                       >
-                        Guardar juego
+                        {authSession?.access_token ? "Guardar juego" : "Crear cuenta y guardar"}
                       </button>
                     </div>
                     {renderShareRow(championTeam, false, false, false)}

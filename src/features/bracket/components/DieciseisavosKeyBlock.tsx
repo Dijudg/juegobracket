@@ -105,7 +105,7 @@ export const DieciseisavosKeyBlock = ({
     const label = match.label || match.id;
     const dateLabel = formatFixtureDate(schedule?.fecha) || "\u00A0";
     const winnerId = match.ganador?.id;
-    const matchLocked = !!match.ganador || !!isMatchLocked?.(match.id);
+    const matchLocked = !!isMatchLocked?.(match.id);
     const showBlocked = !!readOnly && !!onBlockedPick;
     return (
       <div

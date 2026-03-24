@@ -62,19 +62,18 @@ export const PlayoffKeyBlock = ({
         {teams.map((team, idx) => {
           const code = getTeamCode(team);
           const isSelected = !!code && match.winnerCode === code;
-          const isLockedByWinner = !!match.winnerCode;
           const hardDisabled = disabled || !team || !code;
-          const isDisabled = hardDisabled || isLockedByWinner || deadlineLocked;
+          const isDisabled = hardDisabled || deadlineLocked;
           const escudo = getTeamEscudo(team);
           return (
             <button
               key={`${match.id}-${idx}`}
               type="button"
               disabled={isDisabled}
-              onClick={() => !isLockedByWinner && !deadlineLocked && code && onPick(match.id, code)}
+              onClick={() => !deadlineLocked && code && onPick(match.id, code)}
               className={`teamBtn ${spacingClass} ${isSelected ? "selected" : ""} ${
                 hardDisabled ? "disabled" : ""
-              } ${isLockedByWinner || deadlineLocked ? "locked" : ""} ${scorePoints > 0 && isSelected ? "modal-glow score-glow-team" : ""}`}
+              } ${deadlineLocked ? "locked" : ""} ${scorePoints > 0 && isSelected ? "modal-glow score-glow-team" : ""}`}
             >
               <span className="badge">
                 {escudo ? (

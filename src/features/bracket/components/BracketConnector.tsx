@@ -6,6 +6,7 @@ export type BracketConnectorProps = {
   type?: "normal" | "semifinal";
   offsetX?: number;
   offsetY?: number;
+  color?: string;
 };
 
 export const BracketConnector = ({
@@ -16,6 +17,7 @@ export const BracketConnector = ({
   type = "normal",
   offsetX = 0,
   offsetY = 0,
+  color,
 }: BracketConnectorProps) => {
   const halfHeight = height / 2.15;
   const halfWidth = width / 2;
@@ -24,7 +26,7 @@ export const BracketConnector = ({
   const totalWidth = width * 2.5;
   const shiftX = offsetX ? `translateX(${offsetX}px)` : "";
   const shiftY = offsetY ? `translateY(${offsetY}px)` : "";
-  const strokeColor = type === "semifinal" ? "#facc15" : "var(--strokeColor)";
+  const strokeColor = color || (type === "semifinal" ? "#facc15" : "var(--strokeColor)");
 
   if (type === "semifinal" && (direction === "right" || direction === "left")) {
     const isRight = direction === "right";

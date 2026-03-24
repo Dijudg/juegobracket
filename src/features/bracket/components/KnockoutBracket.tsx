@@ -33,6 +33,7 @@ export const KnockoutBracket = ({
   locked = false,
   scoreByMatchId,
   isMatchLocked,
+  highlightFinalMatch = false,
 }: {
   r32: Match[];
   r16: Match[];
@@ -52,7 +53,9 @@ export const KnockoutBracket = ({
   locked?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
+  highlightFinalMatch?: boolean;
 }) => {
+  const ACTIVE_CONNECTOR_COLOR = "#22c55e";
   const BRACKET_CONSTANTS = {
     matchHeight: 130,
     matchWidth: 80,
@@ -168,6 +171,11 @@ export const KnockoutBracket = ({
       .join("|");
   }, [r32, r16, qf, sf, final, thirdPlace]);
 
+  const getProgressConnectorColor = useCallback(
+    (match?: Match) => (match?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined),
+    [],
+  );
+
   useEffect(() => {
     clearTeamHover();
   }, [hoverResetKey, locked, lockFinalSelection, clearTeamHover]);
@@ -203,7 +211,13 @@ export const KnockoutBracket = ({
         return { x, top, bottom, center };
       };
 
-      const addBracket = (aId?: string, bId?: string, cId?: string, color?: string) => {
+      const addBracket = (
+        aId?: string,
+        bId?: string,
+        cId?: string,
+        colorA?: string,
+        colorB?: string,
+      ) => {
         if (!aId || !bId || !cId) return;
         const aEl = mobileMatchRefs.current[aId];
         const bEl = mobileMatchRefs.current[bId];
@@ -213,47 +227,65 @@ export const KnockoutBracket = ({
         const A = getPoint(aEl);
         const B = getPoint(bEl);
         const C = getPoint(cEl);
-        const aboveA = A.center < C.center;
-        const aboveB = B.center < C.center;
-        const stroke = color || "var(--strokeColor)";
+        const addSourcePath = (from: ReturnType<typeof getPoint>, color?: string) => {
+          const fromAbove = from.center < C.center;
+          const fromY = fromAbove ? from.bottom : from.top;
+          const toY = fromAbove ? C.top : C.bottom;
+          const midY = fromY + (toY - fromY) * 0.55;
+          next.push({
+            d: `M ${from.x} ${fromY} C ${from.x} ${midY}, ${C.x} ${midY}, ${C.x} ${toY}`,
+            color: color || "var(--strokeColor)",
+          });
+        };
 
-        if (aboveA !== aboveB) {
-          if (aboveA) {
-            next.push({ d: `M ${A.x} ${A.bottom} L ${A.x} ${C.top}`, color: stroke });
-          } else {
-            next.push({ d: `M ${A.x} ${A.top} L ${A.x} ${C.bottom}`, color: stroke });
-          }
-          if (aboveB) {
-            next.push({ d: `M ${B.x} ${B.bottom} L ${B.x} ${C.top}`, color: stroke });
-          } else {
-            next.push({ d: `M ${B.x} ${B.top} L ${B.x} ${C.bottom}`, color: stroke });
-          }
-          return;
-        }
-
-        const sourcesAbove = (A.center + B.center) / 2 < C.center;
-
-        const aY = sourcesAbove ? A.bottom : A.top;
-        const bY = sourcesAbove ? B.bottom : B.top;
-        const cY = sourcesAbove ? C.top : C.bottom;
-        const yJoin = aY + (cY - aY) * 0.5;
-        const leftX = Math.min(A.x, B.x);
-        const rightX = Math.max(A.x, B.x);
-
-        next.push({ d: `M ${A.x} ${aY} L ${A.x} ${yJoin}`, color: stroke });
-        next.push({ d: `M ${B.x} ${bY} L ${B.x} ${yJoin}`, color: stroke });
-        next.push({ d: `M ${leftX} ${yJoin} L ${rightX} ${yJoin}`, color: stroke });
-        next.push({ d: `M ${C.x} ${yJoin} L ${C.x} ${cY}`, color: stroke });
+        addSourcePath(A, colorA);
+        addSourcePath(B, colorB);
       };
 
       const next: Array<{ d: string; color: string }> = [];
-      addBracket(octavos[0]?.id, octavos[1]?.id, cuartos[0]?.id);
-      addBracket(octavos[2]?.id, octavos[3]?.id, cuartos[1]?.id);
-      addBracket(octavos[4]?.id, octavos[5]?.id, cuartos[2]?.id);
-      addBracket(octavos[6]?.id, octavos[7]?.id, cuartos[3]?.id);
-      addBracket(cuartos[0]?.id, cuartos[1]?.id, semiLeft?.id);
-      addBracket(cuartos[2]?.id, cuartos[3]?.id, semiRight?.id);
-      addBracket(semiLeft?.id, semiRight?.id, finalMatch?.id, "#facc15");
+      addBracket(
+        octavos[0]?.id,
+        octavos[1]?.id,
+        cuartos[0]?.id,
+        octavos[0]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavos[1]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+      );
+      addBracket(
+        octavos[2]?.id,
+        octavos[3]?.id,
+        cuartos[1]?.id,
+        octavos[2]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavos[3]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+      );
+      addBracket(
+        octavos[4]?.id,
+        octavos[5]?.id,
+        cuartos[2]?.id,
+        octavos[4]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavos[5]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+      );
+      addBracket(
+        octavos[6]?.id,
+        octavos[7]?.id,
+        cuartos[3]?.id,
+        octavos[6]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavos[7]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+      );
+      addBracket(
+        cuartos[0]?.id,
+        cuartos[1]?.id,
+        semiLeft?.id,
+        cuartos[0]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        cuartos[1]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+      );
+      addBracket(
+        cuartos[2]?.id,
+        cuartos[3]?.id,
+        semiRight?.id,
+        cuartos[2]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        cuartos[3]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+      );
+      addBracket(semiLeft?.id, semiRight?.id, finalMatch?.id, "#facc15", "#facc15");
 
       setMobilePaths(next);
     };
@@ -262,7 +294,7 @@ export const KnockoutBracket = ({
     raf();
     window.addEventListener("resize", raf);
     return () => window.removeEventListener("resize", raf);
-  }, [hoverResetKey, octavos, cuartos, semiLeft, semiRight, finalMatch]);
+  }, [ACTIVE_CONNECTOR_COLOR, hoverResetKey, octavos, cuartos, semiLeft, semiRight, finalMatch]);
 
   const resolveMatchNumber = (match?: Match) => {
     if (!match) return "";
@@ -349,14 +381,22 @@ export const KnockoutBracket = ({
     const teamA = match.equipoA;
     const teamB = match.equipoB;
     const hasWinner = !!match.ganador;
-    const canPick = !hardLocked && !deadlineLocked && !hasWinner;
+    const canPick = !hardLocked && !deadlineLocked;
+    const isFinalMatch = label === "FINAL";
+    const emphasizeFinal = isFinalMatch && highlightFinalMatch;
 
     return (
       <div className="relative flex items-center">
         <div className="relative">
           {label && (
             <div className="absolute -top-7 left-0 right-0 text-center z-10">
-              <span className="px-2 py-1 bg-yellow-400 text-gray-900 text-[10px] font-bold rounded shadow-md uppercase">
+              <span
+                className={`px-2 py-1 text-[10px] font-bold rounded shadow-md uppercase ${
+                  emphasizeFinal
+                    ? "knockout-final-card__badge"
+                    : "bg-yellow-400 text-gray-900"
+                }`}
+              >
                 {label}
               </span>
             </div>
@@ -367,33 +407,41 @@ export const KnockoutBracket = ({
               hasWinner
                 ? "bg-neutral-800 border-2 shadow-lg border transition-colors border-[#c6f600]"
                 : "bg-neutral-800 border-full border-gray-300 hover:shadow-md"
-            }`}
+            } ${emphasizeFinal ? "knockout-final-card" : ""}`}
           >
-            {scorePoints > 0 && <div className="score-hit-badge score-hit-badge--compact">+{scorePoints} puntos</div>}
-            <div className="flex items-center justify-evenly w-full">
-              <TeamButton
-                team={teamA}
-                isWinner={match.ganador?.id === teamA?.id}
-                scoreGlow={scorePoints > 0 && match.ganador?.id === teamA?.id}
-                onClick={() => canPick && teamA && onPick(match.id, teamA)}
-                disabled={!canPick || !teamA}
-                onHover={showTeamHover}
-                onMove={moveTeamHover}
-                onLeave={clearTeamHover}
-              />
-              <TeamButton
-                team={teamB}
-                isWinner={match.ganador?.id === teamB?.id}
-                scoreGlow={scorePoints > 0 && match.ganador?.id === teamB?.id}
-                onClick={() => canPick && teamB && onPick(match.id, teamB)}
-                disabled={!canPick || !teamB}
-                onHover={showTeamHover}
-                onMove={moveTeamHover}
-                onLeave={clearTeamHover}
-              />
-            </div>
-            <div className="text-center text-[10px] font-semibold text-[#c6f600] mt-auto">
-              Partido {date || "\u00A0"}
+            {emphasizeFinal && (
+              <>
+                <span className="knockout-final-card__halo" aria-hidden="true" />
+                <span className="knockout-final-card__aura" aria-hidden="true" />
+              </>
+            )}
+            <div className="relative z-[2] flex flex-col items-center gap-1 w-full h-full">
+              {scorePoints > 0 && <div className="score-hit-badge score-hit-badge--compact">+{scorePoints} puntos</div>}
+              <div className="flex items-center justify-evenly w-full">
+                <TeamButton
+                  team={teamA}
+                  isWinner={match.ganador?.id === teamA?.id}
+                  scoreGlow={scorePoints > 0 && match.ganador?.id === teamA?.id}
+                  onClick={() => canPick && teamA && onPick(match.id, teamA)}
+                  disabled={!canPick || !teamA}
+                  onHover={showTeamHover}
+                  onMove={moveTeamHover}
+                  onLeave={clearTeamHover}
+                />
+                <TeamButton
+                  team={teamB}
+                  isWinner={match.ganador?.id === teamB?.id}
+                  scoreGlow={scorePoints > 0 && match.ganador?.id === teamB?.id}
+                  onClick={() => canPick && teamB && onPick(match.id, teamB)}
+                  disabled={!canPick || !teamB}
+                  onHover={showTeamHover}
+                  onMove={moveTeamHover}
+                  onLeave={clearTeamHover}
+                />
+              </div>
+              <div className="text-center text-[10px] font-semibold text-[#c6f600] mt-auto">
+                Partido {date || "\u00A0"}
+              </div>
             </div>
           </div>
         </div>
@@ -487,6 +535,7 @@ export const KnockoutBracket = ({
                             direction="right"
                             height={r16ConnectorHeight}
                             width={BRACKET_CONSTANTS.connectorWidth}
+                            color={getProgressConnectorColor(match)}
                           />
                         )}
                         {(idx === 1 || idx === 3) && (
@@ -495,6 +544,7 @@ export const KnockoutBracket = ({
                             direction="right"
                             height={r16ConnectorHeight}
                             width={BRACKET_CONSTANTS.connectorWidth}
+                            color={getProgressConnectorColor(match)}
                           />
                         )}
                       </div>
@@ -511,6 +561,7 @@ export const KnockoutBracket = ({
                         direction="right"
                         height={qfConnectorHeight}
                         width={BRACKET_CONSTANTS.connectorWidth}
+                        color={getProgressConnectorColor(match)}
                       />
                     </div>
                   ))}
@@ -583,6 +634,7 @@ export const KnockoutBracket = ({
                         height={qfConnectorHeight}
                         width={BRACKET_CONSTANTS.connectorWidth}
                         offsetX={rightConnectorOffset}
+                        color={getProgressConnectorColor(match)}
                       />
                     </div>
                   ))}
@@ -621,6 +673,7 @@ export const KnockoutBracket = ({
                             height={r16ConnectorHeight}
                             width={BRACKET_CONSTANTS.connectorWidth}
                             offsetX={rightConnectorOffset}
+                            color={getProgressConnectorColor(match)}
                           />
                         )}
                         {(idx === 1 || idx === 3) && (
@@ -630,6 +683,7 @@ export const KnockoutBracket = ({
                             height={r16ConnectorHeight}
                             width={BRACKET_CONSTANTS.connectorWidth}
                             offsetX={rightConnectorOffset}
+                            color={getProgressConnectorColor(match)}
                           />
                         )}
                       </div>

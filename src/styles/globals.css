@@ -675,7 +675,9 @@ html.view-only *::-webkit-scrollbar-thumb:hover {
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .auth-fab__button {
- 
+  gap: 10px;
+  min-height: 52px;
+  padding: 6px 16px 6px 8px;
   border-radius: 999px;
   border: 2px solid #27272a;
   background: rgba(0, 0, 0, 0.85);
@@ -690,29 +692,39 @@ html.view-only *::-webkit-scrollbar-thumb:hover {
 }
 .auth-fab__avatar {
   width: 40px;
-  height: 100%;
+  height: 40px;
   object-fit: cover;
   border-radius: 999px;
 }
 .auth-fab__initial {
-  width: 100%;
-  height: 100%;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   color: #c6f600;
+  border-radius: 999px;
+  background: rgba(198, 246, 0, 0.08);
+}
+.auth-fab__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f5f5f5;
 }
 .auth-fab__panel {
   position: absolute;
-  right: 56px;
-  bottom: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
   display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 6px;
-  border-radius: 999px;
-    backdrop-filter: blur(8px);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
   white-space: nowrap;
+  background: rgba(0, 0, 0, 0.82);
+  border: 1px solid rgba(63, 63, 70, 0.9);
 }
 .auth-fab__action {
   padding: 6px 10px;
@@ -727,6 +739,16 @@ html.view-only *::-webkit-scrollbar-thumb:hover {
   background: #c6f600;
   color: #000;
   border-color: #c6f600;
+}
+@media (max-width: 640px) {
+  .auth-fab__button {
+    min-height: 48px;
+    padding-right: 14px;
+  }
+
+  .auth-fab__label {
+    font-size: 12px;
+  }
 }
 .with-auth-cta {
   padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
@@ -1479,9 +1501,97 @@ body{
   animation: spin-halo 50s linear infinite;
 }
 
+.knockout-final-card {
+  overflow: visible;
+  isolation: isolate;
+  border: 1px solid rgba(255, 215, 64, 0.9) !important;
+  background:
+    linear-gradient(180deg, rgba(66, 51, 7, 0.92), rgba(24, 24, 18, 0.96)),
+    #111827;
+  box-shadow:
+    0 0 0 1px rgba(255, 237, 122, 0.25),
+    0 0 24px rgba(255, 205, 64, 0.24),
+    0 0 54px rgba(245, 158, 11, 0.18);
+  animation: knockout-final-card-float 3.2s ease-in-out infinite;
+}
+
+.knockout-final-card__halo,
+.knockout-final-card__aura {
+  position: absolute;
+  inset: -12px;
+  border-radius: 1.15rem;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.knockout-final-card__halo {
+  inset: -16px;
+  z-index: -3;
+  opacity: 0.9;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgba(255, 214, 10, 0.08),
+      rgba(255, 243, 176, 0.7),
+      rgba(245, 158, 11, 0.12),
+      rgba(255, 214, 10, 0.08)
+    );
+  filter: blur(14px);
+  animation: knockout-final-halo-spin 8s linear infinite;
+}
+
+.knockout-final-card__aura {
+  z-index: -2;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 232, 145, 0.24), transparent 62%),
+    linear-gradient(135deg, rgba(255, 221, 89, 0.18), transparent 60%);
+  filter: blur(6px);
+  animation: knockout-final-aura-pulse 2.6s ease-in-out infinite;
+}
+
+.knockout-final-card__badge {
+  background: linear-gradient(135deg, #fef3a0, #facc15 55%, #d97706);
+  color: #111827;
+  border: 1px solid rgba(255, 247, 170, 0.8);
+  box-shadow:
+    0 0 14px rgba(250, 204, 21, 0.35),
+    0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
 @keyframes spin-halo {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+@keyframes knockout-final-card-float {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.02);
+  }
+}
+
+@keyframes knockout-final-halo-spin {
+  from {
+    transform: rotate(0deg) scale(1);
+  }
+  to {
+    transform: rotate(360deg) scale(1.04);
+  }
+}
+
+@keyframes knockout-final-aura-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
 }
 
 @keyframes pulse-halo {

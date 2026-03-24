@@ -102,6 +102,7 @@ const parsePayload = (raw: unknown): BracketSavePayload | null => {
     intercontinentalPicks: parsed.intercontinentalPicks || {},
     uefaPicks: parsed.uefaPicks || {},
     isLocked: Boolean(parsed.isLocked),
+    phaseLocks: parsed.phaseLocks || {},
     shareCardUrl: parsed.shareCardUrl,
     shareCardUpdatedAt: parsed.shareCardUpdatedAt,
     sharedBy: parsed.sharedBy,

@@ -65,7 +65,7 @@ export const BestThirdsModal = ({
                   const chosen = bestThirdIds.includes(team.id);
                   const position = bestThirdIds.indexOf(team.id) + 1;
                   const locked = !chosen && bestThirdIds.length >= maxThird;
-                  const readOnly = isLocked || chosen;
+                  const readOnly = isLocked;
                   return (
                     <button
                       key={team.id}

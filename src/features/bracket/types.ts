@@ -54,6 +54,10 @@ export type Seeds = {
 
 export type PlayoffPickState = Record<string, string | undefined>;
 
+export type EditablePhase = "uefa" | "intercontinental" | "grupos" | "dieciseisavos" | "llaves";
+
+export type PhaseLockState = Record<EditablePhase, boolean>;
+
 export type SavedBracketMeta = {
   id: string;
   name: string;
@@ -76,6 +80,7 @@ export type BracketSavePayload = {
   intercontinentalPicks: PlayoffPickState;
   uefaPicks: PlayoffPickState;
   isLocked: boolean;
+  phaseLocks?: Partial<PhaseLockState>;
   shareCardUrl?: string;
   shareCardUpdatedAt?: string;
   sharedBy?: {
