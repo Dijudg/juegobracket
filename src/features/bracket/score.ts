@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { isRepechajePhaseArchived } from "./deadlines";
 import type { PlayoffPickState } from "./types";
 
 export type BracketScoreInput = {
@@ -208,6 +209,7 @@ export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
 };
 
 export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSheetData): BracketScoreSummary => {
+  const ignoreRepechajes = isRepechajePhaseArchived(new Date());
   const allPickEntries: Array<{ pickId: string; pickWinnerToken: string }> = [];
   Object.entries(input.picks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
@@ -237,6 +239,8 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
     if (!fixtureId) continue;
     const fixture = sheetData.fixturesById.get(fixtureId);
     if (!fixture) continue;
+    const tab = resolveTabForIds(pickId, fixture.fixtureId);
+    if (ignoreRepechajes && tab === "repechajes") continue;
 
     const winnerToken = normalizeKey(fixture.winnerId);
     if (!winnerToken || winnerToken === "EMPATE" || winnerToken.includes("/")) continue;
@@ -246,7 +250,6 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
     const predicted = resolveComparableSelection(pickWinnerToken, sheetData.selectionByToken);
     if (!expected || !predicted || expected !== predicted) continue;
 
-    const tab = resolveTabForIds(pickId, fixture.fixtureId);
     pointsByTab[tab] += POINTS_PER_HIT;
     pointsByMatchId[pickId] = (pointsByMatchId[pickId] || 0) + POINTS_PER_HIT;
     hitCount += 1;

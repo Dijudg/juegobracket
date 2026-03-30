@@ -7,7 +7,10 @@ export type BracketDeadlineState = {
   phaseLocked: Record<BracketTab, boolean>;
   lockedFixtureIds: Record<string, boolean>;
   groupCutoff: Date | null;
+  repechajeCutoff: Date;
 };
+
+const buildRepechajeCutoff = () => new Date(2026, 3, 4, 23, 59, 59, 999);
 
 const PLAYOFF_MATCH_TO_FIXTURE: Record<string, string> = {
   "INT-K2-SF": "RI1",
@@ -115,6 +118,10 @@ export const resolveFixtureIdFromMatchId = (matchId?: string): string | null => 
   return null;
 };
 
+export const getRepechajeCutoff = () => buildRepechajeCutoff();
+
+export const isRepechajePhaseArchived = (now = new Date()) => now.getTime() > buildRepechajeCutoff().getTime();
+
 export const computeBracketDeadlineState = (fixtures: Fixture[], now = new Date()): BracketDeadlineState => {
   const byPhase: Record<BracketTab, string[]> = {
     repechajes: [],
@@ -123,6 +130,8 @@ export const computeBracketDeadlineState = (fixtures: Fixture[], now = new Date(
     llaves: [],
   };
   const lockedFixtureIds: Record<string, boolean> = {};
+  const repechajeCutoff = buildRepechajeCutoff();
+  const repechajeExpired = now.getTime() > repechajeCutoff.getTime();
 
   fixtures.forEach((fixture) => {
     const fixtureId = resolveFixtureIdFromMatchId(fixture.id);
@@ -130,6 +139,13 @@ export const computeBracketDeadlineState = (fixtures: Fixture[], now = new Date(
     const phase = resolvePhaseForFixture(fixtureId);
     if (!phase) return;
     byPhase[phase].push(fixtureId);
+
+    if (phase === "repechajes") {
+      if (repechajeExpired) {
+        lockedFixtureIds[fixtureId] = true;
+      }
+      return;
+    }
 
     const kickoff = parseDateAndTime(fixture.fecha, fixture.hora);
     if (!kickoff) return;
@@ -143,7 +159,7 @@ export const computeBracketDeadlineState = (fixtures: Fixture[], now = new Date(
   const groupExpired = now.getTime() > groupCutoff.getTime();
 
   const hiddenTabs: Record<BracketTab, boolean> = {
-    repechajes: allExpired(byPhase.repechajes, lockedFixtureIds),
+    repechajes: repechajeExpired,
     grupos: groupExpired,
     dieciseisavos: allExpired(byPhase.dieciseisavos, lockedFixtureIds),
     llaves: allExpired(byPhase.llaves, lockedFixtureIds),
@@ -159,6 +175,7 @@ export const computeBracketDeadlineState = (fixtures: Fixture[], now = new Date(
     },
     lockedFixtureIds,
     groupCutoff,
+    repechajeCutoff,
   };
 };
 

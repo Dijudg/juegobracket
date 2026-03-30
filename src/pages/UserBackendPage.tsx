@@ -25,6 +25,7 @@ import {
   resolveRepechajeCode,
 } from "../features/bracket/utils";
 import { useBracketScore } from "../features/bracket/score";
+import { isRepechajePhaseArchived } from "../features/bracket/deadlines";
 import { EmbeddedViewerMenu } from "../features/bracket/components/EmbeddedViewerMenu";
 import thirdLookup from "../data/third_lookup.json";
 import winnerCardBg from "../assets/final.jpg";
@@ -362,6 +363,8 @@ const readTeamsFromStorage = () => {
 
 export default function UserBackendPage() {
   const { navigateTo } = useNavigation();
+  const repechajeArchived = isRepechajePhaseArchived(new Date());
+  const defaultViewerTab = repechajeArchived ? "grupos" : "repechajes";
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -398,7 +401,7 @@ export default function UserBackendPage() {
     third: ShareTeamInfo;
     shareUrl: string;
   } | null>(null);
-  const [viewerTab, setViewerTab] = useState<"repechajes" | "grupos" | "dieciseisavos" | "llaves">("repechajes");
+  const [viewerTab, setViewerTab] = useState<"repechajes" | "grupos" | "dieciseisavos" | "llaves">(defaultViewerTab);
   const [viewerPlayoffTab, setViewerPlayoffTab] = useState<"uefa" | "intercontinental">("uefa");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const autoAuthOpenRef = useRef(false);
@@ -659,14 +662,15 @@ export default function UserBackendPage() {
 
   const sendViewerNav = useCallback(
     (tab: "repechajes" | "grupos" | "dieciseisavos" | "llaves", playoffTab?: "uefa" | "intercontinental", scrollId?: string) => {
-      setViewerTab(tab);
+      const nextTab = repechajeArchived && tab === "repechajes" ? "grupos" : tab;
+      setViewerTab(nextTab);
       if (playoffTab) setViewerPlayoffTab(playoffTab);
       if (typeof window === "undefined") return;
       const target = viewerFrameRef.current?.contentWindow;
       if (!target) return;
-      target.postMessage({ type: "BRACKET_VIEW_NAV", tab, playoffTab, scrollId }, window.location.origin);
+      target.postMessage({ type: "BRACKET_VIEW_NAV", tab: nextTab, playoffTab, scrollId }, window.location.origin);
     },
-    [],
+    [repechajeArchived],
   );
 
   const selectedItem = selectedId ? detailsMap[selectedId] : null;
@@ -887,7 +891,7 @@ export default function UserBackendPage() {
     [shareCoverUrl, session?.access_token],
   );
   const canEdit = !!session?.access_token;
-  const showRepechajeSubnav = true;
+  const showRepechajeSubnav = !repechajeArchived;
   const avatarInitial = useMemo(() => {
     const base = profileAlias || profileName || user?.email || "U";
     return base.trim().charAt(0).toUpperCase() || "U";
@@ -1062,7 +1066,7 @@ export default function UserBackendPage() {
             onClick={async () => {
               setViewerId(game.latestId);
               setSelectedId(game.latestId);
-              setViewerTab("repechajes");
+              setViewerTab(defaultViewerTab);
               setViewerPlayoffTab("uefa");
               await getBracketDetails(game.latestId);
               document.getElementById("viewer-bracket")?.scrollIntoView({ behavior: "smooth" });
@@ -1918,6 +1922,7 @@ export default function UserBackendPage() {
                               tab={viewerTab}
                               playoffTab={viewerPlayoffTab}
                               onNavigate={sendViewerNav}
+                              showRepechajes={!repechajeArchived}
                               showRepechajeSubnav={showRepechajeSubnav}
                             />
                             <div className="rounded-lg overflow-hidden border border-neutral-800">

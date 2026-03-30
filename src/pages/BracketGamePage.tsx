@@ -64,7 +64,12 @@ import { PlayoffKeyBlock } from "../features/bracket/components/PlayoffKeyBlock"
 import { RepechajeWinnerBadge } from "../features/bracket/components/RepechajeWinnerBadge";
 import { KnockoutBracket } from "../features/bracket/components/KnockoutBracket";
 import { useBracketScore } from "../features/bracket/score";
-import { computeBracketDeadlineState, isMatchLockedByDeadline, type BracketTab } from "../features/bracket/deadlines";
+import {
+  computeBracketDeadlineState,
+  isMatchLockedByDeadline,
+  isRepechajePhaseArchived,
+  type BracketTab,
+} from "../features/bracket/deadlines";
 import { GroupFixturesModal } from "../features/bracket/components/GroupFixturesModal";
 import { BestThirdsModal } from "../features/bracket/components/BestThirdsModal";
 import { useHoloPointer } from "../features/bracket/hooks/useHoloPointer";
@@ -124,7 +129,7 @@ const EMPTY_PHASE_LOCKS: PhaseLockState = {
   dieciseisavos: false,
   llaves: false,
 };
-const RULES_STEPS = [
+const RULES_STEPS_WITH_REPECHAJES = [
   {
     title: "Empieza por los repechajes",
     body: (
@@ -140,6 +145,40 @@ const RULES_STEPS = [
       <>
         Selecciona a los líderes de la fase de grupos: elige al{" "}
         <span className="text-[#c6f600] font-semibold">1º, 2º y 3º puesto de cada grupo</span> de la A a la L.
+      </>
+    ),
+  },
+  {
+    title: "Escoge los mejores terceros",
+    body: (
+      <>
+        Luego elige los <span className="text-[#c6f600] font-semibold">8 mejores terceros</span> para habilitar las
+        eliminatorias.
+      </>
+    ),
+  },
+  {
+    title: "Completa las llaves",
+    body: (
+      <>
+        Completa los <span className="text-[#c6f600] font-semibold">dieciseisavos de final</span> y avanza las últimas
+        rondas.
+      </>
+    ),
+  },
+  {
+    title: "Cierra tu pronóstico",
+    body: <>Elige al tercer puesto y tu campeón mundial de fútbol 2026.</>,
+  },
+] as const;
+
+const RULES_STEPS_FROM_GROUPS = [
+  {
+    title: "Empieza por la fase de grupos",
+    body: (
+      <>
+        Define la <span className="text-[#c6f600] font-semibold">fase de grupos</span>: elige al 1º, 2º y 3º puesto
+        de cada grupo de la A a la L.
       </>
     ),
   },
@@ -882,7 +921,9 @@ export default function BracketGamePage() {
   const [selections, setSelections] = useState<GroupSelections>({});
   const [bestThirdIds, setBestThirdIds] = useState<string[]>([]);
   const [picks, setPicks] = useState<Record<string, string | undefined>>({});
-  const [activeTab, setActiveTab] = useState<BracketTab>("repechajes");
+  const [activeTab, setActiveTab] = useState<BracketTab>(() =>
+    isRepechajePhaseArchived(new Date()) ? "grupos" : "repechajes",
+  );
   const [activeR32Tab, setActiveR32Tab] = useState<"llave1" | "llave2">("llave1");
   const [activePlayoffTab, setActivePlayoffTab] = useState<"intercontinental" | "uefa">("uefa");
   const [intercontinentalPicks, setIntercontinentalPicks] = useState<PlayoffPickState>({});
@@ -2792,17 +2833,32 @@ export default function BracketGamePage() {
   const deadlineHiddenTabs = useMemo<Record<BracketTab, boolean>>(
     () =>
       isViewOnly
-        ? { repechajes: false, grupos: false, dieciseisavos: false, llaves: false }
+        ? {
+            repechajes: deadlineState.hiddenTabs.repechajes,
+            grupos: false,
+            dieciseisavos: false,
+            llaves: false,
+          }
         : deadlineState.hiddenTabs,
     [deadlineState.hiddenTabs, isViewOnly],
   );
   const phaseDeadlineLocked = useMemo<Record<BracketTab, boolean>>(
     () =>
       isViewOnly
-        ? { repechajes: false, grupos: false, dieciseisavos: false, llaves: false }
+        ? {
+            repechajes: deadlineState.phaseLocked.repechajes,
+            grupos: false,
+            dieciseisavos: false,
+            llaves: false,
+          }
         : deadlineState.phaseLocked,
     [deadlineState.phaseLocked, isViewOnly],
   );
+  const defaultStartTab: BracketTab = deadlineHiddenTabs.repechajes ? "grupos" : "repechajes";
+  const rulesSteps = deadlineHiddenTabs.repechajes ? RULES_STEPS_FROM_GROUPS : RULES_STEPS_WITH_REPECHAJES;
+  useEffect(() => {
+    setRulesStep((prev) => Math.min(prev, rulesSteps.length - 1));
+  }, [rulesSteps]);
   const isMatchBlockedByDeadline = useCallback(
     (matchId: string) => (!isViewOnly ? isMatchLockedByDeadline(matchId, deadlineState) : false),
     [deadlineState, isViewOnly],
@@ -2829,12 +2885,26 @@ export default function BracketGamePage() {
         });
         return;
       }
+      if (phase === "repechajes") {
+        const cutoffLabel = deadlineState.repechajeCutoff.toLocaleString("es-EC", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        setPhaseBlock({
+          title: titleByPhase[phase],
+          missing: [`Esta fase estuvo disponible hasta el ${cutoffLabel}.`],
+        });
+        return;
+      }
       setPhaseBlock({
         title: titleByPhase[phase],
         missing: ["La hora oficial de esta fase ya venció."],
       });
     },
-    [deadlineState.groupCutoff],
+    [deadlineState.groupCutoff, deadlineState.repechajeCutoff],
   );
   const getFirstVisibleTabFrom = useCallback(
     (start: BracketTab): BracketTab => {
@@ -2845,9 +2915,9 @@ export default function BracketGamePage() {
       for (const tab of fallback) {
         if (!deadlineHiddenTabs[tab]) return tab;
       }
-      return "repechajes";
+      return defaultStartTab;
     },
-    [deadlineHiddenTabs],
+    [deadlineHiddenTabs, defaultStartTab],
   );
 
   const repechajesLocked = uefaComplete && intercontinentalComplete;
@@ -2907,7 +2977,7 @@ export default function BracketGamePage() {
 
   const goToGroupsIfReady = useCallback(() => {
     if (showNewGamePrompt) {
-      setActiveTab("repechajes");
+      setActiveTab(defaultStartTab);
       return false;
     }
     if (isViewOnly) {
@@ -2933,6 +3003,7 @@ export default function BracketGamePage() {
     return false;
     }, [
       showNewGamePrompt,
+      defaultStartTab,
       isViewOnly,
       deadlineHiddenTabs.grupos,
       getFirstVisibleTabFrom,
@@ -2943,7 +3014,7 @@ export default function BracketGamePage() {
 
   const goToDieciseisavosIfReady = useCallback(() => {
     if (showNewGamePrompt) {
-      setActiveTab("repechajes");
+      setActiveTab(defaultStartTab);
       return false;
     }
     if (isViewOnly) {
@@ -2982,6 +3053,7 @@ export default function BracketGamePage() {
     return true;
     }, [
       showNewGamePrompt,
+      defaultStartTab,
       isViewOnly,
       deadlineHiddenTabs.dieciseisavos,
       getFirstVisibleTabFrom,
@@ -2997,7 +3069,7 @@ export default function BracketGamePage() {
 
   const goToLlavesIfReady = useCallback(() => {
     if (showNewGamePrompt) {
-      setActiveTab("repechajes");
+      setActiveTab(defaultStartTab);
       return false;
     }
     if (isViewOnly) {
@@ -3023,6 +3095,7 @@ export default function BracketGamePage() {
     return true;
   }, [
       showNewGamePrompt,
+      defaultStartTab,
       isViewOnly,
       deadlineHiddenTabs.llaves,
       lockPhase,
@@ -3033,7 +3106,6 @@ export default function BracketGamePage() {
     ]);
 
   useEffect(() => {
-    if (isViewOnly) return;
     if (!deadlineHiddenTabs[activeTab]) return;
     const order: BracketTab[] = ["repechajes", "grupos", "dieciseisavos", "llaves"];
     const fallback = order.find((tab) => !deadlineHiddenTabs[tab]);
@@ -3041,8 +3113,8 @@ export default function BracketGamePage() {
       setActiveTab(fallback);
       return;
     }
-    setActiveTab("repechajes");
-  }, [activeTab, deadlineHiddenTabs, isViewOnly]);
+    setActiveTab(defaultStartTab);
+  }, [activeTab, deadlineHiddenTabs, defaultStartTab]);
 
   const closeIntercontinentalModal = useCallback(() => {
     setShowIntercontinentalModal(false);
@@ -3286,7 +3358,7 @@ export default function BracketGamePage() {
     semifinalPromptShownRef.current = false;
     clearPendingAuthSaveState();
     setAuthIntent("default");
-    setActiveTab("repechajes");
+    setActiveTab(defaultStartTab);
     setSaveMode("new");
     setSaveName("Mi bracket");
     setSelectedOverwriteId(null);
@@ -4469,7 +4541,7 @@ const scheduleByMatch = useMemo(() => {
         { id: "grupos" as BracketTab, completed: groupCompletion.complete || phaseDeadlineLocked.grupos },
         { id: "dieciseisavos" as BracketTab, completed: r32Complete || phaseDeadlineLocked.dieciseisavos },
         { id: "llaves" as BracketTab, completed: finalComplete || phaseDeadlineLocked.llaves },
-      ].filter((step) => isViewOnly || !deadlineHiddenTabs[step.id]),
+      ].filter((step) => !deadlineHiddenTabs[step.id]),
     [
       repechajesLocked,
       groupCompletion.complete,
@@ -4495,7 +4567,7 @@ const scheduleByMatch = useMemo(() => {
   const autoSwitchLlavesRef = useRef(false);
     useEffect(() => {
       if (showNewGamePrompt) {
-        setActiveTab("repechajes");
+        setActiveTab(defaultStartTab);
         return;
       }
       if (isViewOnly) return;
@@ -4511,7 +4583,7 @@ const scheduleByMatch = useMemo(() => {
       setActiveTab("dieciseisavos");
       autoSwitchLlavesRef.current = true;
     }
-    }, [thirdsComplete, phaseDeadlineLocked.grupos, activeTab, showNewGamePrompt, isViewOnly]);
+    }, [thirdsComplete, phaseDeadlineLocked.grupos, activeTab, showNewGamePrompt, isViewOnly, defaultStartTab]);
 
   useEffect(() => {
     if (activeTab === "dieciseisavos") {
@@ -4741,8 +4813,8 @@ const scheduleByMatch = useMemo(() => {
     onClose: () => void;
   }) => {
     const overlayRef = useRef<HTMLDivElement>(null);
-    const currentRule = RULES_STEPS[rulesStep];
-    const isLastRule = rulesStep >= RULES_STEPS.length - 1;
+    const currentRule = rulesSteps[rulesStep];
+    const isLastRule = rulesStep >= rulesSteps.length - 1;
     const isFirstRule = rulesStep === 0;
     if (!open) return null;
     return (
@@ -4764,7 +4836,7 @@ const scheduleByMatch = useMemo(() => {
           </div>
           
           <div className="mb-2 flex gap-2">
-            {RULES_STEPS.map((_, index) => (
+            {rulesSteps.map((_, index) => (
               <span
                 key={`rule-step-${index}`}
                 className={`h-1 flex-1 rounded-full transition-colors ${
@@ -4835,7 +4907,7 @@ const scheduleByMatch = useMemo(() => {
                     return;
                   }
                   setRulesStepDirection(1);
-                  setRulesStep((prev) => Math.min(prev + 1, RULES_STEPS.length - 1));
+                  setRulesStep((prev) => Math.min(prev + 1, rulesSteps.length - 1));
                 }}
                 className="flex-1 px-6 py-2 rounded-md bg-[#c6f600] text-black font-semibold hover:brightness-95"
               >
@@ -5958,7 +6030,7 @@ const scheduleByMatch = useMemo(() => {
           open={showNewGamePrompt && !isViewOnly}
           onCancel={() => {
             setShowNewGamePrompt(false);
-            setActiveTab("repechajes");
+    setActiveTab(defaultStartTab);
           }}
           onConfirm={handleNewGame}
         />

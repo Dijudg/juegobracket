@@ -5,11 +5,13 @@ export const EmbeddedViewerMenu = ({
   tab,
   playoffTab,
   onNavigate,
+  showRepechajes = true,
   showRepechajeSubnav = true,
 }: {
   tab: ViewerTab;
   playoffTab: ViewerPlayoffTab;
   onNavigate: (tab: ViewerTab, playoffTab?: ViewerPlayoffTab, scrollId?: string) => void;
+  showRepechajes?: boolean;
   showRepechajeSubnav?: boolean;
 }) => {
   return (
@@ -18,17 +20,19 @@ export const EmbeddedViewerMenu = ({
         <div className="viewer-mobile-menu__main md:mb-3">
           <div className="viewer-mobile-menu__scroller viewer-mobile-menu__scroller--hint scrollbar-hide">
             <div className="viewer-mobile-menu__track">
-              <button
-                type="button"
-                onClick={() => onNavigate("repechajes", playoffTab)}
-                className={`shrink-0 px-3 py-2 rounded-full  whitespace-nowrap text-base font-semibold transition ${
-                  tab === "repechajes"
-                    ? "bg-[#c6f600] text-black  "
-                    : " text-gray-400 hover:text-white"
-                }`}
-              >
-                Liguilla de Repechajes
-              </button>
+              {showRepechajes && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate("repechajes", playoffTab)}
+                  className={`shrink-0 px-3 py-2 rounded-full  whitespace-nowrap text-base font-semibold transition ${
+                    tab === "repechajes"
+                      ? "bg-[#c6f600] text-black  "
+                      : " text-gray-400 hover:text-white"
+                  }`}
+                >
+                  Liguilla de Repechajes
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onNavigate("grupos")}
@@ -70,7 +74,7 @@ export const EmbeddedViewerMenu = ({
         </div>
       </div>
 
-      {showRepechajeSubnav && tab === "repechajes" && (
+      {showRepechajes && showRepechajeSubnav && tab === "repechajes" && (
         <div className="w-full mb-3">
           <div className="flex w-full items-center">
             <button
