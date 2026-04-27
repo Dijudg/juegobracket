@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { isRepechajePhaseArchived } from "./deadlines";
 import type { PlayoffPickState } from "./types";
+import localTeamsPayload from "../../data/teams.json";
+import localStandingsPayload from "../../data/standings.json";
+import localMatchesPayload from "../../data/matches.json";
+import localPlayoffPayload from "../../data/playoff-match-snapshots.json";
 
 export type BracketScoreInput = {
   picks: Record<string, string | undefined>;
@@ -32,6 +36,11 @@ const WORLD_FIXTURES_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=171585554&single=true&output=tsv";
 const SELECCIONES_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=0&single=true&output=csv";
+const TELEGRAFO_TEAMS_URL = "https://especiales.eltelegrafo.com.ec/api/teams.json";
+const TELEGRAFO_STANDINGS_URL = "https://especiales.eltelegrafo.com.ec/api/standings.json";
+const TELEGRAFO_MATCHES_URL = "https://especiales.eltelegrafo.com.ec/api/matches.json";
+const TELEGRAFO_PLAYOFF_SNAPSHOTS_URL =
+  "https://especiales.eltelegrafo.com.ec/api/playoff-match-snapshots.json";
 const POINTS_PER_HIT = 3;
 
 const PLAYOFF_PICK_TO_FIXTURE: Record<string, string> = {
@@ -124,6 +133,292 @@ const parseFixtureNumericId = (fixtureId: string) => {
   return Number.isFinite(num) ? num : null;
 };
 
+const toRecord = (value: unknown): Record<string, any> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : null;
+
+const unwrapArray = (payload: unknown, preferredKeys: string[]) => {
+  if (Array.isArray(payload)) return payload;
+  const obj = toRecord(payload);
+  if (!obj) return [];
+  for (const key of preferredKeys) {
+    const value = obj[key];
+    if (Array.isArray(value)) return value;
+    const nested = toRecord(value);
+    if (nested) {
+      for (const nestedKey of preferredKeys) {
+        if (Array.isArray(nested[nestedKey])) return nested[nestedKey];
+      }
+    }
+  }
+  return [];
+};
+
+const firstValue = (row: Record<string, any>, keys: string[]) => {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && `${value}`.trim() !== "") return value;
+  }
+  return "";
+};
+
+const stringifyToken = (value: unknown): string => {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string" || typeof value === "number") return `${value}`;
+  const obj = toRecord(value);
+  if (!obj) return "";
+  return `${firstValue(obj, [
+    "id",
+    "teamId",
+    "team_id",
+    "seleccion_id",
+    "codigo_fixture",
+    "code",
+    "fifa_code",
+    "slug",
+    "name",
+    "nombre",
+    "nombre_seleccion",
+    "seleccion",
+  ])}`;
+};
+
+const registerSelectionToken = (map: Map<string, string>, rawToken: unknown, rawLabel?: unknown) => {
+  const token = normalizeKey(stringifyToken(rawToken));
+  const label = stringifyToken(rawLabel || rawToken).trim();
+  if (!token || !label) return;
+  map.set(token, label);
+  map.set(normalizeComparable(label), label);
+};
+
+const registerTeamLikeRow = (map: Map<string, string>, raw: unknown) => {
+  const row = toRecord(raw);
+  if (!row) return;
+  const label = stringifyToken(
+    firstValue(row, [
+      "seleccion",
+      "nombre",
+      "nombre_seleccion",
+      "name",
+      "fullName",
+      "shortName",
+      "team_name",
+      "short_name",
+      "country",
+    ]),
+  ).trim();
+  if (!label) return;
+  [
+    "id",
+    "teamId",
+    "team_id",
+    "seleccion_id",
+    "codigo_fixture",
+    "code",
+    "fifa_code",
+    "slug",
+    "abbreviation",
+    "name",
+    "nombre",
+    "seleccion",
+  ].forEach((key) => registerSelectionToken(map, row[key], label));
+};
+
+const readNumber = (row: Record<string, any>, keys: string[]) => {
+  const raw = firstValue(row, keys);
+  if (raw === "" || raw === undefined || raw === null) return null;
+  const n = Number.parseInt(`${raw}`, 10);
+  return Number.isFinite(n) ? n : null;
+};
+
+const resolveWinnerFromScores = (row: Record<string, any>) => {
+  const homeScore = readNumber(row, ["gol_local", "golLocal", "homeScore", "home_score", "score_home", "local_score", "homeGoals"]);
+  const awayScore = readNumber(row, ["gol_visita", "golVisita", "awayScore", "away_score", "score_away", "visit_score", "awayGoals"]);
+  if (homeScore === null || awayScore === null) return "";
+  if (homeScore === awayScore) return "EMPATE";
+  return homeScore > awayScore
+    ? stringifyToken(firstValue(row, ["local_id", "home_id", "homeTeamId", "home_team_id", "homeTeamCode", "local"]))
+    : stringifyToken(firstValue(row, ["visita_id", "away_id", "awayTeamId", "away_team_id", "awayTeamCode", "visita"]));
+};
+
+const registerFixtureAliases = (map: Map<string, ScoreFixture>, fixtureId: string, winnerId: string) => {
+  const normalizedFixtureId = normalizeKey(fixtureId);
+  const normalizedWinnerId = normalizeKey(winnerId);
+  if (!normalizedFixtureId || !normalizedWinnerId) return;
+  const fixture: ScoreFixture = { fixtureId: normalizedFixtureId, winnerId: normalizedWinnerId };
+  map.set(normalizedFixtureId, fixture);
+  if (/^\d+$/.test(normalizedFixtureId)) {
+    map.set(`P${normalizedFixtureId}`, { ...fixture, fixtureId: `P${normalizedFixtureId}` });
+  }
+};
+
+const registerMatchLikeRow = (
+  fixturesById: Map<string, ScoreFixture>,
+  selectionByToken: Map<string, string>,
+  raw: unknown,
+  fixtureAliases: string[] = [],
+) => {
+  const row = toRecord(raw);
+  if (!row) return;
+  const fixtureId = stringifyToken(
+    firstValue(row, [
+      "id_partido",
+      "matchId",
+      "fixture_id",
+      "match_id",
+      "partido_id",
+      "id",
+      "codigo",
+      "code",
+      "slug",
+    ]),
+  );
+  if (!fixtureId) return;
+
+  const home = firstValue(row, ["local", "home", "home_team", "homeTeam", "local_team", "homeTeamName"]);
+  const away = firstValue(row, ["visita", "away", "away_team", "awayTeam", "visit_team", "awayTeamName"]);
+  registerTeamLikeRow(selectionByToken, home);
+  registerTeamLikeRow(selectionByToken, away);
+
+  const homeId = firstValue(row, ["local_id", "home_id", "homeTeamId", "home_team_id", "homeTeamCode"]);
+  const awayId = firstValue(row, ["visita_id", "away_id", "awayTeamId", "away_team_id", "awayTeamCode"]);
+  if (homeId) registerSelectionToken(selectionByToken, homeId, stringifyToken(home) || homeId);
+  if (awayId) registerSelectionToken(selectionByToken, awayId, stringifyToken(away) || awayId);
+  registerSelectionToken(selectionByToken, row.homeTeamCode, stringifyToken(home) || row.homeTeamCode);
+  registerSelectionToken(selectionByToken, row.awayTeamCode, stringifyToken(away) || row.awayTeamCode);
+
+  const directWinner = firstValue(row, [
+    "ganador_id",
+    "winnerId",
+    "winner_id",
+    "winning_team_id",
+    "winnerTeamId",
+    "winner_code",
+    "winner",
+    "ganador",
+  ]);
+  const winnerId = stringifyToken(directWinner) || resolveWinnerFromScores(row);
+  registerFixtureAliases(fixturesById, fixtureId, winnerId);
+  fixtureAliases.forEach((alias) => registerFixtureAliases(fixturesById, alias, winnerId));
+};
+
+const fetchJsonOrNull = async (url: string) => {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+};
+
+const buildTelegrafoScoreData = (
+  teamsPayload: unknown,
+  standingsPayload: unknown,
+  matchesPayload: unknown,
+  playoffPayload: unknown,
+): ScoreSheetData | null => {
+  const fixturesById = new Map<string, ScoreFixture>();
+  const selectionByToken = new Map<string, string>();
+
+  unwrapArray(teamsPayload, ["teams", "data", "items"]).forEach((team) => {
+    registerTeamLikeRow(selectionByToken, team);
+  });
+  unwrapArray(standingsPayload, ["standings", "groups", "data", "items", "teams"]).forEach((standing) => {
+    const row = toRecord(standing);
+    if (!row) return;
+    registerTeamLikeRow(selectionByToken, row);
+    registerTeamLikeRow(selectionByToken, firstValue(row, ["team", "selection", "seleccion"]));
+    if (Array.isArray(row.equipos)) {
+      row.equipos.forEach((team) => registerTeamLikeRow(selectionByToken, team));
+    }
+    if (Array.isArray(row.teams)) {
+      row.teams.forEach((team) => registerTeamLikeRow(selectionByToken, team));
+    }
+  });
+  unwrapArray(matchesPayload, ["matches", "fixtures", "data", "items"]).forEach((match, index) => {
+    registerMatchLikeRow(fixturesById, selectionByToken, match, [`P${index + 1}`]);
+  });
+  unwrapArray(playoffPayload, ["snapshots", "matches", "fixtures", "data", "items"]).forEach((match) => {
+    registerMatchLikeRow(fixturesById, selectionByToken, match);
+  });
+
+  if (fixturesById.size === 0 && selectionByToken.size === 0) return null;
+  return { fixturesById, selectionByToken };
+};
+
+const loadRemoteTelegrafoScoreData = async (): Promise<ScoreSheetData | null> => {
+  const [teamsPayload, standingsPayload, matchesPayload, playoffPayload] = await Promise.all([
+    fetchJsonOrNull(TELEGRAFO_TEAMS_URL),
+    fetchJsonOrNull(TELEGRAFO_STANDINGS_URL),
+    fetchJsonOrNull(TELEGRAFO_MATCHES_URL),
+    fetchJsonOrNull(TELEGRAFO_PLAYOFF_SNAPSHOTS_URL),
+  ]);
+
+  return buildTelegrafoScoreData(teamsPayload, standingsPayload, matchesPayload, playoffPayload);
+};
+
+const mergeScoreData = (...sources: Array<ScoreSheetData | null | undefined>): ScoreSheetData => {
+  const fixturesById = new Map<string, ScoreFixture>();
+  const selectionByToken = new Map<string, string>();
+  sources.forEach((source) => {
+    source?.selectionByToken.forEach((value, key) => selectionByToken.set(key, value));
+    source?.fixturesById.forEach((value, key) => fixturesById.set(key, value));
+  });
+  return { fixturesById, selectionByToken };
+};
+
+const loadFallbackScoreSheetData = async (): Promise<ScoreSheetData> => {
+  const [fixturesRes, seleccionesRes] = await Promise.all([
+    fetch(WORLD_FIXTURES_URL),
+    fetch(SELECCIONES_URL),
+  ]);
+  if (!fixturesRes.ok || !seleccionesRes.ok) {
+    throw new Error("No se pudo cargar la tabla de resultados.");
+  }
+
+  const [fixturesRaw, seleccionesRaw] = await Promise.all([fixturesRes.text(), seleccionesRes.text()]);
+  const fixturesById = new Map<string, ScoreFixture>();
+  const selectionByToken = new Map<string, string>();
+
+  const fixtureLines = parseLines(fixturesRaw);
+  if (fixtureLines.length < 2) throw new Error("Tabla de partidos vacia.");
+  const fixtureHeaders = fixtureLines[0].split("\t").map((h) => h.trim().toLowerCase());
+  const idxFixtureId = fixtureHeaders.findIndex((h) => h === "id_partido");
+  const idxWinnerId = fixtureHeaders.findIndex((h) => h === "ganador_id");
+  if (idxFixtureId < 0 || idxWinnerId < 0) {
+    throw new Error("No se encontraron columnas de resultados en partidos-mundial.");
+  }
+  for (let i = 1; i < fixtureLines.length; i++) {
+    const row = fixtureLines[i].split("\t");
+    const fixtureId = normalizeKey(row[idxFixtureId]);
+    if (!fixtureId) continue;
+    fixturesById.set(fixtureId, {
+      fixtureId,
+      winnerId: normalizeKey(row[idxWinnerId]),
+    });
+  }
+
+  const selectionLines = parseLines(seleccionesRaw);
+  if (selectionLines.length >= 2) {
+    const headers = parseCSVLine(selectionLines[0]).map((h) => h.trim().toLowerCase());
+    const idxId = headers.findIndex((h) => h === "id");
+    const idxCode = headers.findIndex((h) => h.includes("codigo_fixture"));
+    const idxSelection = headers.findIndex((h) => h === "seleccion");
+    for (let i = 1; i < selectionLines.length; i++) {
+      const cols = parseCSVLine(selectionLines[i]);
+      const selection = (cols[idxSelection] || "").trim();
+      if (!selection) continue;
+      const id = normalizeKey(cols[idxId]);
+      const code = normalizeKey(cols[idxCode]);
+      if (id) selectionByToken.set(id, selection);
+      if (code) selectionByToken.set(code, selection);
+      selectionByToken.set(normalizeKey(selection), selection);
+    }
+  }
+
+  return { fixturesById, selectionByToken };
+};
+
 const resolveTabForIds = (pickId: string, fixtureId: string): ScoreTab => {
   const pickKey = normalizeKey(pickId);
   const fixtureKey = normalizeKey(fixtureId);
@@ -151,55 +446,21 @@ export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
   if (scoreSheetCachePromise) return scoreSheetCachePromise;
 
   scoreSheetCachePromise = (async () => {
-    const [fixturesRes, seleccionesRes] = await Promise.all([
-      fetch(WORLD_FIXTURES_URL),
-      fetch(SELECCIONES_URL),
+    const [telegrafoData, fallbackData] = await Promise.all([
+      loadRemoteTelegrafoScoreData().catch(() => null),
+      loadFallbackScoreSheetData().catch(() => null),
     ]);
-    if (!fixturesRes.ok || !seleccionesRes.ok) {
+    const localTelegrafoData = buildTelegrafoScoreData(
+      localTeamsPayload,
+      localStandingsPayload,
+      localMatchesPayload,
+      localPlayoffPayload,
+    );
+    const merged = mergeScoreData(fallbackData, telegrafoData, localTelegrafoData);
+    if (merged.fixturesById.size === 0) {
       throw new Error("No se pudo cargar la tabla de resultados.");
     }
-
-    const [fixturesRaw, seleccionesRaw] = await Promise.all([fixturesRes.text(), seleccionesRes.text()]);
-    const fixturesById = new Map<string, ScoreFixture>();
-    const selectionByToken = new Map<string, string>();
-
-    const fixtureLines = parseLines(fixturesRaw);
-    if (fixtureLines.length < 2) throw new Error("Tabla de partidos vacia.");
-    const fixtureHeaders = fixtureLines[0].split("\t").map((h) => h.trim().toLowerCase());
-    const idxFixtureId = fixtureHeaders.findIndex((h) => h === "id_partido");
-    const idxWinnerId = fixtureHeaders.findIndex((h) => h === "ganador_id");
-    if (idxFixtureId < 0 || idxWinnerId < 0) {
-      throw new Error("No se encontraron columnas de resultados en partidos-mundial.");
-    }
-    for (let i = 1; i < fixtureLines.length; i++) {
-      const row = fixtureLines[i].split("\t");
-      const fixtureId = normalizeKey(row[idxFixtureId]);
-      if (!fixtureId) continue;
-      fixturesById.set(fixtureId, {
-        fixtureId,
-        winnerId: normalizeKey(row[idxWinnerId]),
-      });
-    }
-
-    const selectionLines = parseLines(seleccionesRaw);
-    if (selectionLines.length >= 2) {
-      const headers = parseCSVLine(selectionLines[0]).map((h) => h.trim().toLowerCase());
-      const idxId = headers.findIndex((h) => h === "id");
-      const idxCode = headers.findIndex((h) => h.includes("codigo_fixture"));
-      const idxSelection = headers.findIndex((h) => h === "seleccion");
-      for (let i = 1; i < selectionLines.length; i++) {
-        const cols = parseCSVLine(selectionLines[i]);
-        const selection = (cols[idxSelection] || "").trim();
-        if (!selection) continue;
-        const id = normalizeKey(cols[idxId]);
-        const code = normalizeKey(cols[idxCode]);
-        if (id) selectionByToken.set(id, selection);
-        if (code) selectionByToken.set(code, selection);
-        selectionByToken.set(normalizeKey(selection), selection);
-      }
-    }
-
-    return { fixturesById, selectionByToken };
+    return merged;
   })().catch((error) => {
     scoreSheetCachePromise = null;
     throw error;

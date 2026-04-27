@@ -5177,7 +5177,15 @@ const scheduleByMatch = useMemo(() => {
         showAuthCta ? "with-auth-cta" : ""
       } ${isSharePath && !isEmbedded ? "with-share-cta" : ""} ${showGuestCodeSticky ? "with-guest-code" : ""}`}
     >
-      {!isEmbedded && <Header authSlot={authSlot} showNav={isSharePath} showSearch={false} />}
+      {!isEmbedded && (
+        <Header
+          authSlot={authSlot}
+          showNav
+          showSearch={false}
+          onNewGameClick={goNewBracket}
+          onRegisterClick={() => openAuthModal("signup")}
+        />
+      )}
       <main className="max-w-7xl px-2 sm:px-6 lg:px-10 xl:px-16">
           <div className="max-w-7xl mx-auto">
             {showSharedHeader && (

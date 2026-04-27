@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "dev:server": "node server/index.js"
+    "dev:server": "node server/index.js",
+    "sync:data": "node scripts/sync-speciales-data.mjs",
+    "sync:data:watch": "node scripts/sync-speciales-data.mjs --watch"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

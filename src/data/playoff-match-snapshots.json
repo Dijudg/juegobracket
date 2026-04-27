@@ -1,0 +1,120 @@
+[
+  {
+    "id": "liguilla-uefa-ruta-a-sf-1",
+    "iframeEmbedId": "796220",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 2,
+    "golVisita": 0
+  },
+  {
+    "id": "liguilla-uefa-ruta-a-sf-2",
+    "iframeEmbedId": "774990",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 1,
+    "golVisita": 1,
+    "penalesLocal": "2",
+    "penalesVisita": "4"
+  },
+  {
+    "id": "liguilla-uefa-ruta-a-final",
+    "iframeEmbedId": "774993",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 1,
+    "golVisita": 1,
+    "penalesLocal": "4",
+    "penalesVisita": "1"
+  },
+  {
+    "id": "liguilla-uefa-ruta-b-sf-1",
+    "iframeEmbedId": "774991",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 1,
+    "golVisita": 2
+  },
+  {
+    "id": "liguilla-uefa-ruta-b-sf-2",
+    "iframeEmbedId": "796221",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 2,
+    "golVisita": 1
+  },
+  {
+    "id": "liguilla-uefa-ruta-b-final",
+    "iframeEmbedId": "774994",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 3,
+    "golVisita": 2
+  },
+  {
+    "id": "liguilla-uefa-ruta-c-sf-1",
+    "iframeEmbedId": "796219",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 1,
+    "golVisita": 0
+  },
+  {
+    "id": "liguilla-uefa-ruta-c-sf-2",
+    "iframeEmbedId": "774992",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa"
+  },
+  {
+    "id": "liguilla-uefa-ruta-c-final",
+    "iframeEmbedId": "774995",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 0,
+    "golVisita": 1
+  },
+  {
+    "id": "liguilla-uefa-ruta-d-sf-1",
+    "iframeEmbedId": "796218",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 4,
+    "golVisita": 0
+  },
+  {
+    "id": "liguilla-uefa-ruta-d-sf-2",
+    "iframeEmbedId": "796217",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 2,
+    "golVisita": 2,
+    "penalesLocal": "4",
+    "penalesVisita": "3"
+  },
+  {
+    "id": "liguilla-uefa-ruta-d-final",
+    "iframeEmbedId": "796222",
+    "dataFactoryChannelPrefix": "deportes.futbol.europa",
+    "golLocal": 2,
+    "golVisita": 2,
+    "penalesLocal": "3",
+    "penalesVisita": "1"
+  },
+  {
+    "id": "liguilla-int-1",
+    "iframeEmbedId": "790698",
+    "dataFactoryChannelPrefix": "deportes.futbol.repechajemundial",
+    "golLocal": 0,
+    "golVisita": 1
+  },
+  {
+    "id": "liguilla-int-2",
+    "iframeEmbedId": "790699",
+    "dataFactoryChannelPrefix": "deportes.futbol.repechajemundial",
+    "golLocal": 2,
+    "golVisita": 1
+  },
+  {
+    "id": "liguilla-int-final-1",
+    "iframeEmbedId": "790700",
+    "dataFactoryChannelPrefix": "deportes.futbol.repechajemundial",
+    "golLocal": 1,
+    "golVisita": 0
+  },
+  {
+    "id": "liguilla-int-final-2",
+    "iframeEmbedId": "790701",
+    "dataFactoryChannelPrefix": "deportes.futbol.repechajemundial",
+    "golLocal": 2,
+    "golVisita": 1
+  }
+]
