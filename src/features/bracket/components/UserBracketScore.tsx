@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { isRepechajePhaseArchived } from "../deadlines";
 import type { BracketSavePayload } from "../types";
 
 type UserBracketScoreProps = {
@@ -147,8 +146,6 @@ const getNumericFixtureOrder = (fixtureId: string) => {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
 };
 
-const isRepechajeFixture = (fixtureId: string) => /^(RI|RA|RB|RC|RD)\d+$/i.test(normalizeKey(fixtureId));
-
 const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
   if (scoreSheetCachePromise) return scoreSheetCachePromise;
 
@@ -244,7 +241,6 @@ export const UserBracketScore = ({ payload }: UserBracketScoreProps) => {
 
   const summary = useMemo(() => {
     if (!payload || !sheetData) return null;
-    const ignoreRepechajes = isRepechajePhaseArchived(new Date());
     const allPickEntries: Array<{ pickId: string; pickWinnerToken: string }> = [];
     Object.entries(payload.picks || {}).forEach(([pickId, pickWinnerToken]) => {
       if (!pickWinnerToken) return;
@@ -264,7 +260,6 @@ export const UserBracketScore = ({ payload }: UserBracketScoreProps) => {
     for (const { pickId, pickWinnerToken } of allPickEntries) {
       const fixtureId = resolveFixtureIdFromPick(pickId);
       if (!fixtureId) continue;
-      if (ignoreRepechajes && isRepechajeFixture(fixtureId)) continue;
       const fixture = sheetData.fixturesById.get(fixtureId);
       if (!fixture) continue;
 

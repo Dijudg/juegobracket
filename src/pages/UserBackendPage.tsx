@@ -25,7 +25,6 @@ import {
   resolveRepechajeCode,
 } from "../features/bracket/utils";
 import { useBracketScore } from "../features/bracket/score";
-import { isRepechajePhaseArchived } from "../features/bracket/deadlines";
 import { EmbeddedViewerMenu } from "../features/bracket/components/EmbeddedViewerMenu";
 import thirdLookup from "../data/third_lookup.json";
 import winnerCardBg from "../assets/final.jpg";
@@ -363,8 +362,7 @@ const readTeamsFromStorage = () => {
 
 export default function UserBackendPage() {
   const { navigateTo } = useNavigation();
-  const repechajeArchived = isRepechajePhaseArchived(new Date());
-  const defaultViewerTab = repechajeArchived ? "grupos" : "repechajes";
+  const defaultViewerTab = "repechajes";
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -662,7 +660,7 @@ export default function UserBackendPage() {
 
   const sendViewerNav = useCallback(
     (tab: "repechajes" | "grupos" | "dieciseisavos" | "llaves", playoffTab?: "uefa" | "intercontinental", scrollId?: string) => {
-      const nextTab = repechajeArchived && tab === "repechajes" ? "grupos" : tab;
+      const nextTab = tab;
       setViewerTab(nextTab);
       if (playoffTab) setViewerPlayoffTab(playoffTab);
       if (typeof window === "undefined") return;
@@ -670,7 +668,7 @@ export default function UserBackendPage() {
       if (!target) return;
       target.postMessage({ type: "BRACKET_VIEW_NAV", tab: nextTab, playoffTab, scrollId }, window.location.origin);
     },
-    [repechajeArchived],
+    [],
   );
 
   const selectedItem = selectedId ? detailsMap[selectedId] : null;
@@ -891,7 +889,6 @@ export default function UserBackendPage() {
     [shareCoverUrl, session?.access_token],
   );
   const canEdit = !!session?.access_token;
-  const showRepechajeSubnav = !repechajeArchived;
   const avatarInitial = useMemo(() => {
     const base = profileAlias || profileName || user?.email || "U";
     return base.trim().charAt(0).toUpperCase() || "U";
@@ -1922,8 +1919,8 @@ export default function UserBackendPage() {
                               tab={viewerTab}
                               playoffTab={viewerPlayoffTab}
                               onNavigate={sendViewerNav}
-                              showRepechajes={!repechajeArchived}
-                              showRepechajeSubnav={showRepechajeSubnav}
+                              showRepechajes
+                              showRepechajeSubnav
                             />
                             <div className="rounded-lg overflow-hidden border border-neutral-800">
                               <iframe

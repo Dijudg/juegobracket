@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { isRepechajePhaseArchived } from "./deadlines";
 import type { PlayoffPickState } from "./types";
 import localTeamsPayload from "../../data/teams.json";
 import localStandingsPayload from "../../data/standings.json";
@@ -133,6 +132,25 @@ const parseFixtureNumericId = (fixtureId: string) => {
   return Number.isFinite(num) ? num : null;
 };
 
+const PLAYOFF_SNAPSHOT_META: Record<string, { fixtureId: string; home?: string; away?: string; finalSeed?: string; finalFrom?: string }> = {
+  "LIGUILLA-UEFA-RUTA-A-SF-1": { fixtureId: "RA1", home: "ITA", away: "NIR" },
+  "LIGUILLA-UEFA-RUTA-A-SF-2": { fixtureId: "RA2", home: "WAL", away: "BIH" },
+  "LIGUILLA-UEFA-RUTA-A-FINAL": { fixtureId: "RA3", finalFrom: "LIGUILLA-UEFA-RUTA-A" },
+  "LIGUILLA-UEFA-RUTA-B-SF-1": { fixtureId: "RB1", home: "UKR", away: "SWE" },
+  "LIGUILLA-UEFA-RUTA-B-SF-2": { fixtureId: "RB2", home: "POL", away: "ALB" },
+  "LIGUILLA-UEFA-RUTA-B-FINAL": { fixtureId: "RB3", finalFrom: "LIGUILLA-UEFA-RUTA-B" },
+  "LIGUILLA-UEFA-RUTA-C-SF-1": { fixtureId: "RC1", home: "TUR", away: "ROU" },
+  "LIGUILLA-UEFA-RUTA-C-SF-2": { fixtureId: "RC2", home: "SVK", away: "KOS" },
+  "LIGUILLA-UEFA-RUTA-C-FINAL": { fixtureId: "RC3", finalFrom: "LIGUILLA-UEFA-RUTA-C" },
+  "LIGUILLA-UEFA-RUTA-D-SF-1": { fixtureId: "RD1", home: "DEN", away: "MKD" },
+  "LIGUILLA-UEFA-RUTA-D-SF-2": { fixtureId: "RD2", home: "CZE", away: "IRL" },
+  "LIGUILLA-UEFA-RUTA-D-FINAL": { fixtureId: "RD3", finalFrom: "LIGUILLA-UEFA-RUTA-D" },
+  "LIGUILLA-INT-1": { fixtureId: "RI1", home: "BOL", away: "SUR" },
+  "LIGUILLA-INT-FINAL-1": { fixtureId: "RI2", finalSeed: "IRQ", finalFrom: "LIGUILLA-INT-1" },
+  "LIGUILLA-INT-2": { fixtureId: "RI3", home: "NCL", away: "JAM" },
+  "LIGUILLA-INT-FINAL-2": { fixtureId: "RI4", finalSeed: "COD", finalFrom: "LIGUILLA-INT-2" },
+};
+
 const toRecord = (value: unknown): Record<string, any> | null =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : null;
 
@@ -240,6 +258,40 @@ const resolveWinnerFromScores = (row: Record<string, any>) => {
     : stringifyToken(firstValue(row, ["visita_id", "away_id", "awayTeamId", "away_team_id", "awayTeamCode", "visita"]));
 };
 
+const resolveWinnerFromSnapshot = (
+  row: Record<string, any>,
+  snapshotWinners: Map<string, string>,
+): { fixtureId: string; winnerId: string } | null => {
+  const snapshotId = normalizeKey(stringifyToken(firstValue(row, ["id", "slug", "matchId"])));
+  const meta = PLAYOFF_SNAPSHOT_META[snapshotId];
+  if (!meta) return null;
+
+  const homeScore = readNumber(row, ["golLocal", "gol_local", "homeScore", "home_score"]);
+  const awayScore = readNumber(row, ["golVisita", "gol_visita", "awayScore", "away_score"]);
+  if (homeScore === null || awayScore === null || homeScore === awayScore) return null;
+
+  let home = meta.home;
+  let away = meta.away;
+  if (meta.finalFrom) {
+    const semifinalKeys = [`${meta.finalFrom}-SF-1`, `${meta.finalFrom}-SF-2`];
+    const semifinalWinners = semifinalKeys
+      .map((key) => snapshotWinners.get(key))
+      .filter(Boolean) as string[];
+    if (meta.finalSeed) {
+      home = meta.finalSeed;
+      away = snapshotWinners.get(meta.finalFrom);
+    } else {
+      home = semifinalWinners[0];
+      away = semifinalWinners[1];
+    }
+  }
+
+  const winnerId = homeScore > awayScore ? home : away;
+  if (!winnerId) return null;
+  snapshotWinners.set(snapshotId, winnerId);
+  return { fixtureId: meta.fixtureId, winnerId };
+};
+
 const registerFixtureAliases = (map: Map<string, ScoreFixture>, fixtureId: string, winnerId: string) => {
   const normalizedFixtureId = normalizeKey(fixtureId);
   const normalizedWinnerId = normalizeKey(winnerId);
@@ -301,6 +353,20 @@ const registerMatchLikeRow = (
   fixtureAliases.forEach((alias) => registerFixtureAliases(fixturesById, alias, winnerId));
 };
 
+const registerPlayoffSnapshotRows = (
+  fixturesById: Map<string, ScoreFixture>,
+  rows: unknown[],
+) => {
+  const snapshotWinners = new Map<string, string>();
+  rows.forEach((raw) => {
+    const row = toRecord(raw);
+    if (!row) return;
+    const result = resolveWinnerFromSnapshot(row, snapshotWinners);
+    if (!result) return;
+    registerFixtureAliases(fixturesById, result.fixtureId, result.winnerId);
+  });
+};
+
 const fetchJsonOrNull = async (url: string) => {
   try {
     const res = await fetch(url);
@@ -338,7 +404,9 @@ const buildTelegrafoScoreData = (
   unwrapArray(matchesPayload, ["matches", "fixtures", "data", "items"]).forEach((match, index) => {
     registerMatchLikeRow(fixturesById, selectionByToken, match, [`P${index + 1}`]);
   });
-  unwrapArray(playoffPayload, ["snapshots", "matches", "fixtures", "data", "items"]).forEach((match) => {
+  const playoffRows = unwrapArray(playoffPayload, ["snapshots", "matches", "fixtures", "data", "items"]);
+  registerPlayoffSnapshotRows(fixturesById, playoffRows);
+  playoffRows.forEach((match) => {
     registerMatchLikeRow(fixturesById, selectionByToken, match);
   });
 
@@ -470,7 +538,6 @@ export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
 };
 
 export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSheetData): BracketScoreSummary => {
-  const ignoreRepechajes = isRepechajePhaseArchived(new Date());
   const allPickEntries: Array<{ pickId: string; pickWinnerToken: string }> = [];
   Object.entries(input.picks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
@@ -501,7 +568,6 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
     const fixture = sheetData.fixturesById.get(fixtureId);
     if (!fixture) continue;
     const tab = resolveTabForIds(pickId, fixture.fixtureId);
-    if (ignoreRepechajes && tab === "repechajes") continue;
 
     const winnerToken = normalizeKey(fixture.winnerId);
     if (!winnerToken || winnerToken === "EMPATE" || winnerToken.includes("/")) continue;

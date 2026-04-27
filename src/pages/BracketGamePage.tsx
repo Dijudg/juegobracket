@@ -2834,7 +2834,7 @@ export default function BracketGamePage() {
     () =>
       isViewOnly
         ? {
-            repechajes: deadlineState.hiddenTabs.repechajes,
+            repechajes: false,
             grupos: false,
             dieciseisavos: false,
             llaves: false,
@@ -4623,14 +4623,13 @@ const scheduleByMatch = useMemo(() => {
     const prev = prevR32CompleteRef.current;
     if (
       activeTab === "dieciseisavos" &&
-      activeR32Tab === "llave2" &&
       !prev &&
       r32Complete
     ) {
       goToLlavesIfReady();
     }
     prevR32CompleteRef.current = r32Complete;
-  }, [activeTab, activeR32Tab, r32Complete, goToLlavesIfReady, showNewGamePrompt, isViewOnly]);
+  }, [activeTab, r32Complete, goToLlavesIfReady, showNewGamePrompt, isViewOnly]);
 
   const clearBracketNavTarget = useCallback(() => setBracketNavTarget(null), []);
 
