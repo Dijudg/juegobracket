@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import LogotipoFanaticos from "../imports/LogotipoFanaticos";
 import menuSvgPaths from "../imports/svg-c4rl9o1tin";
 import { useNavigation } from "../contexts/NavigationContext";
@@ -6,6 +6,7 @@ import { useNavigation } from "../contexts/NavigationContext";
 type NavItem =
   | { label: string; href: string; external?: boolean }
   | { label: string; page: string }
+  | { label: "Volver al Telégrafo"; telegrafoMenu: true }
   | { label: "Polla Mundialista"; submenu: true };
 
 type HeaderProps = {
@@ -19,8 +20,22 @@ type HeaderProps = {
 const FANATICO_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
 const TELEGRAFO_URL = "https://www.eltelegrafo.com.ec";
 
+const TELEGRAFO_MENU_LINKS = [
+  { href: `${TELEGRAFO_URL}/`, label: "El Telégrafo" },
+  { href: `${TELEGRAFO_URL}/ultima-hora`, label: "Última hora" },
+  { href: `${TELEGRAFO_URL}/nacionales`, label: "Nacionales" },
+  { href: `${TELEGRAFO_URL}/internacionales`, label: "Internacionales" },
+  { href: `${TELEGRAFO_URL}/deportes`, label: "Deporte" },
+  { href: `${TELEGRAFO_URL}/tendencias`, label: "Tendencias" },
+  { href: `${TELEGRAFO_URL}/opinion`, label: "Opinión" },
+  { href: `${TELEGRAFO_URL}/especiales-et`, label: "Especiales" },
+  { href: `${TELEGRAFO_URL}/avisos`, label: "Clasificados" },
+  { href: `${TELEGRAFO_URL}/empresariales`, label: "Empresariales" },
+  { href: `${TELEGRAFO_URL}/recetas`, label: "Recetas" },
+];
+
 const NAV_LINKS: NavItem[] = [
-  { href: TELEGRAFO_URL, label: "Volver al Telegrafo", external: true },
+  { label: "Volver al Telégrafo", telegrafoMenu: true },
   { href: FANATICO_URL, label: "Portada" },
   { href: `${FANATICO_URL}envivo`, label: "En Vivo" },
   { href: `${FANATICO_URL}calendario`, label: "Calendario" },
@@ -44,7 +59,7 @@ const MOBILE_NAV_LINKS: NavItem[] = [
   { href: `${FANATICO_URL}resultados`, label: "Resultados" },
   { href: `${FANATICO_URL}estadios`, label: "Estadios" },
   { href: `${FANATICO_URL}selecciones`, label: "Selecciones" },
-  { href: TELEGRAFO_URL, label: "Volver al Telegrafo", external: true },
+  { label: "Volver al Telégrafo", telegrafoMenu: true },
 ];
 
 function BackIcon() {
@@ -279,19 +294,97 @@ function NavLink({
   );
 }
 
+const useHeaderDropdown = (open: boolean, minWidth: number) => {
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
+
+  const updatePosition = () => {
+    const button = buttonRef.current;
+    if (!button || typeof window === "undefined") return;
+    const rect = button.getBoundingClientRect();
+    const gutter = 12;
+    const width = Math.min(minWidth, window.innerWidth - gutter * 2);
+    const left = Math.min(
+      Math.max(gutter, rect.left),
+      Math.max(gutter, window.innerWidth - width - gutter),
+    );
+    const top = rect.bottom + 8;
+    setPanelStyle({
+      position: "fixed",
+      top,
+      left,
+      width,
+      maxHeight: `calc(100vh - ${top + gutter}px)`,
+      zIndex: 10000,
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPanelStyle(null);
+      return;
+    }
+    updatePosition();
+  }, [open, minWidth]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
+
+  return { buttonRef, panelRef, panelStyle, updatePosition };
+};
+
+const useCloseHeaderDropdown = (
+  open: boolean,
+  setOpen: (value: boolean) => void,
+  buttonRef: React.RefObject<HTMLElement>,
+  panelRef: React.RefObject<HTMLElement>,
+) => {
+  useEffect(() => {
+    if (!open || typeof document === "undefined") return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [buttonRef, open, panelRef, setOpen]);
+};
+
 function PollaSubmenu({
   mobile = false,
   onNewGameClick,
   onRegisterClick,
   onNavigate,
+  isActive = false,
 }: {
   mobile?: boolean;
   onNewGameClick?: () => void;
   onRegisterClick?: () => void;
   onNavigate?: () => void;
+  isActive?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const { navigateTo } = useNavigation();
+  const { buttonRef, panelRef, panelStyle, updatePosition } = useHeaderDropdown(open, mobile ? 232 : 220);
+  useCloseHeaderDropdown(open, setOpen, buttonRef, panelRef);
 
   const runAction = (action: () => void) => {
     action();
@@ -304,16 +397,16 @@ function PollaSubmenu({
     : "block w-full px-4 py-2 text-left text-sm font-semibold text-white hover:bg-neutral-800 hover:text-[#C6F600]";
 
   return (
-    <div
-      className={`relative shrink-0 ${mobile ? "" : "group"}`}
-      onMouseEnter={() => !mobile && setOpen(true)}
-      onMouseLeave={() => !mobile && setOpen(false)}
-    >
+    <div className="relative shrink-0">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          updatePosition();
+          setOpen((current) => !current);
+        }}
         className={`box-border content-stretch flex items-center justify-center gap-2 px-3 py-1 relative shrink-0 rounded transition-colors ${
-          open ? "text-[#C6F600]" : "text-white hover:text-[#C6F600]"
+          open || isActive ? "text-[#C6F600]" : "text-white hover:text-[#C6F600]"
         }`}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -324,13 +417,11 @@ function PollaSubmenu({
         <ChevronDownIcon open={open} />
       </button>
 
-      {open && (
+      {open && panelStyle && (
         <div
-          className={
-            mobile
-              ? "mt-1 min-w-52 overflow-hidden rounded-md border border-neutral-800 bg-black shadow-lg"
-              : "absolute left-0 top-full z-30 mt-1 min-w-52 overflow-hidden rounded-md border border-neutral-800 bg-black shadow-lg"
-          }
+          ref={panelRef}
+          style={panelStyle}
+          className="header-dropdown-menu overflow-y-auto rounded-md border border-neutral-800 bg-black shadow-2xl"
           role="menu"
         >
           <button
@@ -363,6 +454,62 @@ function PollaSubmenu({
   );
 }
 
+function TelegrafoSubmenu({ mobile = false }: { mobile?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { buttonRef, panelRef, panelStyle, updatePosition } = useHeaderDropdown(open, mobile ? 256 : 252);
+  useCloseHeaderDropdown(open, setOpen, buttonRef, panelRef);
+  const itemClass =
+    "block w-full px-4 py-2 text-left text-sm font-semibold text-white hover:bg-neutral-800 hover:text-[#C6F600]";
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => {
+          updatePosition();
+          setOpen((current) => !current);
+        }}
+        className={`box-border content-stretch flex items-center justify-center gap-2 px-3 py-1 relative shrink-0 rounded transition-colors ${
+          open ? "text-[#C6F600]" : "text-white hover:text-[#C6F600]"
+        }`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <span className="flex items-center gap-2">
+          <BackIcon />
+          <p className="font-semibold leading-6 not-italic relative shrink-0 text-base text-nowrap whitespace-pre">
+            Volver al Telégrafo
+          </p>
+          <ChevronDownIcon open={open} />
+        </span>
+      </button>
+
+      {open && panelStyle && (
+        <div
+          ref={panelRef}
+          style={panelStyle}
+          className="header-dropdown-menu overflow-y-auto rounded-md border border-neutral-800 bg-black shadow-2xl"
+          role="menu"
+        >
+          {TELEGRAFO_MENU_LINKS.map((link) => (
+            <a
+              key={link.label}
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              className={itemClass}
+              role="menuitem"
+            >
+              {link.label}
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Nav({
   scrollRef,
   onNewGameClick,
@@ -373,9 +520,10 @@ function Nav({
   onRegisterClick?: () => void;
 }) {
   const { currentPage } = useNavigation();
+  const isPollaActive = currentPage === "home" || currentPage === "leaderboard" || currentPage === "backend";
 
   return (
-    <div className="basis-0 bg-black shadow-md/60 grow h-8 min-h-px min-w-px relative rounded-md shrink-0">
+    <div className="basis-0 bg-black shadow-md/60 grow h-8 min-h-px min-w-px relative rounded-md shrink-0 z-[200]">
       <div
         ref={scrollRef}
         className="overflow-visible size-full"
@@ -385,7 +533,13 @@ function Nav({
             {NAV_LINKS.map((link) => (
               <div key={link.label} className="relative shrink-0">
                 {"submenu" in link ? (
-                  <PollaSubmenu onNewGameClick={onNewGameClick} onRegisterClick={onRegisterClick} />
+                  <PollaSubmenu
+                    isActive={isPollaActive}
+                    onNewGameClick={onNewGameClick}
+                    onRegisterClick={onRegisterClick}
+                  />
+                ) : "telegrafoMenu" in link ? (
+                  <TelegrafoSubmenu />
                 ) : "href" in link ? (
                   <a
                     href={link.href}
@@ -394,7 +548,7 @@ function Nav({
                     className="box-border content-stretch flex items-center justify-center px-3 py-1 relative shrink-0 rounded transition-colors text-white hover:text-[#C6F600]"
                   >
                     <span className="flex items-center gap-2">
-                      {link.label === "Volver al Telegrafo" ? <BackIcon /> : null}
+                      {link.label === "Volver al Telégrafo" ? <BackIcon /> : null}
                       <p className="font-semibold leading-6 not-italic relative shrink-0 text-base text-nowrap whitespace-pre">
                         {link.label}
                       </p>
@@ -486,6 +640,7 @@ function MobileNav({
 }) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { currentPage } = useNavigation();
+  const isPollaActive = currentPage === "home" || currentPage === "leaderboard" || currentPage === "backend";
 
   const handleScrollRight = () => {
     if (scrollContainerRef.current) {
@@ -498,7 +653,7 @@ function MobileNav({
   };
 
   return (
-    <div className="content-stretch flex gap-1 items-center relative w-5/6">
+    <div className="content-stretch flex gap-1 items-center relative w-5/6 z-[200]">
       <div className="basis-0 bg-black shadow-md/60 grow min-h-px min-w-px relative rounded-md shrink-0">
         <div
           ref={scrollContainerRef}
@@ -509,7 +664,14 @@ function MobileNav({
               {MOBILE_NAV_LINKS.map((link) => (
                 <div key={link.label} className="relative shrink-0">
                   {"submenu" in link ? (
-                    <PollaSubmenu mobile onNewGameClick={onNewGameClick} onRegisterClick={onRegisterClick} />
+                    <PollaSubmenu
+                      mobile
+                      isActive={isPollaActive}
+                      onNewGameClick={onNewGameClick}
+                      onRegisterClick={onRegisterClick}
+                    />
+                  ) : "telegrafoMenu" in link ? (
+                    <TelegrafoSubmenu mobile />
                   ) : "href" in link ? (
                     <a
                       href={link.href}
@@ -518,7 +680,7 @@ function MobileNav({
                       className="box-border content-stretch flex items-center justify-center px-3 py-1 relative shrink-0 rounded transition-colors text-white hover:text-[#C6F600]"
                     >
                       <span className="flex items-center gap-2">
-                        {link.label === "Volver al Telegrafo" ? <BackIcon /> : null}
+                        {link.label === "Volver al Telégrafo" ? <BackIcon /> : null}
                         <p className="font-semibold leading-6 not-italic relative shrink-0 text-base text-nowrap whitespace-pre">
                           {link.label}
                         </p>
@@ -550,7 +712,7 @@ export default function Header({
   const { navigateTo } = useNavigation();
 
   return (
-    <header className="content-stretch flex flex-col gap-2 items-start w-full relative">
+    <header className="content-stretch flex flex-col gap-2 items-start w-full relative z-[200]">
       <AdBanner />
       <Brand />
 

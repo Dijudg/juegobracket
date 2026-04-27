@@ -6160,7 +6160,7 @@ const scheduleByMatch = useMemo(() => {
                 <img className="modal-flip-back__logo" src={shareBackLogo} alt="7flapollalog" />
               </div>
               <div
-                className="modal-flip-front w-full max-w-lg mx-auto bg-neutral-900 text-white rounded-xl border border-neutral-700 shadow-2xl flex flex-col text-center overflow-hidden modal-glow"
+                className="champion-modal-card modal-flip-front w-full max-w-lg mx-auto bg-neutral-900 text-white rounded-xl border border-neutral-700 shadow-2xl flex flex-col text-center overflow-hidden modal-glow"
                 role="dialog"
                 aria-modal="true"
               >
@@ -6312,14 +6312,14 @@ const scheduleByMatch = useMemo(() => {
                 <div className="holo-glare" aria-hidden="true" />
                 <div className="holo-content">
               <div
-                className="holo-header w-full overflow-hidden border-b border-neutral-700"
+                className="champion-modal-header holo-header w-full overflow-hidden border-b border-neutral-700"
                 style={{ aspectRatio: "16 / 9" }}
               >
                 <img src={championBanner} alt="Campeón" className="w-full h-full object-cover" />
               </div>
-            <div className="relative flex flex-col items-center gap-3 px-6 pb-6 ">
-              <div className="absolute left-1/2 -top-16 -translate-x-1/2 z-10">
-                <div className="relative w-36 h-36 rounded-full overflow-hidden bg-neutral-700 ring-2 ring-[#c6f600] shadow-lg">
+            <div className="champion-modal-body relative flex flex-col items-center gap-3 px-6 pb-6 ">
+              <div className="champion-modal-avatar-wrap absolute left-1/2 -top-16 -translate-x-1/2 z-10">
+                <div className="champion-modal-avatar relative w-36 h-36 rounded-full overflow-hidden bg-neutral-700 ring-2 ring-[#c6f600] shadow-lg">
                   {championTeam.escudo ? (
                     <img
                       src={championTeam.escudo}
@@ -6333,25 +6333,25 @@ const scheduleByMatch = useMemo(() => {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-3 px-2 mt-20">
-               <Crown className="w-6 h-6" />
+              <div className="champion-modal-title flex items-center gap-3 px-2 mt-20">
+               <Crown className="champion-modal-crown w-6 h-6" />
                 
                 
                 <div className="flex flex-col items-start">
-                  <span className="md:text-5xl text-3xl font-black uppercase">{championTeam.nombre}</span>
+                  <span className="champion-modal-name md:text-5xl text-3xl font-black uppercase">{championTeam.nombre}</span>
                  
                 </div>
                   <div className="flex items-center gap-2 text-[#c6f600]">
               
-                <span className="text-4xl font-black uppercase">campeón!</span>
-                <Crown className="w-6 h-6" />
+                <span className="champion-modal-label text-4xl font-black uppercase">campeón!</span>
+                <Crown className="champion-modal-crown w-6 h-6" />
               </div>
               
               </div>
-              <div className="w-full flex flex-col items-center gap-2 text-xs text-gray-300">
+              <div className="champion-modal-podium w-full flex flex-col items-center gap-2 text-xs text-gray-300">
                 <div className="flex flex-wrap items-center justify-center gap-3 w-full">
                 <div className="flex items-center gap-2 px-3 py-2 ">
-                    <div className="relative w-10 h-10 rounded-full overflow-hidden bg-neutral-700 ring-2 ring-[#c0c0c0]">
+                    <div className="champion-modal-podium-flag relative w-10 h-10 rounded-full overflow-hidden bg-neutral-700 ring-2 ring-[#c0c0c0]">
                       {runnerUpTeam?.escudo ? (
                         <img
                           src={runnerUpTeam.escudo}
@@ -6370,7 +6370,7 @@ const scheduleByMatch = useMemo(() => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 px-3 py-2 ">
-                    <div className="relative w-10 h-10 rounded-full overflow-hidden ring-2 ring-[#cd7f32]">
+                    <div className="champion-modal-podium-flag relative w-10 h-10 rounded-full overflow-hidden ring-2 ring-[#cd7f32]">
                       {thirdPlaceWinner?.escudo ? (
                         <img
                           src={thirdPlaceWinner.escudo}
@@ -6392,8 +6392,8 @@ const scheduleByMatch = useMemo(() => {
               </div>
               {!isViewOnly && (
                 <>
-                  <div className="w-full flex flex-col gap-2 text-sm text-gray-300 ">
-                    <p className="text-base text-gray-400 text-balance  py-2">
+                  <div className="champion-modal-actions w-full flex flex-col gap-2 text-sm text-gray-300 ">
+                    <p className="champion-modal-copy text-base text-gray-400 text-balance  py-2">
                       Comparte tu Pronóstico (guarda la imagen subelo a tu red favorita) etiqueta a El Telégrafo,
                       Ecuadortv y PublicaFM):
                     </p>
@@ -6443,7 +6443,7 @@ const scheduleByMatch = useMemo(() => {
               <button
                 type="button"
                 onClick={() => setShowChampionModal(false)}
-                className="mt-2 px-16 py-2 rounded-md bg-[#c6f600] text-black font-semibold hover:brightness-95 m-4"
+                className="champion-modal-close mt-2 px-16 py-2 rounded-md bg-[#c6f600] text-black font-semibold hover:brightness-95 m-4"
               >
                 Cerrar
               </button>
