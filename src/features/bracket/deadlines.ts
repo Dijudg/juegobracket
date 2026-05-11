@@ -33,7 +33,7 @@ const PLAYOFF_MATCH_TO_FIXTURE: Record<string, string> = {
 
 const normalizeKey = (value?: string) => (value || "").toString().trim().toUpperCase();
 
-const parseDateAndTime = (fecha?: string, hora?: string): Date | null => {
+export const parseFixtureDateAndTime = (fecha?: string, hora?: string): Date | null => {
   const rawDate = (fecha || "").trim();
   if (!rawDate) return null;
 
@@ -95,7 +95,7 @@ const pickGroupYear = (fixtures: Fixture[], fallbackYear: number) => {
   for (const fixture of fixtures) {
     const phase = resolvePhaseForFixture(fixture.id);
     if (phase !== "grupos") continue;
-    const kickoff = parseDateAndTime(fixture.fecha, fixture.hora);
+    const kickoff = parseFixtureDateAndTime(fixture.fecha, fixture.hora);
     if (kickoff) return kickoff.getFullYear();
   }
   return fallbackYear;
@@ -147,7 +147,7 @@ export const computeBracketDeadlineState = (fixtures: Fixture[], now = new Date(
       return;
     }
 
-    const kickoff = parseDateAndTime(fixture.fecha, fixture.hora);
+    const kickoff = parseFixtureDateAndTime(fixture.fecha, fixture.hora);
     if (!kickoff) return;
     if (kickoff.getTime() <= now.getTime()) {
       lockedFixtureIds[fixtureId] = true;
@@ -183,4 +183,11 @@ export const isMatchLockedByDeadline = (matchId: string, lockState: BracketDeadl
   const fixtureId = resolveFixtureIdFromMatchId(matchId);
   if (!fixtureId) return false;
   return !!lockState.lockedFixtureIds[fixtureId];
+};
+
+export const isFixtureLockedByPredictionDeadline = (fixture: Fixture | undefined, now = new Date()) => {
+  if (!fixture) return false;
+  const kickoff = parseFixtureDateAndTime(fixture.fecha, fixture.hora);
+  if (!kickoff) return false;
+  return kickoff.getTime() - now.getTime() <= 15 * 60 * 1000;
 };

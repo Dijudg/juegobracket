@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { PlayoffPickState } from "./types";
+import type { PlayoffPickState, ScorePredictionState } from "./types";
 import localTeamsPayload from "../../data/teams.json";
 import localStandingsPayload from "../../data/standings.json";
 import localMatchesPayload from "../../data/matches.json";
@@ -14,6 +14,10 @@ export type BracketScoreInput = {
 type ScoreFixture = {
   fixtureId: string;
   winnerId: string;
+  homeId?: string;
+  awayId?: string;
+  homeScore?: number | null;
+  awayScore?: number | null;
 };
 
 export type ScoreSheetData = {
@@ -29,7 +33,26 @@ export type BracketScoreSummary = {
   evaluatedCount: number;
   pointsByTab: Record<ScoreTab, number>;
   pointsByMatchId: Record<string, number>;
+  exactCount?: number;
+  winnerCount?: number;
+  goalCount?: number;
+  uniqueExactCount?: number;
 };
+
+export type FullBracketScoreInput = BracketScoreInput & {
+  scorePredictions: ScorePredictionState;
+};
+
+const FULL_POINTS = {
+  exactScore: 5,
+  winner: 2,
+  goal: 1,
+  uniqueExact: 5,
+  roundOf16Bonus: 8,
+  quarterBonus: 4,
+  semifinalBonus: 2,
+  finalBonus: 5,
+} as const;
 
 const WORLD_FIXTURES_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=171585554&single=true&output=tsv";
@@ -248,9 +271,14 @@ const readNumber = (row: Record<string, any>, keys: string[]) => {
   return Number.isFinite(n) ? n : null;
 };
 
-const resolveWinnerFromScores = (row: Record<string, any>) => {
+const resolveScoresFromRow = (row: Record<string, any>) => {
   const homeScore = readNumber(row, ["gol_local", "golLocal", "homeScore", "home_score", "score_home", "local_score", "homeGoals"]);
   const awayScore = readNumber(row, ["gol_visita", "golVisita", "awayScore", "away_score", "score_away", "visit_score", "awayGoals"]);
+  return { homeScore, awayScore };
+};
+
+const resolveWinnerFromScores = (row: Record<string, any>) => {
+  const { homeScore, awayScore } = resolveScoresFromRow(row);
   if (homeScore === null || awayScore === null) return "";
   if (homeScore === awayScore) return "EMPATE";
   return homeScore > awayScore
@@ -292,11 +320,16 @@ const resolveWinnerFromSnapshot = (
   return { fixtureId: meta.fixtureId, winnerId };
 };
 
-const registerFixtureAliases = (map: Map<string, ScoreFixture>, fixtureId: string, winnerId: string) => {
+const registerFixtureAliases = (
+  map: Map<string, ScoreFixture>,
+  fixtureId: string,
+  winnerId: string,
+  extra: Partial<ScoreFixture> = {},
+) => {
   const normalizedFixtureId = normalizeKey(fixtureId);
   const normalizedWinnerId = normalizeKey(winnerId);
   if (!normalizedFixtureId || !normalizedWinnerId) return;
-  const fixture: ScoreFixture = { fixtureId: normalizedFixtureId, winnerId: normalizedWinnerId };
+  const fixture: ScoreFixture = { fixtureId: normalizedFixtureId, winnerId: normalizedWinnerId, ...extra };
   map.set(normalizedFixtureId, fixture);
   if (/^\d+$/.test(normalizedFixtureId)) {
     map.set(`P${normalizedFixtureId}`, { ...fixture, fixtureId: `P${normalizedFixtureId}` });
@@ -331,8 +364,8 @@ const registerMatchLikeRow = (
   registerTeamLikeRow(selectionByToken, home);
   registerTeamLikeRow(selectionByToken, away);
 
-  const homeId = firstValue(row, ["local_id", "home_id", "homeTeamId", "home_team_id", "homeTeamCode"]);
-  const awayId = firstValue(row, ["visita_id", "away_id", "awayTeamId", "away_team_id", "awayTeamCode"]);
+  const homeId = stringifyToken(firstValue(row, ["local_id", "home_id", "homeTeamId", "home_team_id", "homeTeamCode"]));
+  const awayId = stringifyToken(firstValue(row, ["visita_id", "away_id", "awayTeamId", "away_team_id", "awayTeamCode"]));
   if (homeId) registerSelectionToken(selectionByToken, homeId, stringifyToken(home) || homeId);
   if (awayId) registerSelectionToken(selectionByToken, awayId, stringifyToken(away) || awayId);
   registerSelectionToken(selectionByToken, row.homeTeamCode, stringifyToken(home) || row.homeTeamCode);
@@ -349,8 +382,15 @@ const registerMatchLikeRow = (
     "ganador",
   ]);
   const winnerId = stringifyToken(directWinner) || resolveWinnerFromScores(row);
-  registerFixtureAliases(fixturesById, fixtureId, winnerId);
-  fixtureAliases.forEach((alias) => registerFixtureAliases(fixturesById, alias, winnerId));
+  const { homeScore, awayScore } = resolveScoresFromRow(row);
+  const extra = {
+    homeId: normalizeKey(homeId),
+    awayId: normalizeKey(awayId),
+    homeScore,
+    awayScore,
+  };
+  registerFixtureAliases(fixturesById, fixtureId, winnerId, extra);
+  fixtureAliases.forEach((alias) => registerFixtureAliases(fixturesById, alias, winnerId, extra));
 };
 
 const registerPlayoffSnapshotRows = (
@@ -586,6 +626,123 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
   return { totalPoints, hitCount, evaluatedCount, pointsByTab, pointsByMatchId };
 };
 
+export const computeFullBracketScore = (
+  input: FullBracketScoreInput,
+  sheetData: ScoreSheetData,
+): BracketScoreSummary => {
+  const pointsByTab: Record<ScoreTab, number> = {
+    repechajes: 0,
+    grupos: 0,
+    dieciseisavos: 0,
+    llaves: 0,
+  };
+  const pointsByMatchId: Record<string, number> = {};
+  let evaluatedCount = 0;
+  let exactCount = 0;
+  let winnerCount = 0;
+  let goalCount = 0;
+
+  Object.entries(input.scorePredictions || {}).forEach(([predictionId, prediction]) => {
+    if (
+      !prediction ||
+      typeof prediction.home !== "number" ||
+      typeof prediction.away !== "number"
+    ) {
+      return;
+    }
+
+    const fixtureId = resolveFixtureIdFromPick(predictionId) || normalizeKey(predictionId);
+    const fixture = sheetData.fixturesById.get(fixtureId);
+    if (!fixture) return;
+    const actualHome = fixture.homeScore;
+    const actualAway = fixture.awayScore;
+    if (typeof actualHome !== "number" || typeof actualAway !== "number") return;
+
+    evaluatedCount += 1;
+    const tab = resolveTabForIds(predictionId, fixture.fixtureId);
+    const exact = prediction.home === actualHome && prediction.away === actualAway;
+    let points = 0;
+
+    if (exact) {
+      points += FULL_POINTS.exactScore;
+      exactCount += 1;
+    } else {
+      const predictedWinner =
+        prediction.home === prediction.away ? "EMPATE" : prediction.home > prediction.away ? "HOME" : "AWAY";
+      const actualWinner = actualHome === actualAway ? "EMPATE" : actualHome > actualAway ? "HOME" : "AWAY";
+      if (predictedWinner === actualWinner) {
+        points += FULL_POINTS.winner;
+        winnerCount += 1;
+      }
+      if (prediction.home === actualHome) {
+        points += FULL_POINTS.goal;
+        goalCount += 1;
+      }
+      if (prediction.away === actualAway) {
+        points += FULL_POINTS.goal;
+        goalCount += 1;
+      }
+    }
+
+    if (points > 0) {
+      pointsByTab[tab] += points;
+      pointsByMatchId[predictionId] = (pointsByMatchId[predictionId] || 0) + points;
+    }
+  });
+
+  const addAllCorrectBonus = (pickIds: string[], points: number, tab: ScoreTab, bonusKey: string) => {
+    if (!pickIds.length) return;
+    const allCorrect = pickIds.every((pickId) => {
+      const predicted = input.picks?.[pickId];
+      if (!predicted) return false;
+      const fixtureId = resolveFixtureIdFromPick(pickId);
+      if (!fixtureId) return false;
+      const fixture = sheetData.fixturesById.get(fixtureId);
+      if (!fixture?.winnerId || fixture.winnerId === "EMPATE") return false;
+      const actual = resolveComparableSelection(fixture.winnerId, sheetData.selectionByToken);
+      const expected = resolveComparableSelection(predicted, sheetData.selectionByToken);
+      return !!actual && !!expected && actual === expected;
+    });
+    if (!allCorrect) return;
+    pointsByTab[tab] += points;
+    pointsByMatchId[bonusKey] = (pointsByMatchId[bonusKey] || 0) + points;
+  };
+
+  const pickKeys = Object.keys(input.picks || {});
+  addAllCorrectBonus(
+    pickKeys.filter((id) => /^r32-/i.test(id)),
+    FULL_POINTS.roundOf16Bonus,
+    "dieciseisavos",
+    "bonus-octavos",
+  );
+  addAllCorrectBonus(
+    pickKeys.filter((id) => /^r16-/i.test(id)),
+    FULL_POINTS.quarterBonus,
+    "llaves",
+    "bonus-cuartos",
+  );
+  addAllCorrectBonus(
+    pickKeys.filter((id) => /^qf-/i.test(id)),
+    FULL_POINTS.semifinalBonus,
+    "llaves",
+    "bonus-semifinal",
+  );
+  addAllCorrectBonus(["final-104"].filter((id) => input.picks?.[id]), FULL_POINTS.finalBonus, "llaves", "bonus-final");
+
+  const totalPoints = pointsByTab.repechajes + pointsByTab.grupos + pointsByTab.dieciseisavos + pointsByTab.llaves;
+  return {
+    totalPoints,
+    hitCount: exactCount + winnerCount + goalCount,
+    evaluatedCount,
+    pointsByTab,
+    pointsByMatchId,
+    exactCount,
+    winnerCount,
+    goalCount,
+    uniqueExactCount: 0,
+  };
+};
+
 export const useBracketScore = (input: BracketScoreInput, enabled = true) => {
   const [sheetData, setSheetData] = useState<ScoreSheetData | null>(null);
   const [loading, setLoading] = useState(enabled);
@@ -624,6 +781,49 @@ export const useBracketScore = (input: BracketScoreInput, enabled = true) => {
   const summary = useMemo(() => {
     if (!enabled || !sheetData) return null;
     return computeBracketScore(input, sheetData);
+  }, [enabled, input, sheetData]);
+
+  return { summary, loading, error };
+};
+
+export const useFullBracketScore = (input: FullBracketScoreInput, enabled = true) => {
+  const [sheetData, setSheetData] = useState<ScoreSheetData | null>(null);
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      setSheetData(null);
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    setError(null);
+    loadScoreSheetData()
+      .then((data) => {
+        if (!active) return;
+        setSheetData(data);
+      })
+      .catch(() => {
+        if (!active) return;
+        setError("No pudimos calcular el puntaje.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [enabled]);
+
+  const summary = useMemo(() => {
+    if (!enabled || !sheetData) return null;
+    return computeFullBracketScore(input, sheetData);
   }, [enabled, input, sheetData]);
 
   return { summary, loading, error };

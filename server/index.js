@@ -131,6 +131,9 @@ const buildConsentReport = (payload) => {
     "consent_marketing",
     "consent_news",
     "consent_updates",
+    "acepta_publicidad",
+    "acepta_noticias_correo",
+    "acepta_informativos",
     "consent_timestamp",
     "consent_source",
     "method",
@@ -292,6 +295,15 @@ app.post("/api/consent-notify", async (req, res) => {
       consent_marketing: Boolean(consent.consent_marketing),
       consent_news: Boolean(consent.consent_news),
       consent_updates: Boolean(consent.consent_updates),
+      acepta_publicidad: Boolean(
+        body.acepta_publicidad ?? consent.acepta_publicidad ?? consent.consent_marketing,
+      ),
+      acepta_noticias_correo: Boolean(
+        body.acepta_noticias_correo ?? consent.acepta_noticias_correo ?? consent.consent_news,
+      ),
+      acepta_informativos: Boolean(
+        body.acepta_informativos ?? consent.acepta_informativos ?? consent.consent_updates,
+      ),
       consent_timestamp: consent.consent_timestamp || new Date().toISOString(),
       consent_source: consent.consent_source || body.source || "",
       method: typeof body.method === "string" ? body.method : "",

@@ -1,5 +1,6 @@
 ﻿import { Crown, ChevronDown, CalendarDays } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BarChart3, ChevronRight, ClipboardList, Info, Star, Trophy } from "lucide-react";
 import type { PointerEvent } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
@@ -20,7 +21,7 @@ import saveBanner from "../assets/guardar.jpg";
 import intercontinentalBanner from "../assets/Intercontinental.jpg";
 import championBanner from "../assets/final.jpg";
 import modalBackImage from "../assets/fondo.jpg";
-import mundialBanner from "../assets/mundial.png";
+import portadaBanner from "../assets/fondo-portada.webp";
 import shareBackLogo from "../assets/7flapollalog.png";
 import guestAvatar from "../assets/Fanatico-m.svg";
 import guestCover from "../assets/polla-banner.jpg";
@@ -47,6 +48,7 @@ import type {
   PlayoffPickState,
   SavedBracketMeta,
   Seeds,
+  ScorePredictionState,
   Team,
 } from "../features/bracket/types";
 import {
@@ -63,9 +65,10 @@ import { DieciseisavosKeyBlock } from "../features/bracket/components/Dieciseisa
 import { PlayoffKeyBlock } from "../features/bracket/components/PlayoffKeyBlock";
 import { RepechajeWinnerBadge } from "../features/bracket/components/RepechajeWinnerBadge";
 import { KnockoutBracket } from "../features/bracket/components/KnockoutBracket";
-import { useBracketScore } from "../features/bracket/score";
+import { useBracketScore, useFullBracketScore } from "../features/bracket/score";
 import {
   computeBracketDeadlineState,
+  isFixtureLockedByPredictionDeadline,
   isMatchLockedByDeadline,
   isRepechajePhaseArchived,
   type BracketTab,
@@ -76,6 +79,7 @@ import { useHoloPointer } from "../features/bracket/hooks/useHoloPointer";
 import { useNavigation } from "../contexts/NavigationContext";
 import { AuthModal } from "../components/AuthModal";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
+import { ScorePredictionCard, ScorePredictionMatchCard } from "../features/bracket/components/ScorePredictionCard";
 import {
   buildConsentPayload,
   clearPendingConsent,
@@ -116,6 +120,7 @@ const LS_UEFA = "fm-repechaje-uefa";
 const LS_TEAMS = "fm-teams";
 const LS_GUEST_BRACKET = "fm-guest-bracket";
 const LS_PENDING_AUTH_SAVE = "fm-pending-auth-save";
+const LS_GAME_MODE = "fm-game-mode";
 const GUEST_SAVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundialista/";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
@@ -129,6 +134,16 @@ const EMPTY_PHASE_LOCKS: PhaseLockState = {
   dieciseisavos: false,
   llaves: false,
 };
+const FULL_MODE_POINTS = {
+  exactScore: 5,
+  winner: 2,
+  goal: 1,
+  uniqueExact: 5,
+  roundOf16Bonus: 8,
+  quarterBonus: 4,
+  semifinalBonus: 2,
+  finalBonus: 5,
+} as const;
 const RULES_STEPS_WITH_REPECHAJES = [
   {
     title: "Empieza por los repechajes",
@@ -212,6 +227,15 @@ const isTouch =
 const deg2rad = (value: number) => (value * Math.PI) / 180;
 const rad2deg = (value: number) => (value * 180) / Math.PI;
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const hasScorePrediction = (prediction?: { home?: number | null; away?: number | null }) =>
+  typeof prediction?.home === "number" && typeof prediction?.away === "number";
+
+const scoreWinnerSide = (prediction?: { home?: number | null; away?: number | null }) => {
+  if (!hasScorePrediction(prediction)) return null;
+  if ((prediction!.home as number) === (prediction!.away as number)) return "draw";
+  return (prediction!.home as number) > (prediction!.away as number) ? "home" : "away";
+};
 
 const MODAL_ROTATE_SPEED = 0.005;
 const MODAL_INERTIA = 0.92;
@@ -921,6 +945,15 @@ export default function BracketGamePage() {
   const [selections, setSelections] = useState<GroupSelections>({});
   const [bestThirdIds, setBestThirdIds] = useState<string[]>([]);
   const [picks, setPicks] = useState<Record<string, string | undefined>>({});
+  const [gameMode, setGameMode] = useState<"classic" | "full">(() => {
+    if (typeof window === "undefined") return "classic";
+    return window.localStorage.getItem(LS_GAME_MODE) === "full" ? "full" : "classic";
+  });
+  const [hasSelectedGameMode, setHasSelectedGameMode] = useState(false);
+  const [activeFullGroup, setActiveFullGroup] = useState("A");
+  const [fullGroupDirection, setFullGroupDirection] = useState<1 | -1>(1);
+  const [scorePredictions, setScorePredictions] = useState<ScorePredictionState>({});
+  const [scoreModalMatch, setScoreModalMatch] = useState<Match | null>(null);
   const [activeTab, setActiveTab] = useState<BracketTab>(() =>
     isRepechajePhaseArchived(new Date()) ? "grupos" : "repechajes",
   );
@@ -967,7 +1000,16 @@ export default function BracketGamePage() {
     }),
     [picks, intercontinentalPicks, uefaPicks],
   );
-  const { summary: bracketScoreSummary } = useBracketScore(bracketScoreInput, isViewOnly);
+  const fullScoreInput = useMemo(
+    () => ({
+      ...bracketScoreInput,
+      scorePredictions,
+    }),
+    [bracketScoreInput, scorePredictions],
+  );
+  const { summary: classicScoreSummary } = useBracketScore(bracketScoreInput, isViewOnly && gameMode !== "full");
+  const { summary: fullScoreSummary } = useFullBracketScore(fullScoreInput, isViewOnly && gameMode === "full");
+  const bracketScoreSummary = gameMode === "full" ? fullScoreSummary : classicScoreSummary;
   const scoreByMatchId = bracketScoreSummary?.pointsByMatchId || {};
   const phaseBlockBannerPick = useMemo(() => pickStopBanner(), [!!phaseBlock]);
   const r32BannerPick = useMemo(() => pickStopBanner(), [showR32Warning]);
@@ -1033,6 +1075,10 @@ export default function BracketGamePage() {
     const timer = window.setInterval(() => setNowTs(Date.now()), 30 * 1000);
     return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(LS_GAME_MODE, gameMode);
+  }, [gameMode]);
   const scrollToTop = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (typeof window === "undefined") return;
     window.scrollTo({ top: 0, behavior });
@@ -1321,6 +1367,7 @@ export default function BracketGamePage() {
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [registeredSavePopup, setRegisteredSavePopup] = useState(false);
   const [savedBrackets, setSavedBrackets] = useState<SavedBracketMeta[]>([]);
   const [selectedOverwriteId, setSelectedOverwriteId] = useState<string | null>(null);
   const [currentSaveId, setCurrentSaveId] = useState<string | null>(null);
@@ -1569,17 +1616,19 @@ export default function BracketGamePage() {
         }
       : undefined;
     return {
-      version: 2,
+      version: 3,
+      gameMode,
       selections: selectionPayload,
       bestThirdIds,
       picks,
+      scorePredictions,
       intercontinentalPicks,
       uefaPicks,
       isLocked,
       phaseLocks,
       sharedBy,
     };
-  }, [selections, bestThirdIds, picks, intercontinentalPicks, uefaPicks, isLocked, phaseLocks, authUser]);
+  }, [selections, bestThirdIds, picks, scorePredictions, intercontinentalPicks, uefaPicks, isLocked, phaseLocks, authUser, gameMode]);
 
   const applySavedBracket = useCallback(
     (payload: BracketSavePayload) => {
@@ -1594,6 +1643,9 @@ export default function BracketGamePage() {
       setSelections(nextSelections);
       setBestThirdIds(payload.bestThirdIds || []);
       setPicks(payload.picks || {});
+      setGameMode(payload.gameMode === "full" ? "full" : "classic");
+      setHasSelectedGameMode(true);
+      setScorePredictions(payload.scorePredictions || {});
       setIntercontinentalPicks(payload.intercontinentalPicks || {});
       setUefaPicks(payload.uefaPicks || {});
       setIsLocked(payload.isLocked ?? false);
@@ -2130,13 +2182,8 @@ export default function BracketGamePage() {
     });
     setSaveError(null);
     setShowSaveModal(false);
-    if (authSession?.access_token && currentSaveId) {
-      setShowChampionModal(false);
-      setSaveNotice("Tu juego ya ha sido guardado.");
-      return;
-    }
     const autoName = generateBracketCode();
-    setSaveMode("new");
+    setSaveMode(authSession?.access_token && currentSaveId ? "update" : "new");
     setSaveName(autoName);
     setSelectedOverwriteId(null);
     if (!authSession?.access_token) {
@@ -2275,11 +2322,19 @@ export default function BracketGamePage() {
       const userId = requireAuthUserId();
       if (currentSaveId) {
         if ((options?.source || "save") === "save") {
-          setSaveError("Tu juego ya ha sido guardado.");
-          return {
-            ok: false,
-            error: "Tu juego ya ha sido guardado.",
-          };
+          const { error } = await supabase
+            .from("bracket_saves")
+            .update({ data: payload, name: currentSaveName || name })
+            .eq("id", currentSaveId)
+            .eq("user_id", userId);
+          if (error) throw error;
+          setShowSaveModal(false);
+          setSaveNotice("Partida guardada correctamente.");
+          trackEvent("save_success", {
+            mode: "update",
+            is_authed: true,
+            save_target: "user",
+          });
         }
         return {
           ok: true,
@@ -2473,9 +2528,8 @@ export default function BracketGamePage() {
       if (result.ok) {
         clearPendingAuthSaveState();
         setAuthIntent("default");
-        setShowAuthModal(false);
         setSaveNotice("Tu juego quedó guardado en tu cuenta.");
-        navigateTo("backend");
+        setRegisteredSavePopup(true);
         return;
       }
       pendingAuthSaveRef.current = false;
@@ -2488,7 +2542,6 @@ export default function BracketGamePage() {
     authSession?.access_token,
     clearPendingAuthSaveState,
     handleConfirmSave,
-    navigateTo,
     readGuestSave,
     readPendingAuthSave,
   ]);
@@ -3324,6 +3377,8 @@ export default function BracketGamePage() {
     reset();
     resetIntercontinental();
     resetUEFA();
+    setScorePredictions({});
+    setScoreModalMatch(null);
   };
   const handleFinalReset = () => {
     if (!authUser || resetAttemptsLeft === null || resetAttemptsLeft <= 0) return;
@@ -3367,7 +3422,9 @@ export default function BracketGamePage() {
     setSaveError(null);
     setSaveNotice(null);
     setShowNewGamePrompt(false);
+    setRegisteredSavePopup(false);
     suspendAutoAdvanceRef.current = false;
+    setHasSelectedGameMode(false);
     if (!authSession?.access_token) {
       clearGuestSave();
       setGuestSharePanel(null);
@@ -3667,6 +3724,50 @@ const scheduleByMatch = useMemo(() => {
   });
   return map;
 }, [fixtures]);
+
+const fixtureByMatchKey = useMemo(() => {
+  const map: Record<string, Fixture> = {};
+  fixtures.forEach((fx) => {
+    const id = normalizeMatchKey(fx.id);
+    if (id) map[id] = fx;
+  });
+  return map;
+}, [fixtures]);
+
+const findFixtureForMatch = useCallback(
+  (matchId?: string, label?: string) => {
+    const labelKey = normalizeMatchKey(label);
+    const idKey = normalizeMatchKey(matchId);
+    return (labelKey && fixtureByMatchKey[labelKey]) || (idKey && fixtureByMatchKey[idKey]) || undefined;
+  },
+  [fixtureByMatchKey],
+);
+
+const isScorePredictionLocked = useCallback(
+  (matchId?: string, label?: string) => {
+    if (isViewOnly) return true;
+    const fixture = findFixtureForMatch(matchId, label);
+    return isFixtureLockedByPredictionDeadline(fixture, new Date(nowTs));
+  },
+  [findFixtureForMatch, isViewOnly, nowTs],
+);
+
+const handleScorePredictionChange = useCallback(
+  (matchId: string, side: "home" | "away", value: number | null) => {
+    if (isScorePredictionLocked(matchId) || isMatchBlockedByDeadline(matchId)) return;
+    setScorePredictions((prev) => {
+      const current = prev[matchId] || {};
+      return {
+        ...prev,
+        [matchId]: {
+          ...current,
+          [side]: value,
+        },
+      };
+    });
+  },
+  [isMatchBlockedByDeadline, isScorePredictionLocked],
+);
 
   const { r32, r16, qf, sf, final, thirdPlace } = useMemo(() => {
     if (bestThirdIds.length < MAX_THIRD) return { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] };
@@ -4506,6 +4607,103 @@ const scheduleByMatch = useMemo(() => {
     [selections],
   );
 
+  const groupFixturesByGroup = useMemo(() => {
+    const map: Record<string, Fixture[]> = {};
+    fixtures.forEach((fixture) => {
+      const group = fixture.group?.toUpperCase();
+      if (!group || !GROUP_LETTERS.includes(group)) return;
+      const num = Number.parseInt(normalizeMatchKey(fixture.id), 10);
+      if (Number.isFinite(num) && num > 72) return;
+      map[group] = [...(map[group] || []), fixture];
+    });
+    Object.values(map).forEach((items) =>
+      items.sort((a, b) => normalizeMatchKey(a.id).localeCompare(normalizeMatchKey(b.id), undefined, { numeric: true })),
+    );
+    return map;
+  }, [fixtures]);
+
+  const fullModeGroupTables = useMemo(() => {
+    const tables: Record<
+      string,
+      Array<Team & { pts: number; pj: number; pg: number; pe: number; pp: number; gf: number; gc: number; dif: number }>
+    > = {};
+    groups.forEach(({ grupo, equipos }) => {
+      const rows = new Map(
+        equipos.map((team) => [
+          team.id,
+          {
+            ...team,
+            pts: 0,
+            pj: 0,
+            pg: 0,
+            pe: 0,
+            pp: 0,
+            gf: 0,
+            gc: 0,
+            dif: 0,
+          },
+        ]),
+      );
+      (groupFixturesByGroup[grupo] || []).forEach((fixture) => {
+        const home = fixture.homeId ? resolveTeamForGroup(fixture.homeId, grupo) : undefined;
+        const away = fixture.awayId ? resolveTeamForGroup(fixture.awayId, grupo) : undefined;
+        if (!home || !away) return;
+        const prediction = scorePredictions[normalizeMatchKey(fixture.id)];
+        if (!hasScorePrediction(prediction)) return;
+        const homeRow = rows.get(home.id);
+        const awayRow = rows.get(away.id);
+        if (!homeRow || !awayRow) return;
+        const homeGoals = prediction!.home as number;
+        const awayGoals = prediction!.away as number;
+        homeRow.pj += 1;
+        awayRow.pj += 1;
+        homeRow.gf += homeGoals;
+        homeRow.gc += awayGoals;
+        awayRow.gf += awayGoals;
+        awayRow.gc += homeGoals;
+        if (homeGoals === awayGoals) {
+          homeRow.pe += 1;
+          awayRow.pe += 1;
+          homeRow.pts += 1;
+          awayRow.pts += 1;
+        } else if (homeGoals > awayGoals) {
+          homeRow.pg += 1;
+          awayRow.pp += 1;
+          homeRow.pts += 3;
+        } else {
+          awayRow.pg += 1;
+          homeRow.pp += 1;
+          awayRow.pts += 3;
+        }
+      });
+      const result = Array.from(rows.values())
+        .map((row) => ({ ...row, dif: row.gf - row.gc }))
+        .sort((a, b) => b.pts - a.pts || b.dif - a.dif || b.gf - a.gf || a.nombre.localeCompare(b.nombre, "es"));
+      tables[grupo] = result;
+    });
+    return tables;
+  }, [groupFixturesByGroup, groups, resolveTeamForGroup, scorePredictions]);
+
+  const fullGroupKeys = useMemo(() => groups.map(({ grupo }) => grupo), [groups]);
+  const currentFullGroup = useMemo(
+    () => (fullGroupKeys.includes(activeFullGroup) ? activeFullGroup : fullGroupKeys[0] || "A"),
+    [activeFullGroup, fullGroupKeys],
+  );
+  const activeFullGroupData = useMemo(
+    () => groups.find(({ grupo }) => grupo === currentFullGroup),
+    [currentFullGroup, groups],
+  );
+  const navigateFullGroup = useCallback(
+    (direction: -1 | 1) => {
+      if (!fullGroupKeys.length) return;
+      const currentIndex = Math.max(0, fullGroupKeys.indexOf(currentFullGroup));
+      const nextIndex = (currentIndex + direction + fullGroupKeys.length) % fullGroupKeys.length;
+      setFullGroupDirection(direction);
+      setActiveFullGroup(fullGroupKeys[nextIndex]);
+    },
+    [currentFullGroup, fullGroupKeys],
+  );
+
   const r32Complete = useMemo(
     () => r32.length > 0 && r32.every((m) => !!picks[m.id]),
     [r32, picks],
@@ -4664,12 +4862,14 @@ const scheduleByMatch = useMemo(() => {
               seedLabel={getSeedLabelR32}
               scoreByMatchId={scoreByMatchId}
               isMatchLocked={isMatchBlockedByDeadline}
+              scorePredictions={gameMode === "full" ? scorePredictions : undefined}
+              onScoreChange={gameMode === "full" ? handleScorePredictionChange : undefined}
             />,
         );
       }
       return items;
     },
-    [isMatchBlockedByDeadline, isPhaseLocked, scheduleByMatch, scoreByMatchId],
+    [gameMode, handleScorePredictionChange, isMatchBlockedByDeadline, isPhaseLocked, scheduleByMatch, scoreByMatchId, scorePredictions],
   );
 
   useEffect(() => {
@@ -4746,18 +4946,22 @@ const scheduleByMatch = useMemo(() => {
     setShowSemifinalPrompt(true);
   }, [activeTab, isViewOnly, picks, sfComplete, showNewGamePrompt]);
 
+    const showModeHome = !isViewOnly && !hasSelectedGameMode;
+
     const anyModalOpen =
-      showThirdsModal ||
-      !!showFixturesGroup ||
-      showRulesModal ||
-      showR32Warning ||
-      showSemifinalPrompt ||
-      !!phaseBlock ||
-      showIntercontinentalModal ||
       showAuthModal ||
-      showSaveModal ||
-      showChampionModal ||
-      showNewGamePrompt;
+      registeredSavePopup ||
+      (!showModeHome &&
+        (showThirdsModal ||
+          !!showFixturesGroup ||
+          showRulesModal ||
+          showR32Warning ||
+          showSemifinalPrompt ||
+          !!phaseBlock ||
+          showIntercontinentalModal ||
+          showSaveModal ||
+          showChampionModal ||
+          showNewGamePrompt));
     useBodyScrollLock(anyModalOpen);
 
   useEffect(() => {
@@ -4769,6 +4973,7 @@ const scheduleByMatch = useMemo(() => {
       setShowR32Warning(false);
       setShowSemifinalPrompt(false);
       setShowChampionModal(false);
+      setRegisteredSavePopup(false);
       setShowNewGamePrompt(false);
       closeAuthModal();
       closeSaveModal();
@@ -4793,6 +4998,7 @@ const scheduleByMatch = useMemo(() => {
     phaseBlock,
     showIntercontinentalModal,
     showAuthModal,
+    registeredSavePopup,
     showSaveModal,
     showChampionModal,
     showNewGamePrompt,
@@ -5250,7 +5456,7 @@ const scheduleByMatch = useMemo(() => {
               <>
                 {authSlotMobile && <div className="md:hidden flex justify-end mb-3">{authSlotMobile}</div>}
                 {authSlot && <div className="hidden md:flex justify-end mb-3">{authSlot}</div>}
-                <div className="flex items-center gap-3 ">
+                {!showModeHome && <div className="flex flex-col gap-3 md:flex-row md:items-end">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
                       <span className="font-semibold text-gray-200">Progreso</span>
@@ -5265,11 +5471,117 @@ const scheduleByMatch = useMemo(() => {
                       />
                     </div>
                   </div>
-                </div>
+                  {authSession?.access_token && (
+                    <button
+                      type="button"
+                      onClick={handleSaveClick}
+                      disabled={saveBusy || confirmSaveInFlightRef.current || pendingAuthSaveRef.current}
+                      className={`inline-flex min-h-11 items-center justify-center rounded-md px-5 text-sm font-black uppercase transition ${
+                        saveBusy || confirmSaveInFlightRef.current || pendingAuthSaveRef.current
+                          ? "bg-neutral-700 text-gray-400 cursor-not-allowed"
+                          : "bg-[#c6f600] text-black hover:brightness-95"
+                      }`}
+                    >
+                      {saveBusy || confirmSaveInFlightRef.current || pendingAuthSaveRef.current
+                        ? "Guardando..."
+                        : currentSaveId
+                          ? "Guardar partida"
+                          : "Guardar partida"}
+                    </button>
+                  )}
+                </div>}
+                {showModeHome && (
+                <section
+                  className="game-mode-home"
+                  style={{ ["--mode-home-bg" as any]: `url(${portadaBanner})` }}
+                  aria-label="Seleccionar modo de juego"
+                >
+                  <div className="game-mode-home__header">
+                    <div className="game-mode-home__laurel" aria-hidden="true">‹</div>
+                    <div className="min-w-0">
+                      <h1 className="game-mode-home__title">
+                        <span>El Mundial</span>
+                        <strong>es tuyo</strong>
+                      </h1>
+                      <p className="game-mode-home__subtitle">Elige tu modo de juego y arma tu camino hacia la gloria.</p>
+                      {!authSession?.access_token && (
+                        <div className="game-mode-home__auth">
+                          <button
+                            type="button"
+                            onClick={() => openAuthModal("signup")}
+                            className="game-mode-home__auth-button game-mode-home__auth-button--primary"
+                          >
+                            Registrarse
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openAuthModal("login")}
+                            className="game-mode-home__auth-button"
+                          >
+                            Iniciar sesión
+                          </button>
+                        </div>
+                      )}
+                      {authSession?.access_token && (
+                        <p className="game-mode-home__session">Sesión iniciada. Elige cómo quieres jugar.</p>
+                      )}
+                    </div>
+                    <div className="game-mode-home__laurel game-mode-home__laurel--right" aria-hidden="true">›</div>
+                  </div>
+
+                  <div className="game-mode-home__cards">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGameMode("classic");
+                        setHasSelectedGameMode(true);
+                      }}
+                      className="game-mode-card game-mode-card--classic"
+                      style={{ ["--mode-card-bg" as any]: `url(${championBanner})` }}
+                    >
+                      <span className="game-mode-card__icon"><ClipboardList /></span>
+                      <span className="game-mode-card__title">Clásico</span>
+                      <span className="game-mode-card__subtitle">Modo tradicional de predicción.</span>
+                      <span className="game-mode-card__feature">
+                        <BarChart3 />
+                        <Star />
+                        <span>Clasificados, llaves y campeón.</span>
+                      </span>
+                      <span className="game-mode-card__cta">
+                        Jugar modo clásico
+                        <ChevronRight />
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGameMode("full");
+                        setHasSelectedGameMode(true);
+                      }}
+                      className="game-mode-card game-mode-card--full"
+                      style={{ ["--mode-card-bg" as any]: `url(${intercontinentalBanner})` }}
+                    >
+                      <span className="game-mode-card__icon"><Trophy /></span>
+                      <span className="game-mode-card__title">Completo</span>
+                      <span className="game-mode-card__subtitle">Predice todo y suma más puntos.</span>
+                      <span className="game-mode-card__feature">
+                        <BarChart3 />
+                        <Star />
+                        <span>Marcadores por partido, clasificados y bonos por fase.</span>
+                      </span>
+                      <span className="game-mode-card__cta">
+                        Jugar modo completo
+                        <ChevronRight />
+                      </span>
+                    </button>
+                  </div>
+                </section>
+                )}
               </>
             )}
 
-          {!isEmbedded && (
+          {!showModeHome && !isEmbedded && (
             <div className="flex items-center mb-3 overflow-x-auto flex-nowrap scrollbar-hide">
             {!deadlineHiddenTabs.repechajes && (
               <button
@@ -5333,10 +5645,23 @@ const scheduleByMatch = useMemo(() => {
                 Llaves finales
               </button>
             )}
+            {gameMode === "full" && (
+              <a
+                href="/reglas-juego"
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigateTo("rules");
+                }}
+                className="ml-1 inline-flex items-center gap-2 rounded-b-xl rounded-t-none border-l border-neutral-800 px-3 py-2 whitespace-nowrap text-base font-semibold text-gray-400 transition hover:text-white"
+              >
+                <Info className="size-4 text-[#c6f600]" />
+                Reglas
+              </a>
+            )}
             </div>
           )}
 
-            {!isViewOnly && saveNotice && (
+            {!showModeHome && !isViewOnly && saveNotice && (
               <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-[#c6f600]/40 bg-black/60 px-3 py-2 text-sm text-gray-200">
                 <span>{saveNotice}</span>
                 <div className="flex items-center gap-2">
@@ -5360,8 +5685,9 @@ const scheduleByMatch = useMemo(() => {
               </div>
             )}
 
-            <AnimatePresence>
-              {showGuestCodeSticky && guestSharePanel && (
+          {!showModeHome && (<>
+          <AnimatePresence>
+              {!showModeHome && showGuestCodeSticky && guestSharePanel && (
                 <motion.div
                   key={`guest-code-${guestSharePanel.code}`}
                   className="guest-code-bar"
@@ -5527,6 +5853,8 @@ const scheduleByMatch = useMemo(() => {
                                   showFinalHint={showRepechajeFinalHint}
                                   scoreByMatchId={scoreByMatchId}
                                   isMatchLocked={isMatchBlockedByDeadline}
+                                  scorePredictions={gameMode === "full" ? scorePredictions : undefined}
+                                  onScoreChange={gameMode === "full" ? handleScorePredictionChange : undefined}
                                 />
                               ))}
                             </div>
@@ -5559,6 +5887,8 @@ const scheduleByMatch = useMemo(() => {
                                   showFinalHint={showRepechajeFinalHint}
                                   scoreByMatchId={scoreByMatchId}
                                   isMatchLocked={isMatchBlockedByDeadline}
+                                  scorePredictions={gameMode === "full" ? scorePredictions : undefined}
+                                  onScoreChange={gameMode === "full" ? handleScorePredictionChange : undefined}
                                 />
                               ))}
                             </div>
@@ -5593,7 +5923,7 @@ const scheduleByMatch = useMemo(() => {
               transition={{ duration: 0.3, ease: "easeOut" }}
               className="flex flex-col"
             >
-            {!isViewOnly && (
+            {!isViewOnly && gameMode !== "full" && (
               <div className="flex items-center justify-center gap-3 mb-6 bracket-panel  modal-glow p-6 rounded-lg">
                 <div>
                   <h1 className="text-3xl font-bold text-center py-4 text-[#c6f600]">Arma tu camino al título</h1>
@@ -5642,43 +5972,174 @@ const scheduleByMatch = useMemo(() => {
               </div>
             )}
 
-            <div
-              ref={progressGroupsRef}
-              className="groups-grid grid gap-2 px-1 sm:px-2 md:px-4 lg:px-6 sm:grid-cols-2 lg:grid-cols-4"
-            >
-            {groups.map(({ grupo, equipos }) => (
-              <div key={grupo} className="bg-neutral-800 rounded-lg p-3 border border-neutral-700">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[#c6f600] text-xl font-black">Grupo {grupo}</p>
-                  {!isViewOnly && (
+            {gameMode === "full" ? (
+              <div ref={progressGroupsRef} className="full-groups-layout">
+                <div className="full-group-tabs" role="tablist" aria-label="Grupos">
+                  {groups.map(({ grupo }) => (
                     <button
+                      key={`full-tab-${grupo}`}
                       type="button"
-                      className={`text-xs text-gray-400 hover:text-white inline-flex items-center gap-1 ${
-                        openGroups[grupo] ?? true ? "" : "rotate-180"
-                      }`}
-                      onClick={() =>
-                        setOpenGroups((prev) => ({
-                          ...prev,
-                          [grupo]: !(prev[grupo] ?? true),
-                        }))
-                      }
+                      onClick={() => {
+                        const currentIndex = fullGroupKeys.indexOf(currentFullGroup);
+                        const nextIndex = fullGroupKeys.indexOf(grupo);
+                        setFullGroupDirection(nextIndex >= currentIndex ? 1 : -1);
+                        setActiveFullGroup(grupo);
+                      }}
+                      className={`full-group-tab ${currentFullGroup === grupo ? "is-active" : ""}`}
+                      aria-selected={currentFullGroup === grupo}
                     >
-                      <ChevronDown className="w-4 h-4 transition-transform" />
+                      {grupo}
                     </button>
-                  )}
-                  {!isViewOnly && (
-                    <button
-                      type="button"
-                      className="text-xs text-gray-400 hover:text-white inline-flex items-center  gap-1"
-                      onClick={() => setShowFixturesGroup(grupo)}
-                    >
-                      <CalendarDays className="w-4 h-4 text-[#c6f600]" />
-                    </button>
-                  )}
+                  ))}
                 </div>
-                {!isViewOnly && (openGroups[grupo] ?? true) ? (
-                  <div className="flex flex-col gap-1 ">
-                    {equipos.map((team) => {
+                {activeFullGroupData && (
+                  <section
+                    key={currentFullGroup}
+                    id={`full-group-${currentFullGroup}`}
+                    className={`full-group-panel ${
+                      fullGroupDirection === 1 ? "full-group-panel--next" : "full-group-panel--prev"
+                    }`}
+                  >
+                    <div className="full-group-matches">
+                      {(groupFixturesByGroup[currentFullGroup] || []).map((fixture) => {
+                        const home = resolveTeamForGroup(fixture.homeId, currentFullGroup);
+                        const away = resolveTeamForGroup(fixture.awayId, currentFullGroup);
+                        const matchKey = normalizeMatchKey(fixture.id);
+                        return (
+                          <ScorePredictionCard
+                            key={`group-score-${fixture.id}`}
+                            matchId={matchKey}
+                            phaseLabel="Fase de grupos"
+                            schedule={{
+                              fecha: fixture.fecha,
+                              hora: fixture.hora,
+                              estadio: fixture.estadio,
+                              locacion: fixture.locacion,
+                              homeId: fixture.homeId,
+                              awayId: fixture.awayId,
+                            }}
+                            homeTeam={home}
+                            awayTeam={away}
+                            value={scorePredictions[matchKey]}
+                            locked={isScorePredictionLocked(matchKey)}
+                            onScoreChange={handleScorePredictionChange}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="full-group-table-wrap">
+                      <div className="full-group-title-row">
+                        <button
+                          type="button"
+                          className="full-group-arrow"
+                          aria-label="Grupo anterior"
+                          onClick={() => navigateFullGroup(-1)}
+                        >
+                          ‹
+                        </button>
+                        <h2>Grupo {currentFullGroup}</h2>
+                        <button
+                          type="button"
+                          className="full-group-arrow"
+                          aria-label="Grupo siguiente"
+                          onClick={() => navigateFullGroup(1)}
+                        >
+                          ›
+                        </button>
+                      </div>
+                      <table className="full-group-table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Seleccion</th>
+                            <th>Pts</th>
+                            <th>PJ</th>
+                            <th>PG</th>
+                            <th>PE</th>
+                            <th>PP</th>
+                            <th>Dif</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(fullModeGroupTables[currentFullGroup] || []).map((team, idx) => (
+                            <tr key={`full-row-${currentFullGroup}-${team.id}`}>
+                              <td>{idx + 1}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  disabled={isPhaseLocked("grupos") || phaseDeadlineLocked.grupos}
+                                  onClick={() => handlePick(currentFullGroup, team)}
+                                  className={`full-group-team ${
+                                    selections[currentFullGroup]?.primero?.id === team.id ||
+                                    selections[currentFullGroup]?.segundo?.id === team.id ||
+                                    selections[currentFullGroup]?.tercero?.id === team.id
+                                      ? "is-picked"
+                                      : ""
+                                  }`}
+                                >
+                                  <span className="full-group-team__flag">
+                                    {team.escudo ? <img src={team.escudo} alt={team.nombre} /> : team.codigo}
+                                  </span>
+                                  <span className="full-group-team__name">{team.nombre || team.codigo}</span>
+                                </button>
+                              </td>
+                              <td className="is-points">{team.pts}</td>
+                              <td>{team.pj}</td>
+                              <td>{team.pg}</td>
+                              <td>{team.pe}</td>
+                              <td>{team.pp}</td>
+                              <td>{team.dif}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="full-group-selected">
+                        <span>1ro: {selections[currentFullGroup]?.primero?.codigo || "--"}</span>
+                        <span>2do: {selections[currentFullGroup]?.segundo?.codigo || "--"}</span>
+                        <span>3ro: {selections[currentFullGroup]?.tercero?.codigo || "--"}</span>
+                      </div>
+                    </div>
+                  </section>
+                )}
+              </div>
+            ) : (
+              <div
+                ref={progressGroupsRef}
+                className="groups-grid grid gap-2 px-1 sm:px-2 md:px-4 lg:px-6 sm:grid-cols-2 lg:grid-cols-4"
+              >
+              {groups.map(({ grupo, equipos }) => (
+                <div key={grupo} className="bg-neutral-800 rounded-lg p-3 border border-neutral-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[#c6f600] text-xl font-black">Grupo {grupo}</p>
+                    {!isViewOnly && (
+                      <button
+                        type="button"
+                        className={`text-xs text-gray-400 hover:text-white inline-flex items-center gap-1 ${
+                          openGroups[grupo] ?? true ? "" : "rotate-180"
+                        }`}
+                        onClick={() =>
+                          setOpenGroups((prev) => ({
+                            ...prev,
+                            [grupo]: !(prev[grupo] ?? true),
+                          }))
+                        }
+                      >
+                        <ChevronDown className="w-4 h-4 transition-transform" />
+                      </button>
+                    )}
+                    {!isViewOnly && (
+                      <button
+                        type="button"
+                        className="text-xs text-gray-400 hover:text-white inline-flex items-center  gap-1"
+                        onClick={() => setShowFixturesGroup(grupo)}
+                      >
+                        <CalendarDays className="w-4 h-4 text-[#c6f600]" />
+                      </button>
+                    )}
+                  </div>
+                  {!isViewOnly && (openGroups[grupo] ?? true) ? (
+                    <div className="flex flex-col gap-1 ">
+                      {equipos.map((team) => {
                       const picked =
                         selections[grupo]?.primero?.id === team.id
                           ? "1ro"
@@ -5730,18 +6191,19 @@ const scheduleByMatch = useMemo(() => {
                           </div>
                         </button>
                       );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-lg text-gray-300 italic flex flex-wrap gap-2">
-                    <span >1ro: {selections[grupo]?.primero?.nombre || "Sin elegir"}</span>
-                    <span>2do: {selections[grupo]?.segundo?.nombre || "Sin elegir"}</span>
-                    <span  className="text-yellow-600">3ro: {selections[grupo]?.tercero?.nombre || "Sin elegir"}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-lg text-gray-300 italic flex flex-wrap gap-2">
+                      <span >1ro: {selections[grupo]?.primero?.nombre || "Sin elegir"}</span>
+                      <span>2do: {selections[grupo]?.segundo?.nombre || "Sin elegir"}</span>
+                      <span  className="text-yellow-600">3ro: {selections[grupo]?.tercero?.nombre || "Sin elegir"}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            )}
 
           {missingThirdGroups.length > 0 && (
             <div className="mt-4 text-xl text-center text-gray-300">
@@ -5986,6 +6448,7 @@ const scheduleByMatch = useMemo(() => {
                   scoreByMatchId={scoreByMatchId}
                   isMatchLocked={isMatchBlockedByDeadline}
                   highlightFinalMatch={sfComplete}
+                  onMatchClick={gameMode === "full" ? setScoreModalMatch : undefined}
                   onChampionClick={(team) => {
                     if (!team) return;
                     setChampionTeam(team);
@@ -6002,6 +6465,7 @@ const scheduleByMatch = useMemo(() => {
             </motion.div>
           )}
           </AnimatePresence>
+          </>)}
         </div>
         </div>
       </main>
@@ -6015,6 +6479,78 @@ const scheduleByMatch = useMemo(() => {
               third={activeShareCard.third}
               shareUrl={activeShareCard.shareUrl}
             />
+          </div>
+        </div>
+      )}
+      {scoreModalMatch && gameMode === "full" && !showModeHome && !showNewGamePrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6"
+          onClick={() => setScoreModalMatch(null)}
+        >
+          <div
+            className="w-full max-w-xl rounded-lg border border-neutral-700 bg-neutral-950 p-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-xl font-black text-[#c6f600]">Marcador del partido</h3>
+              <button
+                type="button"
+                onClick={() => setScoreModalMatch(null)}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-[#c6f600] text-sm font-black text-black"
+                aria-label="Cerrar"
+              >
+                X
+              </button>
+            </div>
+            <ScorePredictionMatchCard
+              match={scoreModalMatch}
+              schedule={scheduleByMatch[normalizeMatchKey(scoreModalMatch.label) || normalizeMatchKey(scoreModalMatch.id)]}
+              value={scorePredictions[scoreModalMatch.id]}
+              locked={isScorePredictionLocked(scoreModalMatch.id, scoreModalMatch.label)}
+              onScoreChange={handleScorePredictionChange}
+              onWinnerPick={applyWinner}
+              phaseLabel="Llaves finales"
+            />
+          </div>
+        </div>
+      )}
+      {registeredSavePopup && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 px-4 py-6">
+          <div className="w-full max-w-md rounded-xl border border-[#c6f600]/60 bg-neutral-950 p-5 text-center shadow-[0_0_34px_rgba(198,246,0,0.22)]">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[#c6f600] text-black">
+              <Crown className="h-8 w-8" />
+            </div>
+            <h3 className="text-3xl font-black uppercase text-[#c6f600]">Usuario registrado</h3>
+            <p className="mt-2 text-sm text-gray-200">
+              Tu cuenta fue creada y tu partida quedó guardada correctamente.
+            </p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => {
+                  setRegisteredSavePopup(false);
+                  closeAuthModal();
+                  closeSaveModal();
+                }}
+                className="flex-1 rounded-md bg-[#c6f600] px-4 py-3 text-sm font-black uppercase text-black hover:brightness-95"
+              >
+                Continuar jugando
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRegisteredSavePopup(false);
+                  closeAuthModal();
+                  closeSaveModal();
+                  navigateTo("backend");
+                }}
+                className="flex-1 rounded-md border border-neutral-700 px-4 py-3 text-sm font-black uppercase text-gray-100 hover:border-[#c6f600]"
+              >
+                Ver partidas
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -6042,18 +6578,18 @@ const scheduleByMatch = useMemo(() => {
           onConfirm={handleNewGame}
         />
         <RulesModal
-          open={showRulesModal && !showNewGamePrompt && !isViewOnly}
+          open={showRulesModal && !showModeHome && !showNewGamePrompt && !isViewOnly}
           onClose={() => setShowRulesModal(false)}
         />
         <GroupFixturesModal
-          open={!!showFixturesGroup && !showNewGamePrompt && !isViewOnly}
+          open={!!showFixturesGroup && !showModeHome && !showNewGamePrompt && !isViewOnly}
           onClose={() => setShowFixturesGroup(undefined)}
           fixtures={fixtures}
           group={showFixturesGroup}
           resolveTeamById={resolveTeam}
         />
         <BestThirdsModal
-          open={showThirdsModal && !showNewGamePrompt && !isViewOnly}
+          open={showThirdsModal && !showModeHome && !showNewGamePrompt && !isViewOnly}
           onClose={() => setShowThirdsModal(false)}
           thirdsAvailable={thirdsAvailable}
           bestThirdIds={bestThirdIds}
@@ -6062,13 +6598,13 @@ const scheduleByMatch = useMemo(() => {
           onToggleTeam={toggleThirdChoice}
         />
         <R32InfoModal
-          open={showR32Warning && !showNewGamePrompt && !isViewOnly}
+          open={showR32Warning && !showModeHome && !showNewGamePrompt && !isViewOnly}
           title="Calma"
           message="Los partidos de octavos de final se jugarán en las llaves finales."
           onClose={() => setShowR32Warning(false)}
         />
         <SemifinalPromptModal
-          open={showSemifinalPrompt && !showNewGamePrompt && !isViewOnly}
+          open={showSemifinalPrompt && !showModeHome && !showNewGamePrompt && !isViewOnly}
           onClose={() => setShowSemifinalPrompt(false)}
         />
         <AuthModal
@@ -6098,7 +6634,7 @@ const scheduleByMatch = useMemo(() => {
           onGoogleCredential={handleGoogleCredential}
         />
         <SaveModal
-          open={showSaveModal && !showNewGamePrompt && !isViewOnly}
+          open={showSaveModal && !showModeHome && !showNewGamePrompt && !isViewOnly}
           onClose={closeSaveModal}
           saveMode={saveMode}
           onSaveModeChange={setSaveMode}
@@ -6115,13 +6651,13 @@ const scheduleByMatch = useMemo(() => {
           onCopy={copyToClipboard}
         />
         <PhaseBlockModal
-          open={!!phaseBlock && !showNewGamePrompt && !isViewOnly}
+          open={!!phaseBlock && !showModeHome && !showNewGamePrompt && !isViewOnly}
           title={phaseBlock?.title || ""}
           missing={phaseBlock?.missing || []}
           onClose={() => setPhaseBlock(null)}
         />
         <AnimatePresence>
-          {showIntercontinentalModal && !showNewGamePrompt && !isViewOnly && (
+          {showIntercontinentalModal && !showModeHome && !showNewGamePrompt && !isViewOnly && (
           <motion.div
             className="fixed inset-0 z-50 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto"
             initial={{ opacity: 0 }}

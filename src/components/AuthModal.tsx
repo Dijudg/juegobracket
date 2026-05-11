@@ -143,6 +143,30 @@ export const AuthModal = ({
           <img src={authBanner} alt="Autenticacion" className="w-full h-full object-containt" />
         </div>
         <div className="p-4">
+          <div className="flex w-full items-center gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => onModeChange("login")}
+              className={`w-1/2 px-3 py-2 rounded-md border text-xs font-semibold ${
+                authMode === "login"
+                  ? "border-[#c6f600] text-black bg-[#c6f600]"
+                  : "border-neutral-700 text-gray-300"
+              }`}
+            >
+              Iniciar sesión
+            </button>
+            <button
+              type="button"
+              onClick={() => onModeChange("signup")}
+              className={`w-1/2 px-3 py-2 rounded-md border text-xs font-semibold ${
+                authMode === "signup"
+                  ? "border-[#c6f600] text-black bg-[#c6f600]"
+                  : "border-neutral-700 text-gray-300"
+              }`}
+            >
+              Crear usuario
+            </button>
+          </div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold text-[#c6f600]">
               {title || (authMode === "signup" ? "Crear usuario" : "Iniciar sesión")}
@@ -183,7 +207,7 @@ export const AuthModal = ({
             <div className="h-px flex-1 bg-neutral-800" />
           </div>
 
-          <div className="flex items-center gap-2 mb-4">
+          <div className="hidden">
             <button
               type="button"
               onClick={() => onModeChange("login")}

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Match, MatchSchedule, Team } from "../types";
+import type { Match, MatchSchedule, ScorePrediction, Team } from "../types";
 import { formatFixtureDate, getTeamCode, getTeamEscudo } from "../utils";
 
 type BlockMatch = {
@@ -19,6 +19,8 @@ export const DieciseisavosKeyBlock = ({
   onBlockedPick,
   scoreByMatchId,
   isMatchLocked,
+  scorePredictions,
+  onScoreChange,
 }: {
   semiMatches: BlockMatch[];
   finalMatch?: Match;
@@ -30,6 +32,8 @@ export const DieciseisavosKeyBlock = ({
   onBlockedPick?: () => void;
   scoreByMatchId?: Record<string, number | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
+  scorePredictions?: Record<string, ScorePrediction | undefined>;
+  onScoreChange?: (matchId: string, side: "home" | "away", value: number | null) => void;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -38,6 +42,13 @@ export const DieciseisavosKeyBlock = ({
 
   const setMatchRef = (id: string) => (el: HTMLDivElement | null) => {
     matchRefs.current[id] = el;
+  };
+
+  const clampGoal = (value: string) => {
+    if (value.trim() === "") return null;
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(99, parsed));
   };
 
   const renderTeam = ({
@@ -135,6 +146,31 @@ export const DieciseisavosKeyBlock = ({
           lockedMatch: matchLocked,
           scoreGlow: scorePoints > 0 && !!winnerId && winnerId === match.equipoA?.id,
         })}
+        {onScoreChange && (
+          <div className="match-score-row">
+            <input
+              type="number"
+              min={0}
+              max={99}
+              inputMode="numeric"
+              disabled={locked || matchLocked}
+              value={scorePredictions?.[match.id]?.home ?? ""}
+              onChange={(event) => onScoreChange(match.id, "home", clampGoal(event.target.value))}
+              aria-label={`Goles ${match.equipoA?.nombre || "local"}`}
+            />
+            <span>-</span>
+            <input
+              type="number"
+              min={0}
+              max={99}
+              inputMode="numeric"
+              disabled={locked || matchLocked}
+              value={scorePredictions?.[match.id]?.away ?? ""}
+              onChange={(event) => onScoreChange(match.id, "away", clampGoal(event.target.value))}
+              aria-label={`Goles ${match.equipoB?.nombre || "visitante"}`}
+            />
+          </div>
+        )}
         {renderTeam({
           team: match.equipoB,
           matchId: match.id,

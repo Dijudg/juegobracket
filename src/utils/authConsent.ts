@@ -2,6 +2,9 @@ export type ConsentPayload = {
   consent_marketing: boolean;
   consent_news: boolean;
   consent_updates: boolean;
+  acepta_publicidad: boolean;
+  acepta_noticias_correo: boolean;
+  acepta_informativos: boolean;
   consent_timestamp: string;
   consent_source: string;
 };
@@ -17,6 +20,9 @@ export const buildConsentPayload = (args: {
   consent_marketing: Boolean(args.marketing),
   consent_news: Boolean(args.news),
   consent_updates: Boolean(args.updates),
+  acepta_publicidad: Boolean(args.marketing),
+  acepta_noticias_correo: Boolean(args.news),
+  acepta_informativos: Boolean(args.updates),
   consent_timestamp: new Date().toISOString(),
   consent_source: args.source,
 });

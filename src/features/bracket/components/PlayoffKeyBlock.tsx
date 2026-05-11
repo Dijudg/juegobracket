@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { PlayoffMatchData } from "../types";
+import type { PlayoffMatchData, ScorePrediction } from "../types";
 import { getTeamCode, getTeamEscudo } from "../utils";
 
 export const PlayoffKeyBlock = ({
@@ -12,6 +12,8 @@ export const PlayoffKeyBlock = ({
   showFinalHint,
   scoreByMatchId,
   isMatchLocked,
+  scorePredictions,
+  onScoreChange,
 }: {
   title: string;
   subtitle?: string;
@@ -22,6 +24,8 @@ export const PlayoffKeyBlock = ({
   showFinalHint?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
+  scorePredictions?: Record<string, ScorePrediction | undefined>;
+  onScoreChange?: (matchId: string, side: "home" | "away", value: number | null) => void;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -46,6 +50,12 @@ export const PlayoffKeyBlock = ({
     const canPickFinal = !disabled && !deadlineLocked && !!match.homeTeam && !!match.awayTeam;
     const shouldShowFinalHint =
       !!showFinalHint && !!match.highlightFinal && canPickFinal && !match.winnerCode;
+    const clampGoal = (value: string) => {
+      if (value.trim() === "") return null;
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isFinite(parsed)) return null;
+      return Math.max(0, Math.min(99, parsed));
+    };
     return (
       <div
         ref={setMatchRef(match.id)}
@@ -65,6 +75,59 @@ export const PlayoffKeyBlock = ({
           const hardDisabled = disabled || !team || !code;
           const isDisabled = hardDisabled || deadlineLocked;
           const escudo = getTeamEscudo(team);
+          return (
+            <button
+              key={`${match.id}-${idx}`}
+              type="button"
+              disabled={isDisabled}
+              onClick={() => !deadlineLocked && code && onPick(match.id, code)}
+              className={`teamBtn ${spacingClass} ${isSelected ? "selected" : ""} ${
+                hardDisabled ? "disabled" : ""
+              } ${deadlineLocked ? "locked" : ""} ${scorePoints > 0 && isSelected ? "modal-glow score-glow-team" : ""}`}
+            >
+              <span className="badge">
+                {escudo ? (
+                  <img src={escudo} alt={team?.nombre} className="badgeImg" />
+                ) : (
+                  <span className="badgeTxt">{team?.codigo || "--"}</span>
+                )}
+              </span>
+              <span className="code">{team?.nombre || "Por definir"}</span>
+            </button>
+          );
+        }).slice(0, 1)}
+        {onScoreChange && (
+          <div className="match-score-row">
+            <input
+              type="number"
+              min={0}
+              max={99}
+              inputMode="numeric"
+              disabled={disabled || deadlineLocked}
+              value={scorePredictions?.[match.id]?.home ?? ""}
+              onChange={(event) => onScoreChange(match.id, "home", clampGoal(event.target.value))}
+              aria-label={`Goles ${match.homeTeam?.nombre || "local"}`}
+            />
+            <span>-</span>
+            <input
+              type="number"
+              min={0}
+              max={99}
+              inputMode="numeric"
+              disabled={disabled || deadlineLocked}
+              value={scorePredictions?.[match.id]?.away ?? ""}
+              onChange={(event) => onScoreChange(match.id, "away", clampGoal(event.target.value))}
+              aria-label={`Goles ${match.awayTeam?.nombre || "visitante"}`}
+            />
+          </div>
+        )}
+        {teams.map((team, idx) => {
+          const code = getTeamCode(team);
+          const isSelected = !!code && match.winnerCode === code;
+          const hardDisabled = disabled || !team || !code;
+          const isDisabled = hardDisabled || deadlineLocked;
+          const escudo = getTeamEscudo(team);
+          if (idx === 0) return null;
           return (
             <button
               key={`${match.id}-${idx}`}

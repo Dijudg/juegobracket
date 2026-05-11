@@ -3,6 +3,7 @@ import { NavigationProvider } from "./contexts/NavigationContext";
 import BracketGamePage from "./pages/BracketGamePage";
 import UserBackendPage from "./pages/UserBackendPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
+import GameRulesPage from "./pages/GameRulesPage";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { FlagValues } from "flags/react";
@@ -18,6 +19,7 @@ export default function App() {
   const resolvePageFromPath = (path: string) => {
     if (path === "/user") return "backend";
     if (path === "/ranking") return "leaderboard";
+    if (path === "/reglas-juego") return "rules";
     return "home";
   };
   const [currentPage, setCurrentPage] = useState(() => {
@@ -27,7 +29,8 @@ export default function App() {
   const [pageParams, setPageParams] = useState<Record<string, any>>({});
 
   const navigateTo = (page: string, params: Record<string, any> = {}) => {
-    const nextPath = page === "backend" ? "/user" : page === "leaderboard" ? "/ranking" : "/";
+    const nextPath =
+      page === "backend" ? "/user" : page === "leaderboard" ? "/ranking" : page === "rules" ? "/reglas-juego" : "/";
 
     if (
       typeof window !== "undefined" &&
@@ -62,6 +65,8 @@ export default function App() {
         <UserBackendPage />
       ) : currentPage === "leaderboard" ? (
         <LeaderboardPage />
+      ) : currentPage === "rules" ? (
+        <GameRulesPage />
       ) : (
         <BracketGamePage />
       )}

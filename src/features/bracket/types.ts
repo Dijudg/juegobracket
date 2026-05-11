@@ -54,6 +54,15 @@ export type Seeds = {
 
 export type PlayoffPickState = Record<string, string | undefined>;
 
+export type GameMode = "classic" | "full";
+
+export type ScorePrediction = {
+  home?: number | null;
+  away?: number | null;
+};
+
+export type ScorePredictionState = Record<string, ScorePrediction | undefined>;
+
 export type EditablePhase = "uefa" | "intercontinental" | "grupos" | "dieciseisavos" | "llaves";
 
 export type PhaseLockState = Record<EditablePhase, boolean>;
@@ -67,6 +76,7 @@ export type SavedBracketMeta = {
 
 export type BracketSavePayload = {
   version: number;
+  gameMode?: GameMode;
   selections: Record<
     string,
     {
@@ -77,6 +87,7 @@ export type BracketSavePayload = {
   >;
   bestThirdIds: string[];
   picks: Record<string, string | undefined>;
+  scorePredictions?: ScorePredictionState;
   intercontinentalPicks: PlayoffPickState;
   uefaPicks: PlayoffPickState;
   isLocked: boolean;

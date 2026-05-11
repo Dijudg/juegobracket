@@ -30,6 +30,7 @@ export const KnockoutBracket = ({
   navTarget,
   onNavHandled,
   onChampionClick,
+  onMatchClick,
   locked = false,
   scoreByMatchId,
   isMatchLocked,
@@ -50,6 +51,7 @@ export const KnockoutBracket = ({
   navTarget?: "r32" | "r16" | "qf" | "sf" | "final" | null;
   onNavHandled?: () => void;
   onChampionClick?: (team?: Team) => void;
+  onMatchClick?: (match: Match) => void;
   locked?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
@@ -403,11 +405,12 @@ export const KnockoutBracket = ({
           )}
 
           <div
+            onClick={() => onMatchClick?.(match)}
             className={`relative z-[1] flex flex-col items-center gap-1 p-2 rounded-xl w-20 h-20 transition-shadow ${
               hasWinner
                 ? "bg-neutral-800 border-2 shadow-lg border transition-colors border-[#c6f600]"
                 : "bg-neutral-800 border-full border-gray-300 hover:shadow-md"
-            } ${emphasizeFinal ? "knockout-final-card" : ""}`}
+            } ${emphasizeFinal ? "knockout-final-card" : ""} ${onMatchClick ? "cursor-pointer" : ""}`}
           >
             {emphasizeFinal && (
               <>
