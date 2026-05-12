@@ -119,8 +119,10 @@ export const DieciseisavosKeyBlock = ({
     const scorePoints = scoreByMatchId?.[match.id] || 0;
     const label = match.label || match.id;
     const dateLabel = formatFixtureDate(schedule?.fecha) || "\u00A0";
+    const score = scorePredictions?.[match.id];
     const penalty = penaltyPredictions?.[match.id];
-    const hasPenalty = typeof penalty?.home === "number" && typeof penalty?.away === "number";
+    const hasTiedScore = typeof score?.home === "number" && typeof score?.away === "number" && score.home === score.away;
+    const hasPenalty = hasTiedScore && typeof penalty?.home === "number" && typeof penalty?.away === "number";
     const penaltyLabel =
       hasPenalty
         ? `Pen. ${penalty.home}-${penalty.away}`

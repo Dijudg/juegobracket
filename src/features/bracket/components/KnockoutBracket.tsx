@@ -34,6 +34,7 @@ export const KnockoutBracket = ({
   onPenaltyClick,
   locked = false,
   scoreByMatchId,
+  scorePredictions,
   penaltyPredictions,
   isMatchLocked,
   highlightFinalMatch = false,
@@ -57,6 +58,7 @@ export const KnockoutBracket = ({
   onPenaltyClick?: (match: Match) => void;
   locked?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
+  scorePredictions?: Record<string, ScorePrediction | undefined>;
   penaltyPredictions?: Record<string, ScorePrediction | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
   highlightFinalMatch?: boolean;
@@ -310,8 +312,10 @@ export const KnockoutBracket = ({
 
   const resolveMatchFooter = (match?: Match) => {
     if (!match) return "\u00A0";
+    const score = scorePredictions?.[match.id];
     const penalty = penaltyPredictions?.[match.id];
-    if (typeof penalty?.home === "number" && typeof penalty?.away === "number") {
+    const hasTiedScore = typeof score?.home === "number" && typeof score?.away === "number" && score.home === score.away;
+    if (hasTiedScore && typeof penalty?.home === "number" && typeof penalty?.away === "number") {
       return `Pen. ${penalty.home}-${penalty.away}`;
     }
     const number = resolveMatchNumber(match);
@@ -320,8 +324,15 @@ export const KnockoutBracket = ({
 
   const hasPenaltyPrediction = (match?: Match) => {
     if (!match) return false;
+    const score = scorePredictions?.[match.id];
     const penalty = penaltyPredictions?.[match.id];
-    return typeof penalty?.home === "number" && typeof penalty?.away === "number";
+    return (
+      typeof score?.home === "number" &&
+      typeof score?.away === "number" &&
+      score.home === score.away &&
+      typeof penalty?.home === "number" &&
+      typeof penalty?.away === "number"
+    );
   };
 
   const TeamButton = ({

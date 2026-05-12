@@ -1,6 +1,6 @@
 ﻿import { Crown, ChevronDown, CalendarDays } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, ChevronRight, ClipboardList, Info, Star, Trophy } from "lucide-react";
+import { BarChart3, ChevronRight, ClipboardList, Info, Pencil, RefreshCw, Star, Trash2, Trophy } from "lucide-react";
 import type { PointerEvent } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ShareCard, type ShareCardTeam } from "../components/ShareCard";
@@ -20,6 +20,7 @@ import phaseBlockBannerAlt from "../assets/stop2.jpg";
 import saveBanner from "../assets/guardar.jpg";
 import intercontinentalBanner from "../assets/Intercontinental.jpg";
 import championBanner from "../assets/final.jpg";
+import mundialBanner from "../assets/mundial.jpg";
 import modalBackImage from "../assets/fondo.jpg";
 import portadaBanner from "../assets/fondo-portada.webp";
 import shareBackLogo from "../assets/7flapollalog.png";
@@ -105,6 +106,29 @@ const formatViewDate = (value?: string) => {
   return date.toLocaleString("es-EC", { dateStyle: "medium", timeStyle: "short" });
 };
 
+const formatSavedBracketDate = (value?: string) => {
+  if (!value) return "Sin fecha";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sin fecha";
+  return date.toLocaleString("es-EC", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const parseBracketSavePayload = (value?: BracketSavePayload | string | null) => {
+  if (!value) return null;
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as BracketSavePayload;
+  } catch {
+    return null;
+  }
+};
+
 const seleccionesUrl =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=0&single=true&output=csv";
 
@@ -144,6 +168,28 @@ const FULL_MODE_POINTS = {
   semifinalBonus: 2,
   finalBonus: 5,
 } as const;
+const FULL_GROUP_THEMES: Record<
+  string,
+  {
+    accent: string;
+    cardBg: string;
+    cardText: string;
+    cardSoft: string;
+  }
+> = {
+  A: { accent: "#c6f600", cardBg: "#eef5d8", cardText: "#172000", cardSoft: "#5f7a00" },
+  B: { accent: "#38bdf8", cardBg: "#e0f2fe", cardText: "#082f49", cardSoft: "#0369a1" },
+  C: { accent: "#fb7185", cardBg: "#ffe4e6", cardText: "#4c0519", cardSoft: "#be123c" },
+  D: { accent: "#facc15", cardBg: "#fef3c7", cardText: "#422006", cardSoft: "#a16207" },
+  E: { accent: "#34d399", cardBg: "#d1fae5", cardText: "#022c22", cardSoft: "#047857" },
+  F: { accent: "#a78bfa", cardBg: "#ede9fe", cardText: "#2e1065", cardSoft: "#6d28d9" },
+  G: { accent: "#f97316", cardBg: "#ffedd5", cardText: "#431407", cardSoft: "#c2410c" },
+  H: { accent: "#22d3ee", cardBg: "#cffafe", cardText: "#083344", cardSoft: "#0e7490" },
+  I: { accent: "#f472b6", cardBg: "#fce7f3", cardText: "#500724", cardSoft: "#be185d" },
+  J: { accent: "#84cc16", cardBg: "#ecfccb", cardText: "#1a2e05", cardSoft: "#4d7c0f" },
+  K: { accent: "#60a5fa", cardBg: "#dbeafe", cardText: "#172554", cardSoft: "#2563eb" },
+  L: { accent: "#eab308", cardBg: "#fef9c3", cardText: "#422006", cardSoft: "#854d0e" },
+};
 const RULES_STEPS_WITH_REPECHAJES = [
   {
     title: "Empieza por los repechajes",
@@ -1441,6 +1487,9 @@ export default function BracketGamePage() {
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [registeredSavePopup, setRegisteredSavePopup] = useState(false);
   const [savedBrackets, setSavedBrackets] = useState<SavedBracketMeta[]>([]);
+  const [homeSavedError, setHomeSavedError] = useState<string | null>(null);
+  const [homeLoadBusyId, setHomeLoadBusyId] = useState<string | null>(null);
+  const [homeDeleteBusyId, setHomeDeleteBusyId] = useState<string | null>(null);
   const [selectedOverwriteId, setSelectedOverwriteId] = useState<string | null>(null);
   const [currentSaveId, setCurrentSaveId] = useState<string | null>(null);
   const [currentSaveName, setCurrentSaveName] = useState<string>("Mi bracket");
@@ -1479,6 +1528,11 @@ export default function BracketGamePage() {
   const pendingLoadRef = useRef<BracketSavePayload | null>(null);
   const pendingAuthSaveRef = useRef(false);
   const confirmSaveInFlightRef = useRef(false);
+  const fullAutosaveTimerRef = useRef<number | null>(null);
+  const fullAutosaveInFlightRef = useRef(false);
+  const fullAutosavePendingRef = useRef(false);
+  const fullAutosaveLastSignatureRef = useRef("");
+  const currentSaveIdRef = useRef<string | null>(null);
   const oauthPopupRef = useRef<Window | null>(null);
   const oauthPopupWatchRef = useRef<number | null>(null);
   const guestSaveMetaRef = useRef<{
@@ -1489,6 +1543,9 @@ export default function BracketGamePage() {
     shareUrl?: string;
   } | null>(null);
   const authInitRef = useRef(false);
+  useEffect(() => {
+    currentSaveIdRef.current = currentSaveId;
+  }, [currentSaveId]);
 
   const normalizePhaseLocks = useCallback(
     (value?: Partial<PhaseLockState> | null, lockAll = false): PhaseLockState => ({
@@ -1694,13 +1751,14 @@ export default function BracketGamePage() {
       bestThirdIds,
       picks,
       scorePredictions,
+      penaltyPredictions,
       intercontinentalPicks,
       uefaPicks,
       isLocked,
       phaseLocks,
       sharedBy,
     };
-  }, [selections, bestThirdIds, picks, scorePredictions, intercontinentalPicks, uefaPicks, isLocked, phaseLocks, authUser, gameMode]);
+  }, [selections, bestThirdIds, picks, scorePredictions, penaltyPredictions, intercontinentalPicks, uefaPicks, isLocked, phaseLocks, authUser, gameMode]);
 
   const applySavedBracket = useCallback(
     (payload: BracketSavePayload) => {
@@ -1718,6 +1776,7 @@ export default function BracketGamePage() {
       setGameMode(payload.gameMode === "full" ? "full" : "classic");
       setHasSelectedGameMode(true);
       setScorePredictions(payload.scorePredictions || {});
+      setPenaltyPredictions(payload.penaltyPredictions || {});
       setIntercontinentalPicks(payload.intercontinentalPicks || {});
       setUefaPicks(payload.uefaPicks || {});
       setIsLocked(payload.isLocked ?? false);
@@ -1762,19 +1821,9 @@ export default function BracketGamePage() {
 
       if (!data) return;
 
-      let payload: BracketSavePayload | null = null;
-      if (data.data) {
-        if (typeof data.data === "string") {
-          try {
-            payload = JSON.parse(data.data) as BracketSavePayload;
-          } catch {
-            payload = null;
-          }
-        } else {
-          payload = data.data as BracketSavePayload;
-        }
-      }
+      const payload = parseBracketSavePayload(data.data);
       if (payload) {
+        currentSaveIdRef.current = data.id;
         setCurrentSaveId(data.id);
         setCurrentSaveName(data.name || "Mi bracket");
         if (teams.length > 0) {
@@ -2220,6 +2269,7 @@ export default function BracketGamePage() {
     await supabase.auth.signOut();
     setAuthUser(null);
     setAuthSession(null);
+    currentSaveIdRef.current = null;
     setCurrentSaveId(null);
     setSavedBrackets([]);
     setSaveNotice("Sesión cerrada.");
@@ -2441,6 +2491,7 @@ export default function BracketGamePage() {
       const saved = data as { id: string; name?: string } | null;
 
       if (saved?.id) {
+        currentSaveIdRef.current = saved.id;
         setCurrentSaveId(saved.id);
         setCurrentSaveName(saved.name || name);
       }
@@ -2471,6 +2522,134 @@ export default function BracketGamePage() {
       setSaveBusy(false);
     }
   };
+
+  const fullAutosaveHasProgress = useMemo(() => {
+    if (gameMode !== "full" || !hasSelectedGameMode) return false;
+    return (
+      Object.keys(scorePredictions).length > 0 ||
+      Object.keys(penaltyPredictions).length > 0 ||
+      Object.keys(picks).length > 0 ||
+      Object.keys(intercontinentalPicks).length > 0 ||
+      Object.keys(uefaPicks).length > 0 ||
+      bestThirdIds.length > 0
+    );
+  }, [
+    bestThirdIds.length,
+    gameMode,
+    hasSelectedGameMode,
+    intercontinentalPicks,
+    penaltyPredictions,
+    picks,
+    scorePredictions,
+    uefaPicks,
+  ]);
+
+  const runFullModeAutosave = useCallback(
+    async (signature: string, payload: BracketSavePayload) => {
+      if (fullAutosaveInFlightRef.current) {
+        fullAutosavePendingRef.current = true;
+        return;
+      }
+      fullAutosaveInFlightRef.current = true;
+      try {
+        const userId = requireAuthUserId();
+        const existingId = currentSaveIdRef.current;
+        const name =
+          (currentSaveName && currentSaveName !== "Mi bracket" ? currentSaveName : saveName.trim()) ||
+          "Bracket completo";
+        const updatedAt = new Date().toISOString();
+
+        if (existingId) {
+          const { error } = await supabase
+            .from("bracket_saves")
+            .update({ data: payload, name, updated_at: updatedAt })
+            .eq("id", existingId)
+            .eq("user_id", userId);
+          if (error) throw error;
+        } else {
+          const { count, error: countError } = await supabase
+            .from("bracket_saves")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", userId);
+          if (countError) throw countError;
+          if ((count || 0) >= MAX_USER_BRACKETS) {
+            throw new Error(`Llegaste al límite de ${MAX_USER_BRACKETS} brackets. Borra uno para activar el guardado automático.`);
+          }
+          const { data, error } = await supabase
+            .from("bracket_saves")
+            .insert([{ user_id: userId, name, data: payload, updated_at: updatedAt }])
+            .select("id,name")
+            .maybeSingle();
+          if (error) throw error;
+          const saved = data as { id: string; name?: string } | null;
+          if (!saved?.id) throw new Error("No pudimos activar el guardado automático.");
+          currentSaveIdRef.current = saved.id;
+          setCurrentSaveId(saved.id);
+          setCurrentSaveName(saved.name || name);
+          setSaveName(saved.name || name);
+          setSaveMode("update");
+          setSelectedOverwriteId(saved.id);
+        }
+
+        fullAutosaveLastSignatureRef.current = signature;
+        setSaveError(null);
+        void loadSavedBrackets();
+      } catch (err) {
+        setSaveNotice(err instanceof Error ? err.message : "No pudimos guardar automáticamente tu bracket.");
+      } finally {
+        fullAutosaveInFlightRef.current = false;
+        if (fullAutosavePendingRef.current) {
+          fullAutosavePendingRef.current = false;
+          const nextPayload = buildSavePayload();
+          const nextSignature = JSON.stringify(nextPayload);
+          if (nextSignature !== fullAutosaveLastSignatureRef.current) {
+            void runFullModeAutosave(nextSignature, nextPayload);
+          }
+        }
+      }
+    },
+    [buildSavePayload, currentSaveName, loadSavedBrackets, requireAuthUserId, saveName],
+  );
+
+  useEffect(() => {
+    if (
+      isViewOnly ||
+      showNewGamePrompt ||
+      gameMode !== "full" ||
+      !hasSelectedGameMode ||
+      !authSession?.access_token ||
+      !fullAutosaveHasProgress
+    ) {
+      return;
+    }
+    const payload = buildSavePayload();
+    const signature = JSON.stringify(payload);
+    if (signature === fullAutosaveLastSignatureRef.current) return;
+    if (typeof window === "undefined") return;
+    if (fullAutosaveTimerRef.current !== null) {
+      window.clearTimeout(fullAutosaveTimerRef.current);
+    }
+    fullAutosaveTimerRef.current = window.setTimeout(() => {
+      fullAutosaveTimerRef.current = null;
+      void runFullModeAutosave(signature, payload);
+    }, 900);
+    return () => {
+      if (fullAutosaveTimerRef.current !== null) {
+        window.clearTimeout(fullAutosaveTimerRef.current);
+        fullAutosaveTimerRef.current = null;
+      }
+    };
+  }, [
+    authSession?.access_token,
+    buildSavePayload,
+    fullAutosaveHasProgress,
+    gameMode,
+    hasSelectedGameMode,
+    isViewOnly,
+    runFullModeAutosave,
+    showNewGamePrompt,
+  ]);
+
   useEffect(() => {
     if (authInitRef.current) return;
     authInitRef.current = true;
@@ -2513,6 +2692,7 @@ export default function BracketGamePage() {
       setAuthUser(session?.user ?? null);
       void applyPendingConsent(session);
       if (!session) {
+        currentSaveIdRef.current = null;
         setCurrentSaveId(null);
         setSavedBrackets([]);
       }
@@ -3468,7 +3648,9 @@ export default function BracketGamePage() {
     resetIntercontinental();
     resetUEFA();
     setScorePredictions({});
+    setPenaltyPredictions({});
     setScoreModalMatch(null);
+    setPenaltyModalMatch(null);
   };
   const handleFinalReset = () => {
     if (!authUser || resetAttemptsLeft === null || resetAttemptsLeft <= 0) return;
@@ -3499,6 +3681,12 @@ export default function BracketGamePage() {
     trackEvent("new_game", { source });
     resetAll();
     pendingLoadRef.current = null;
+    fullAutosaveLastSignatureRef.current = "";
+    fullAutosavePendingRef.current = false;
+    if (typeof window !== "undefined" && fullAutosaveTimerRef.current !== null) {
+      window.clearTimeout(fullAutosaveTimerRef.current);
+      fullAutosaveTimerRef.current = null;
+    }
     setShowSemifinalPrompt(false);
     semifinalPromptShownRef.current = false;
     clearPendingAuthSaveState();
@@ -3507,6 +3695,7 @@ export default function BracketGamePage() {
     setSaveMode("new");
     setSaveName("Mi bracket");
     setSelectedOverwriteId(null);
+    currentSaveIdRef.current = null;
     setCurrentSaveId(null);
     setCurrentSaveName("Mi bracket");
     setSaveError(null);
@@ -3522,6 +3711,77 @@ export default function BracketGamePage() {
       setGuestSharePanel(null);
     }
   };
+  const handleLoadSavedBracketFromHome = useCallback(
+    async (id: string) => {
+      if (!authSession?.user?.id) return;
+      setHomeSavedError(null);
+      setHomeLoadBusyId(id);
+      try {
+        const { data, error } = await supabase
+          .from("bracket_saves")
+          .select("id,name,data,created_at,updated_at")
+          .eq("id", id)
+          .eq("user_id", authSession.user.id)
+          .maybeSingle();
+        if (error) throw error;
+        const payload = parseBracketSavePayload(data?.data as BracketSavePayload | string | null | undefined);
+        if (!data || !payload) throw new Error("No pudimos cargar esta partida guardada.");
+
+        resetAll();
+        pendingLoadRef.current = null;
+        skipAutoLoadRef.current = true;
+        applySavedBracket(payload);
+        currentSaveIdRef.current = data.id;
+        setCurrentSaveId(data.id);
+        setCurrentSaveName(data.name || "Mi bracket");
+        setSaveName(data.name || "Mi bracket");
+        setSaveMode("update");
+        setSelectedOverwriteId(data.id);
+        setActiveTab(defaultStartTab);
+        setShowNewGamePrompt(false);
+        setShowClassicRulesModal(false);
+        setShowFullModeRulesIntro(false);
+        setRegisteredSavePopup(false);
+        setSaveError(null);
+        setSaveNotice("Partida cargada.");
+      } catch (err) {
+        setHomeSavedError(err instanceof Error ? err.message : "No pudimos cargar esta partida guardada.");
+      } finally {
+        setHomeLoadBusyId(null);
+      }
+    },
+    [applySavedBracket, authSession?.user?.id, defaultStartTab, resetAll],
+  );
+
+  const handleDeleteSavedBracketFromHome = useCallback(
+    async (id: string) => {
+      if (!authSession?.user?.id) return;
+      if (typeof window !== "undefined" && !window.confirm("¿Eliminar esta partida guardada?")) return;
+      setHomeSavedError(null);
+      setHomeDeleteBusyId(id);
+      try {
+        const { error } = await supabase
+          .from("bracket_saves")
+          .delete()
+          .eq("id", id)
+          .eq("user_id", authSession.user.id);
+        if (error) throw error;
+        setSavedBrackets((prev) => prev.filter((item) => item.id !== id));
+        if (currentSaveId === id) {
+          currentSaveIdRef.current = null;
+          setCurrentSaveId(null);
+          setCurrentSaveName("Mi bracket");
+          setSaveMode("new");
+          setSelectedOverwriteId(null);
+        }
+      } catch (err) {
+        setHomeSavedError(err instanceof Error ? err.message : "No pudimos borrar esta partida guardada.");
+      } finally {
+        setHomeDeleteBusyId(null);
+      }
+    },
+    [authSession?.user?.id, currentSaveId],
+  );
   const newGamePromptShownRef = useRef(false);
   const suspendAutoAdvanceRef = useRef(false);
   const lastResetFromPanelRef = useRef<number | null>(null);
@@ -4020,6 +4280,10 @@ const isScorePredictionLocked = useCallback(
 const handleScorePredictionChange = useCallback(
   (matchId: string, side: "home" | "away", value: number | null) => {
     if (isScorePredictionLocked(matchId) || isMatchBlockedByDeadline(matchId)) return;
+    const nextPrediction = {
+      ...(scorePredictions[matchId] || {}),
+      [side]: value,
+    };
     setScorePredictions((prev) => {
       const current = prev[matchId] || {};
       return {
@@ -4030,8 +4294,16 @@ const handleScorePredictionChange = useCallback(
         },
       };
     });
+    if (!hasScorePrediction(nextPrediction) || nextPrediction.home !== nextPrediction.away) {
+      setPenaltyPredictions((prev) => {
+        if (!prev[matchId]) return prev;
+        const next = { ...prev };
+        delete next[matchId];
+        return next;
+      });
+    }
   },
-  [isMatchBlockedByDeadline, isScorePredictionLocked],
+  [isMatchBlockedByDeadline, isScorePredictionLocked, scorePredictions],
 );
 
 const handlePenaltyPredictionChange = useCallback(
@@ -4215,6 +4487,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
               const saved = data as { id: string; name?: string } | null;
               if (saved?.id) {
                 bracketId = saved.id;
+                currentSaveIdRef.current = saved.id;
                 setCurrentSaveId(saved.id);
                 setCurrentSaveName(saved.name || name);
                 sharePageUrl = buildSharePageUrl(saved.id, API_BASE_URL || undefined);
@@ -5920,6 +6193,65 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                     <div className="game-mode-home__laurel game-mode-home__laurel--right" aria-hidden="true">›</div>
                   </div>
 
+                  {authSession?.access_token && (
+                    <div className="game-mode-home__saved" aria-label="Juegos guardados">
+                      <div className="game-mode-home__saved-header">
+                        <div className="min-w-0">
+                          <h2>Juegos guardados</h2>
+                          <p>Continúa un bracket pendiente o borra los que ya no quieras conservar.</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="game-mode-home__saved-refresh"
+                          onClick={() => void loadSavedBrackets()}
+                          aria-label="Actualizar juegos guardados"
+                        >
+                          <RefreshCw />
+                        </button>
+                      </div>
+                      {homeSavedError && <p className="game-mode-home__saved-error">{homeSavedError}</p>}
+                      {savedBrackets.length === 0 ? (
+                        <p className="game-mode-home__saved-empty">Todavía no tienes juegos guardados.</p>
+                      ) : (
+                        <div className="game-mode-home__saved-list">
+                          {savedBrackets.map((item) => {
+                            const isLoading = homeLoadBusyId === item.id;
+                            const isDeleting = homeDeleteBusyId === item.id;
+                            return (
+                              <div className="game-mode-home__saved-item" key={item.id}>
+                                <div className="game-mode-home__saved-meta">
+                                  <strong>{item.name || "Mi bracket"}</strong>
+                                  <span>Actualizado {formatSavedBracketDate(item.updated_at || item.created_at)}</span>
+                                </div>
+                                <div className="game-mode-home__saved-actions">
+                                  <button
+                                    type="button"
+                                    className="game-mode-home__saved-open"
+                                    disabled={isLoading || isDeleting}
+                                    onClick={() => void handleLoadSavedBracketFromHome(item.id)}
+                                  >
+                                    <Pencil />
+                                    {isLoading ? "Cargando..." : "Continuar"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="game-mode-home__saved-delete"
+                                    disabled={isLoading || isDeleting}
+                                    onClick={() => void handleDeleteSavedBracketFromHome(item.id)}
+                                    aria-label={`Borrar ${item.name || "Mi bracket"}`}
+                                  >
+                                    <Trash2 />
+                                    {isDeleting ? "Borrando..." : "Borrar"}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="game-mode-home__cards">
                     <button
                       type="button"
@@ -6374,6 +6706,9 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                     <button
                       key={`full-tab-${grupo}`}
                       type="button"
+                      style={{
+                        ["--full-group-accent" as any]: FULL_GROUP_THEMES[grupo]?.accent || "#c6f600",
+                      }}
                       onClick={() => {
                         const currentIndex = fullGroupKeys.indexOf(currentFullGroup);
                         const nextIndex = fullGroupKeys.indexOf(grupo);
@@ -6394,6 +6729,12 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                     className={`full-group-panel ${
                       fullGroupDirection === 1 ? "full-group-panel--next" : "full-group-panel--prev"
                     }`}
+                    style={{
+                      ["--full-group-accent" as any]: FULL_GROUP_THEMES[currentFullGroup]?.accent || "#c6f600",
+                      ["--full-group-card-bg" as any]: FULL_GROUP_THEMES[currentFullGroup]?.cardBg || "#f4f4f4",
+                      ["--full-group-card-text" as any]: FULL_GROUP_THEMES[currentFullGroup]?.cardText || "#171717",
+                      ["--full-group-card-soft" as any]: FULL_GROUP_THEMES[currentFullGroup]?.cardSoft || "#6f8900",
+                    }}
                   >
                     <div className="full-group-matches">
                       {(groupFixturesByGroup[currentFullGroup] || []).map((fixture) => {
@@ -6503,6 +6844,9 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                           })}
                         </tbody>
                       </table>
+                      <div className="full-group-image">
+                        <img src={mundialBanner} alt={`Mundial - Grupo ${currentFullGroup}`} />
+                      </div>
                       <div className="full-group-selected">
                         <span>1ro: {fullModeGroupTables[currentFullGroup]?.[0]?.codigo || "--"}</span>
                         <span>2do: {fullModeGroupTables[currentFullGroup]?.[1]?.codigo || "--"}</span>
@@ -6915,6 +7259,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                   navTarget={bracketNavTarget}
                   onNavHandled={clearBracketNavTarget}
                   scoreByMatchId={scoreByMatchId}
+                  scorePredictions={gameMode === "full" ? scorePredictions : undefined}
                   penaltyPredictions={gameMode === "full" ? penaltyPredictions : undefined}
                   isMatchLocked={isMatchBlockedByDeadline}
                   highlightFinalMatch={sfComplete}

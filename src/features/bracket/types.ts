@@ -88,6 +88,7 @@ export type BracketSavePayload = {
   bestThirdIds: string[];
   picks: Record<string, string | undefined>;
   scorePredictions?: ScorePredictionState;
+  penaltyPredictions?: ScorePredictionState;
   intercontinentalPicks: PlayoffPickState;
   uefaPicks: PlayoffPickState;
   isLocked: boolean;
