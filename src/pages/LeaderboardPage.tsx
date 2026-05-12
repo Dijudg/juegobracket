@@ -11,7 +11,7 @@ import { fetchFanaticoData } from "../utils/fanaticoApi";
 import { resolveSiteBase } from "../utils/apiBase";
 import { useNavigation } from "../contexts/NavigationContext";
 import type { BracketSavePayload } from "../features/bracket/types";
-import { computeBracketScore, loadScoreSheetData } from "../features/bracket/score";
+import { computeBracketScore, computeFullBracketScore, loadScoreSheetData } from "../features/bracket/score";
 import "../styles/globals.css";
 
 type TopCardData = {
@@ -54,6 +54,14 @@ type BracketRow = {
   data: unknown;
   is_public: boolean;
   expires_at: string | null;
+};
+
+type RankingGameMode = "classic" | "full";
+
+type EligibleBracket = {
+  row: BracketRow;
+  payload: BracketSavePayload;
+  mode: RankingGameMode;
 };
 
 type TeamIndexValue = {
@@ -100,9 +108,12 @@ const parsePayload = (raw: unknown): BracketSavePayload | null => {
   const parsed = payload as Partial<BracketSavePayload>;
   return {
     version: Number(parsed.version || 1),
+    gameMode: parsed.gameMode === "full" ? "full" : "classic",
     selections: parsed.selections || {},
     bestThirdIds: parsed.bestThirdIds || [],
     picks: parsed.picks || {},
+    scorePredictions: parsed.scorePredictions || {},
+    penaltyPredictions: parsed.penaltyPredictions || {},
     intercontinentalPicks: parsed.intercontinentalPicks || {},
     uefaPicks: parsed.uefaPicks || {},
     isLocked: Boolean(parsed.isLocked),
@@ -292,6 +303,12 @@ const buildBestCard = (
 
 const isCompletedBracket = (payload: BracketSavePayload | null) => {
   if (!payload) return false;
+  if (payload.gameMode === "full") {
+    const scores = payload.scorePredictions || {};
+    const hasCompleteScore = (matchId: string) =>
+      typeof scores[matchId]?.home === "number" && typeof scores[matchId]?.away === "number";
+    return hasCompleteScore("third-103") && hasCompleteScore("final-104");
+  }
   const picks = payload.picks || {};
   return (
     hasResolvedPick(picks["sf-101"]) &&
@@ -300,6 +317,9 @@ const isCompletedBracket = (payload: BracketSavePayload | null) => {
     hasResolvedPick(picks["final-104"])
   );
 };
+
+const resolveGameMode = (payload: BracketSavePayload): RankingGameMode =>
+  payload.gameMode === "full" ? "full" : "classic";
 
 const chunk = <T,>(items: T[], size: number) => {
   if (size <= 0) return [items];
@@ -351,6 +371,7 @@ export default function LeaderboardPage() {
             .select("id,name,short_code,user_id,updated_at,data,is_public,expires_at")
             .eq("is_public", true)
             .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+            .order("updated_at", { ascending: false })
             .limit(2000),
           fetchFanaticoData(),
           loadFallbackTeamsFromCsv().catch(() => []),
@@ -363,6 +384,7 @@ export default function LeaderboardPage() {
         const combinedTeams = [...(fanaticoData?.teams || []), ...csvTeams];
         const teamIndex = buildTeamIndex(combinedTeams);
         const siteBase = resolveSiteBase() || (typeof window !== "undefined" ? window.location.origin : "");
+        const eligibleByUserMode = new Map<string, EligibleBracket[]>();
 
         for (const row of brackets) {
           const userId = (row.user_id || "").toString();
@@ -375,15 +397,41 @@ export default function LeaderboardPage() {
             sharedUserId === GUEST_USER_ID ||
             /\binvitado\b|\bguest\b/.test(sharedIdentity);
           if (isGuestShared) continue;
+          const mode = resolveGameMode(payload);
+          const key = `${userId}:${mode}`;
+          const list = eligibleByUserMode.get(key) || [];
+          list.push({ row, payload, mode });
+          eligibleByUserMode.set(key, list);
+        }
 
-          const summary = computeBracketScore(
-            {
-              picks: payload.picks || {},
-              intercontinentalPicks: payload.intercontinentalPicks || {},
-              uefaPicks: payload.uefaPicks || {},
-            },
-            sheetData,
-          );
+        const eligibleBrackets = Array.from(eligibleByUserMode.values()).flatMap((items) =>
+          items
+            .slice()
+            .sort((a, b) => compareIso(b.row.updated_at || "", a.row.updated_at || ""))
+            .slice(0, 2),
+        );
+
+        for (const { row, payload, mode } of eligibleBrackets) {
+          const userId = (row.user_id || "").toString();
+          const summary =
+            mode === "full"
+              ? computeFullBracketScore(
+                  {
+                    picks: payload.picks || {},
+                    intercontinentalPicks: payload.intercontinentalPicks || {},
+                    uefaPicks: payload.uefaPicks || {},
+                    scorePredictions: payload.scorePredictions || {},
+                  },
+                  sheetData,
+                )
+              : computeBracketScore(
+                  {
+                    picks: payload.picks || {},
+                    intercontinentalPicks: payload.intercontinentalPicks || {},
+                    uefaPicks: payload.uefaPicks || {},
+                  },
+                  sheetData,
+                );
 
           const cardCandidate = buildBestCard(payload, teamIndex, row.id, summary.totalPoints, siteBase);
           const prev = byUser.get(userId);
