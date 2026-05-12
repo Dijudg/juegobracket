@@ -10,7 +10,7 @@ import {
   type MutableRefObject,
   type RefObject,
 } from "react";
-import type { Match, MatchSchedule, Team } from "../types";
+import type { Match, MatchSchedule, ScorePrediction, Team } from "../types";
 import { getTeamEscudo } from "../utils";
 import { BracketConnector } from "./BracketConnector";
 
@@ -31,8 +31,10 @@ export const KnockoutBracket = ({
   onNavHandled,
   onChampionClick,
   onMatchClick,
+  onPenaltyClick,
   locked = false,
   scoreByMatchId,
+  penaltyPredictions,
   isMatchLocked,
   highlightFinalMatch = false,
 }: {
@@ -52,8 +54,10 @@ export const KnockoutBracket = ({
   onNavHandled?: () => void;
   onChampionClick?: (team?: Team) => void;
   onMatchClick?: (match: Match) => void;
+  onPenaltyClick?: (match: Match) => void;
   locked?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
+  penaltyPredictions?: Record<string, ScorePrediction | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
   highlightFinalMatch?: boolean;
 }) => {
@@ -304,6 +308,22 @@ export const KnockoutBracket = ({
     return match.id || "";
   };
 
+  const resolveMatchFooter = (match?: Match) => {
+    if (!match) return "\u00A0";
+    const penalty = penaltyPredictions?.[match.id];
+    if (typeof penalty?.home === "number" && typeof penalty?.away === "number") {
+      return `Pen. ${penalty.home}-${penalty.away}`;
+    }
+    const number = resolveMatchNumber(match);
+    return number ? `Partido ${number}` : "\u00A0";
+  };
+
+  const hasPenaltyPrediction = (match?: Match) => {
+    if (!match) return false;
+    const penalty = penaltyPredictions?.[match.id];
+    return typeof penalty?.home === "number" && typeof penalty?.away === "number";
+  };
+
   const TeamButton = ({
     team,
     isWinner,
@@ -442,9 +462,22 @@ export const KnockoutBracket = ({
                   onLeave={clearTeamHover}
                 />
               </div>
-              <div className="text-center text-[10px] font-semibold text-[#c6f600] mt-auto">
-                Partido {date || "\u00A0"}
-              </div>
+              {hasPenaltyPrediction(match) && onPenaltyClick ? (
+                <button
+                  type="button"
+                  className="knockout-match-footer-button text-center text-[10px] font-semibold text-[#c6f600] mt-auto"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onPenaltyClick(match);
+                  }}
+                >
+                  {resolveMatchFooter(match)}
+                </button>
+              ) : (
+                <div className="text-center text-[10px] font-semibold text-[#c6f600] mt-auto">
+                  {resolveMatchFooter(match)}
+                </div>
+              )}
             </div>
           </div>
         </div>

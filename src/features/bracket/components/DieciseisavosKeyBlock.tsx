@@ -20,7 +20,9 @@ export const DieciseisavosKeyBlock = ({
   scoreByMatchId,
   isMatchLocked,
   scorePredictions,
+  penaltyPredictions,
   onScoreChange,
+  onPenaltyClick,
 }: {
   semiMatches: BlockMatch[];
   finalMatch?: Match;
@@ -33,7 +35,9 @@ export const DieciseisavosKeyBlock = ({
   scoreByMatchId?: Record<string, number | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
   scorePredictions?: Record<string, ScorePrediction | undefined>;
+  penaltyPredictions?: Record<string, ScorePrediction | undefined>;
   onScoreChange?: (matchId: string, side: "home" | "away", value: number | null) => void;
+  onPenaltyClick?: (match: Match) => void;
 }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -115,6 +119,12 @@ export const DieciseisavosKeyBlock = ({
     const scorePoints = scoreByMatchId?.[match.id] || 0;
     const label = match.label || match.id;
     const dateLabel = formatFixtureDate(schedule?.fecha) || "\u00A0";
+    const penalty = penaltyPredictions?.[match.id];
+    const hasPenalty = typeof penalty?.home === "number" && typeof penalty?.away === "number";
+    const penaltyLabel =
+      hasPenalty
+        ? `Pen. ${penalty.home}-${penalty.away}`
+        : dateLabel;
     const winnerId = match.ganador?.id;
     const matchLocked = !!isMatchLocked?.(match.id);
     const showBlocked = !!readOnly && !!onBlockedPick;
@@ -146,7 +156,7 @@ export const DieciseisavosKeyBlock = ({
           lockedMatch: matchLocked,
           scoreGlow: scorePoints > 0 && !!winnerId && winnerId === match.equipoA?.id,
         })}
-        {onScoreChange && (
+        {onScoreChange && !readOnly && (
           <div className="match-score-row">
             <input
               type="number"
@@ -179,7 +189,20 @@ export const DieciseisavosKeyBlock = ({
           lockedMatch: matchLocked,
           scoreGlow: scorePoints > 0 && !!winnerId && winnerId === match.equipoB?.id,
         })}
-        <div className="matchDate">{dateLabel}</div>
+        {hasPenalty && onPenaltyClick ? (
+          <button
+            type="button"
+            className="matchDate matchDate--button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPenaltyClick(match);
+            }}
+          >
+            {penaltyLabel}
+          </button>
+        ) : (
+          <div className="matchDate">{penaltyLabel}</div>
+        )}
       </div>
     );
   };

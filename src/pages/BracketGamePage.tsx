@@ -3065,20 +3065,33 @@ export default function BracketGamePage() {
   const groupCompletion = useMemo(() => {
     const missing: string[] = [];
     GROUP_LETTERS.forEach((g) => {
+      if (gameMode === "full") {
+        const groupFixtures = fixtures.filter((fixture) => {
+          const fixtureGroup = fixture.group?.toUpperCase();
+          const fixtureNumber = Number.parseInt(normalizeMatchKey(fixture.id), 10);
+          return fixtureGroup === g && Number.isFinite(fixtureNumber) && fixtureNumber <= 72;
+        });
+        if (groupFixtures.length === 0 || groupFixtures.some((fixture) => !hasScorePrediction(scorePredictions[normalizeMatchKey(fixture.id)]))) {
+          missing.push(g);
+        }
+        return;
+      }
       const pick = selections[g];
       if (!pick?.primero || !pick?.segundo || !pick?.tercero) {
         missing.push(g);
       }
     });
     return { complete: missing.length === 0, missing };
-  }, [selections]);
+  }, [fixtures, gameMode, scorePredictions, selections]);
 
   const thirdsComplete = bestThirdIds.length === MAX_THIRD;
 
   const missingMatchLabels = useCallback(
     (round: Match[]) =>
-      round.filter((m) => !picks[m.id]).map((m) => `Partido ${m.label}`),
-    [picks],
+      round
+        .filter((m) => (gameMode === "full" ? !m.ganador : !picks[m.id]))
+        .map((m) => `Partido ${m.label}`),
+    [gameMode, picks],
   );
 
   
@@ -3816,6 +3829,29 @@ export default function BracketGamePage() {
       .map((team) => team.id);
   }, [gameMode, groups, fullModeGroupTables]);
 
+  const fullModeThirdStandings = useMemo(() => {
+    if (gameMode !== "full") return [];
+    return groups
+      .map(({ grupo }) => {
+        const table = fullModeGroupTables[grupo] || [];
+        const complete = table.length >= 3 && table.every((team) => team.pj === 3);
+        const team = table[2];
+        return {
+          grupo,
+          team,
+          complete,
+          pts: team?.pts ?? 0,
+          pj: team?.pj ?? 0,
+          gf: team?.gf ?? 0,
+          dif: team?.dif ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        if (a.complete !== b.complete) return a.complete ? -1 : 1;
+        return b.pts - a.pts || b.dif - a.dif || b.gf - a.gf || a.grupo.localeCompare(b.grupo, "es");
+      });
+  }, [gameMode, groups, fullModeGroupTables]);
+
   const seeds = useMemo(
     () => buildSeedsFromSelections(gameMode === "full" ? fullModeSelections : selections),
     [gameMode, fullModeSelections, selections],
@@ -3998,13 +4034,6 @@ const handleScorePredictionChange = useCallback(
   [isMatchBlockedByDeadline, isScorePredictionLocked],
 );
 
-const clampPenalty = (value: string) => {
-  if (value.trim() === "") return null;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return null;
-  return Math.max(1, Math.min(5, parsed));
-};
-
 const handlePenaltyPredictionChange = useCallback(
   (matchId: string, side: "home" | "away", value: number | null) => {
     if (isMatchBlockedByDeadline(matchId)) return;
@@ -4021,6 +4050,46 @@ const handlePenaltyPredictionChange = useCallback(
   },
   [isMatchBlockedByDeadline],
 );
+
+const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string, team?: Team) => {
+  const selectedValue = penaltyPredictions[match.id]?.[side];
+  const escudo = getTeamEscudo(team);
+  const code = getTeamCode(team) || "--";
+  const locked = isMatchBlockedByDeadline(match.id);
+
+  return (
+    <div className="penalty-picker">
+      <div className="penalty-picker__team">
+        <span className="penalty-picker__flag">
+          {escudo ? <img src={escudo} alt={team?.nombre || label} /> : <span>{code}</span>}
+        </span>
+        <span className="penalty-picker__copy">
+          <span className="penalty-picker__side">{label}</span>
+          <span className="penalty-picker__name">{team?.nombre || "Por definir"}</span>
+        </span>
+      </div>
+      <div className="penalty-picker__dots" role="group" aria-label={`Penales ${label}`}>
+        {[1, 2, 3, 4, 5].map((value) => {
+          const selected = typeof selectedValue === "number" && selectedValue >= value;
+          return (
+            <button
+              key={`${match.id}-${side}-${value}`}
+              type="button"
+              disabled={locked}
+              onClick={() => handlePenaltyPredictionChange(match.id, side, value)}
+              className={`penalty-dot${selected ? " is-selected" : ""}`}
+              aria-label={`${value} penal${value === 1 ? "" : "es"} ${label}`}
+              aria-pressed={selectedValue === value}
+            >
+              <span />
+            </button>
+          );
+        })}
+      </div>
+      <span className="penalty-picker__value">{typeof selectedValue === "number" ? selectedValue : "-"}</span>
+    </div>
+  );
+};
 
   const { r32, r16, qf, sf, final, thirdPlace } = useMemo(() => {
     if (bestThirdIds.length < MAX_THIRD) return { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] };
@@ -4875,8 +4944,8 @@ const handlePenaltyPredictionChange = useCallback(
   };
 
   const r32Complete = useMemo(
-    () => r32.length > 0 && r32.every((m) => !!picks[m.id]),
-    [r32, picks],
+    () => r32.length > 0 && r32.every((m) => (gameMode === "full" ? !!m.ganador : !!picks[m.id])),
+    [gameMode, r32, picks],
   );
   const r32CompleteRef = useRef(r32Complete);
   useEffect(() => {
@@ -4887,20 +4956,20 @@ const handlePenaltyPredictionChange = useCallback(
   const r16Left = useMemo(() => r16.slice(0, 4), [r16]);
   const r16Right = useMemo(() => r16.slice(4), [r16]);
   const r32LeftComplete = useMemo(
-    () => r32Left.length > 0 && r32Left.every((m) => !!picks[m.id]),
-    [r32Left, picks],
+    () => r32Left.length > 0 && r32Left.every((m) => (gameMode === "full" ? !!m.ganador : !!picks[m.id])),
+    [gameMode, r32Left, picks],
   );
   const r32RightComplete = useMemo(
-    () => r32Right.length > 0 && r32Right.every((m) => !!picks[m.id]),
-    [r32Right, picks],
+    () => r32Right.length > 0 && r32Right.every((m) => (gameMode === "full" ? !!m.ganador : !!picks[m.id])),
+    [gameMode, r32Right, picks],
   );
   const finalComplete = useMemo(
-    () => final.length > 0 && final.every((m) => !!picks[m.id]),
-    [final, picks],
+    () => final.length > 0 && final.every((m) => (gameMode === "full" ? !!m.ganador : !!picks[m.id])),
+    [gameMode, final, picks],
   );
   const sfComplete = useMemo(
-    () => sf.length > 0 && sf.every((m) => !!picks[m.id]),
-    [sf, picks],
+    () => sf.length > 0 && sf.every((m) => (gameMode === "full" ? !!m.ganador : !!picks[m.id])),
+    [gameMode, sf, picks],
   );
   const menuSteps = useMemo(
     () =>
@@ -4939,19 +5008,16 @@ const handlePenaltyPredictionChange = useCallback(
         return;
       }
       if (isViewOnly) return;
-      if (!thirdsComplete && !phaseDeadlineLocked.grupos) {
+      if ((!groupCompletion.complete || !thirdsComplete) && !phaseDeadlineLocked.grupos) {
         autoSwitchLlavesRef.current = false;
         return;
       }
-    if (activeTab === "dieciseisavos") {
-      autoSwitchLlavesRef.current = true;
-      return;
-    }
+    if (activeTab === "dieciseisavos") return;
     if (!autoSwitchLlavesRef.current) {
       setActiveTab("dieciseisavos");
       autoSwitchLlavesRef.current = true;
     }
-    }, [thirdsComplete, phaseDeadlineLocked.grupos, activeTab, showNewGamePrompt, isViewOnly, defaultStartTab]);
+    }, [groupCompletion.complete, thirdsComplete, phaseDeadlineLocked.grupos, activeTab, showNewGamePrompt, isViewOnly, defaultStartTab]);
 
   useEffect(() => {
     if (activeTab === "dieciseisavos") {
@@ -5033,13 +5099,24 @@ const handlePenaltyPredictionChange = useCallback(
               scoreByMatchId={scoreByMatchId}
               isMatchLocked={isMatchBlockedByDeadline}
               scorePredictions={gameMode === "full" ? scorePredictions : undefined}
+              penaltyPredictions={gameMode === "full" ? penaltyPredictions : undefined}
               onScoreChange={gameMode === "full" ? handleScorePredictionChange : undefined}
+              onPenaltyClick={gameMode === "full" ? setPenaltyModalMatch : undefined}
             />,
         );
       }
       return items;
     },
-    [gameMode, handleScorePredictionChange, isMatchBlockedByDeadline, isPhaseLocked, scheduleByMatch, scoreByMatchId, scorePredictions],
+    [
+      gameMode,
+      handleScorePredictionChange,
+      isMatchBlockedByDeadline,
+      isPhaseLocked,
+      penaltyPredictions,
+      scheduleByMatch,
+      scoreByMatchId,
+      scorePredictions,
+    ],
   );
 
   useEffect(() => {
@@ -5133,7 +5210,7 @@ const handlePenaltyPredictionChange = useCallback(
       showAuthModal ||
       registeredSavePopup ||
       (!showModeHome &&
-        (showThirdsModal ||
+        ((showThirdsModal && gameMode !== "full") ||
           !!showFixturesGroup ||
           showClassicRulesModal ||
           showFullModeRulesIntro ||
@@ -5143,6 +5220,8 @@ const handlePenaltyPredictionChange = useCallback(
           showIntercontinentalModal ||
           showSaveModal ||
           showChampionModal ||
+          !!scoreModalMatch ||
+          !!penaltyModalMatch ||
           showNewGamePrompt));
     useBodyScrollLock(anyModalOpen);
 
@@ -5157,6 +5236,8 @@ const handlePenaltyPredictionChange = useCallback(
       setShowR32Warning(false);
       setShowSemifinalPrompt(false);
       setShowChampionModal(false);
+      setScoreModalMatch(null);
+      setPenaltyModalMatch(null);
       setRegisteredSavePopup(false);
       setShowNewGamePrompt(false);
       closeAuthModal();
@@ -6536,7 +6617,7 @@ const handlePenaltyPredictionChange = useCallback(
 
           {missingThirdGroups.length > 0 && (
             <div className="mt-4 text-xl text-center text-gray-300">
-              Te faltan seleccionar el tercero del grupo:{" "}
+              {gameMode === "full" ? "Te faltan completar marcadores hasta el grupo:" : "Te faltan seleccionar el tercero del grupo:"}{" "}
               <span className="font-semibold text-[#c6f600]">{missingThirdGroups.join(", ")}</span>
             </div>
           )}
@@ -6571,10 +6652,60 @@ const handlePenaltyPredictionChange = useCallback(
                     : 'Tus mejores terceros elegidos. Si quieres cambiar, abre "Editar".'}
               </p>
             )}
-            {bestThirdTeams.length === 0 ? (
+            {bestThirdTeams.length === 0 && gameMode !== "full" ? (
               <p className="text-sm text-gray-400">Aun no seleccionas terceros.</p>
             ) : (
               <div className="w-full">
+                {gameMode === "full" && fullModeThirdStandings.length > 0 && (
+                  <div className="full-thirds-table-wrap">
+                    <table className="full-thirds-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Grupo</th>
+                          <th>Tercero</th>
+                          <th>Pts</th>
+                          <th>PJ</th>
+                          <th>Dif</th>
+                          <th>GF</th>
+                          <th>Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fullModeThirdStandings.map((entry, idx) => {
+                          const qualifies = entry.complete && !!entry.team && bestThirdIds.includes(entry.team.id);
+                          const escudo = getTeamEscudo(entry.team);
+                          return (
+                            <tr
+                              key={`full-third-${entry.grupo}`}
+                              className={`${qualifies ? "is-qualified" : ""} ${!entry.complete ? "is-pending" : ""}`}
+                            >
+                              <td>{entry.complete ? idx + 1 : "--"}</td>
+                              <td>Grupo {entry.grupo}</td>
+                              <td>
+                                <span className="full-thirds-team">
+                                  <span className="full-thirds-team__flag">
+                                    {escudo ? <img src={escudo} alt={entry.team?.nombre || entry.grupo} /> : entry.team?.codigo || "--"}
+                                  </span>
+                                  <span>{entry.team?.nombre || "Pendiente"}</span>
+                                </span>
+                              </td>
+                              <td>{entry.complete ? entry.pts : "--"}</td>
+                              <td>{entry.complete ? entry.pj : "--"}</td>
+                              <td>{entry.complete ? entry.dif : "--"}</td>
+                              <td>{entry.complete ? entry.gf : "--"}</td>
+                              <td>
+                                <span className={`full-thirds-status ${qualifies ? "is-qualified" : entry.complete ? "" : "is-pending"}`}>
+                                  {qualifies ? "Clasifica" : entry.complete ? "Fuera" : "Pendiente"}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs text-gray-200">
                   {bestThirdTeams.map((team) => (
                     <div
@@ -6784,9 +6915,11 @@ const handlePenaltyPredictionChange = useCallback(
                   navTarget={bracketNavTarget}
                   onNavHandled={clearBracketNavTarget}
                   scoreByMatchId={scoreByMatchId}
+                  penaltyPredictions={gameMode === "full" ? penaltyPredictions : undefined}
                   isMatchLocked={isMatchBlockedByDeadline}
                   highlightFinalMatch={sfComplete}
                   onMatchClick={gameMode === "full" ? setScoreModalMatch : undefined}
+                  onPenaltyClick={gameMode === "full" ? setPenaltyModalMatch : undefined}
                   onChampionClick={
                     gameMode === "full"
                       ? undefined
@@ -6830,7 +6963,7 @@ const handlePenaltyPredictionChange = useCallback(
           onClick={() => setScoreModalMatch(null)}
         >
           <div
-            className="w-full max-w-xl rounded-lg border border-neutral-700 bg-neutral-950 p-4 shadow-2xl"
+            className="w-full md:w-1/2 max-w-3xl rounded-lg border border-neutral-700 bg-neutral-950 p-4 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -6855,6 +6988,22 @@ const handlePenaltyPredictionChange = useCallback(
               onWinnerPick={gameMode === "full" ? undefined : applyWinner}
               phaseLabel="Llaves finales"
             />
+            {hasScorePrediction(scorePredictions[scoreModalMatch.id]) &&
+            scorePredictions[scoreModalMatch.id]!.home === scorePredictions[scoreModalMatch.id]!.away ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setScoreModalMatch(null);
+                  setPenaltyModalMatch(scoreModalMatch);
+                }}
+                className="mt-3 w-full rounded-md border border-[#c6f600]/60 bg-[#c6f600] px-3 py-2 text-sm font-black text-black hover:brightness-95"
+              >
+                Editar penales
+                {hasScorePrediction(penaltyPredictions[scoreModalMatch.id])
+                  ? ` (${penaltyPredictions[scoreModalMatch.id]!.home}-${penaltyPredictions[scoreModalMatch.id]!.away})`
+                  : ""}
+              </button>
+            ) : null}
           </div>
         </div>
       )}
@@ -6864,7 +7013,7 @@ const handlePenaltyPredictionChange = useCallback(
           onClick={() => setPenaltyModalMatch(null)}
         >
           <div
-            className="w-full max-w-xl rounded-lg border border-neutral-700 bg-neutral-950 p-4 shadow-2xl"
+            className="w-full md:w-1/2 max-w-3xl rounded-lg border border-neutral-700 bg-neutral-950 p-4 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -6885,55 +7034,9 @@ const handlePenaltyPredictionChange = useCallback(
               </button>
             </div>
             <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-4 items-end">
-                <div>
-                  <span className="text-xs uppercase text-gray-500">Local</span>
-                  <div className="text-lg font-bold text-white">
-                    {penaltyModalMatch.equipoA?.nombre || "Por definir"}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-xs uppercase text-gray-500">Visitante</span>
-                  <div className="text-lg font-bold text-white">
-                    {penaltyModalMatch.equipoB?.nombre || "Por definir"}
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="flex flex-col text-sm text-gray-300">
-                  Penales local
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={penaltyPredictions[penaltyModalMatch.id]?.home ?? ""}
-                    onChange={(event) =>
-                      handlePenaltyPredictionChange(
-                        penaltyModalMatch.id,
-                        "home",
-                        clampPenalty(event.target.value),
-                      )
-                    }
-                    className="mt-2 rounded border border-neutral-700 bg-black px-3 py-2 text-white"
-                  />
-                </label>
-                <label className="flex flex-col text-sm text-gray-300">
-                  Penales visitante
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={penaltyPredictions[penaltyModalMatch.id]?.away ?? ""}
-                    onChange={(event) =>
-                      handlePenaltyPredictionChange(
-                        penaltyModalMatch.id,
-                        "away",
-                        clampPenalty(event.target.value),
-                      )
-                    }
-                    className="mt-2 rounded border border-neutral-700 bg-black px-3 py-2 text-white"
-                  />
-                </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                {renderPenaltyPicker(penaltyModalMatch, "home", "Local", penaltyModalMatch.equipoA)}
+                {renderPenaltyPicker(penaltyModalMatch, "away", "Visitante", penaltyModalMatch.equipoB)}
               </div>
               {hasScorePrediction(penaltyPredictions[penaltyModalMatch.id]) &&
               penaltyPredictions[penaltyModalMatch.id]!.home ===
