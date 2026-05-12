@@ -421,6 +421,7 @@ export default function LeaderboardPage() {
                     intercontinentalPicks: payload.intercontinentalPicks || {},
                     uefaPicks: payload.uefaPicks || {},
                     scorePredictions: payload.scorePredictions || {},
+                    penaltyPredictions: payload.penaltyPredictions || {},
                   },
                   sheetData,
                 )
@@ -747,7 +748,12 @@ export default function LeaderboardPage() {
               {!loading && !error && (
                 <div className="grid gap-2 mt-10">
                   <div className="flex gap-3 p-2 md:flex-row md:items-center md:justify-between">
-                    <h1 className="w-2/3 text-2xl font-black md:text-3xl">Tabla de posiciones</h1>
+                    <div className="w-2/3">
+                      <h1 className="text-2xl font-black md:text-3xl">Tabla de posiciones</h1>
+                      <p className="mt-1 text-xs font-semibold text-gray-400 md:text-sm">
+                        Para definir el ganador global solo cuentan los 2 últimos brackets clásicos y los 2 últimos completos de cada jugador.
+                      </p>
+                    </div>
                     <div className="relative w-full ">
                       <svg
                         className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-400"

@@ -466,20 +466,6 @@ app.post("/api/brackets", requireAuth, async (req, res) => {
 
   if (!data) return res.status(400).json({ error: "Missing bracket data" });
 
-  // limite 5 brackets por usuario
-  if (!id) {
-    const { count, error: countError } = await supabase
-      .from("bracket_saves")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId);
-
-    if (countError) {
-      logSupabaseError("brackets.count", countError);
-      return res.status(500).json({ error: countError.message, details: countError.details, hint: countError.hint });
-    }
-    if ((count || 0) >= 5) return res.status(409).json({ error: "Limit reached (max 5 brackets)" });
-  }
-
   // si viene id, verifica que sea del usuario
   if (id) {
     const { data: existing, error: existingErr } = await supabase
@@ -603,18 +589,6 @@ app.post("/api/guest-brackets/claim", requireAuth, async (req, res) => {
       return res.status(500).json({ error: error.message });
     }
     if (!data) return res.status(404).json({ error: "Bracket not found" });
-
-    const { count, error: countError } = await supabase
-      .from("bracket_saves")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", req.user.id);
-    if (countError) {
-      logSupabaseError("guest.brackets.claim.count", countError);
-      return res.status(500).json({ error: countError.message });
-    }
-    if ((count || 0) >= 5) {
-      return res.status(409).json({ error: "Limit reached (max 5 brackets)" });
-    }
 
     let nextPayload = data.data;
     if (typeof nextPayload === "string") {

@@ -8,6 +8,7 @@ const scoringRules = [
   ["Marcador Acertado", "5"],
   ["Ganador Acertado", "2"],
   ["Gol Acertado", "1"],
+  ["Penales Exactos", "1"],
   ["Predicción Única", "5"],
   ["Bono Octavos", "8"],
   ["Bono Cuartos", "4"],
@@ -76,8 +77,8 @@ export default function GameRulesPage() {
           <div className="mt-8 grid gap-4 lg:grid-cols-3">
             <RuleCard icon={<ShieldCheck className="size-5" />} title="Reglas generales">
               <p>
-                Para el cálculo de puntos se utiliza el resultado real del partido al finalizar los 90 o 120 minutos. No
-                incluye definición por penaltis.
+                Para el cálculo de puntos se utiliza el resultado real del partido al finalizar los 90 o 120 minutos. Si
+                el partido se define por penaltis, el marcador de penales exacto suma un punto adicional.
               </p>
             </RuleCard>
 
@@ -132,6 +133,10 @@ export default function GameRulesPage() {
                 <p>
                   <strong className="text-white">Gol acertado:</strong> si no aciertas el marcador exacto, pero aciertas los
                   goles de uno de los equipos, sumas los puntos.
+                </p>
+                <p>
+                  <strong className="text-white">Penales exactos:</strong> si el partido llega a penaltis y aciertas
+                  exactamente la tanda, sumas un punto adicional.
                 </p>
                 <p>
                   <strong className="text-white">Predicción única:</strong> si fuiste el único que acertó el marcador exacto

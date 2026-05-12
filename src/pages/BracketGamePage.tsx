@@ -137,7 +137,6 @@ const fixturesUrl =
 
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
 const MAX_THIRD = 8;
-const MAX_USER_BRACKETS = 5;
 const MAX_RESET_ATTEMPTS = 4;
 const LS_INTERCONTINENTAL = "fm-repechaje-intercontinental";
 const LS_UEFA = "fm-repechaje-uefa";
@@ -415,7 +414,6 @@ const SaveModal = ({
 }: SaveModalProps) => {
   if (!open) return null;
   const overlayRef = useRef<HTMLDivElement>(null);
-  const limitReached = savedBrackets.length >= MAX_USER_BRACKETS;
   const showOverwrite = allowOverwrite && savedBrackets.length > 0;
   const showUpdate = allowOverwrite && !!currentSaveId;
   const isGuest = !isAuthed;
@@ -527,17 +525,15 @@ const SaveModal = ({
                 Actualizar este bracket
               </label>
             )}
-            {!limitReached && (
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="saveMode"
-                  checked={saveMode === "new"}
-                  onChange={() => onSaveModeChange("new")}
-                />
-                Guardar como nuevo
-              </label>
-            )}
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="saveMode"
+                checked={saveMode === "new"}
+                onChange={() => onSaveModeChange("new")}
+              />
+              Guardar como nuevo
+            </label>
             {showOverwrite && (
               <label className="flex items-center gap-2">
                 <input
@@ -550,12 +546,6 @@ const SaveModal = ({
               </label>
             )}
           </div>
-
-          {limitReached && (
-            <p className="mt-2 text-xs text-yellow-400">
-              Límite de {MAX_USER_BRACKETS} brackets alcanzado. Debes sobrescribir uno.
-            </p>
-          )}
 
           {!isAuthed && (
             <p className="mt-2 text-xs text-gray-400">
@@ -1117,8 +1107,9 @@ export default function BracketGamePage() {
     () => ({
       ...bracketScoreInput,
       scorePredictions,
+      penaltyPredictions,
     }),
-    [bracketScoreInput, scorePredictions],
+    [bracketScoreInput, scorePredictions, penaltyPredictions],
   );
   const { summary: classicScoreSummary } = useBracketScore(bracketScoreInput, isViewOnly && gameMode !== "full");
   const { summary: fullScoreSummary } = useFullBracketScore(fullScoreInput, isViewOnly && gameMode === "full");
@@ -2463,25 +2454,6 @@ export default function BracketGamePage() {
           bracketId: currentSaveId,
         };
       }
-      const { count, error: countError } = await supabase
-        .from("bracket_saves")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId);
-      if (countError) throw countError;
-      if ((count || 0) >= MAX_USER_BRACKETS) {
-        trackEvent("save_error", {
-          mode: saveMode,
-          is_authed: true,
-          reason: "limit",
-        });
-        setSaveError(`Llegaste al límite de ${MAX_USER_BRACKETS} brackets. Adminístralos en /user.`);
-        setSaveBusy(false);
-        return {
-          ok: false,
-          error: `Llegaste al límite de ${MAX_USER_BRACKETS} brackets. Adminístralos en /user.`,
-        };
-      }
-
       const { data, error } = await supabase
         .from("bracket_saves")
         .insert([{ user_id: userId, name, data: payload }])
@@ -2567,14 +2539,6 @@ export default function BracketGamePage() {
             .eq("user_id", userId);
           if (error) throw error;
         } else {
-          const { count, error: countError } = await supabase
-            .from("bracket_saves")
-            .select("id", { count: "exact", head: true })
-            .eq("user_id", userId);
-          if (countError) throw countError;
-          if ((count || 0) >= MAX_USER_BRACKETS) {
-            throw new Error(`Llegaste al límite de ${MAX_USER_BRACKETS} brackets. Borra uno para activar el guardado automático.`);
-          }
           const { data, error } = await supabase
             .from("bracket_saves")
             .insert([{ user_id: userId, name, data: payload, updated_at: updatedAt }])
@@ -4470,28 +4434,21 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
         if (authSession?.access_token) {
           try {
             const userId = requireAuthUserId();
-            const { count, error: countError } = await supabase
+            const payload = buildSavePayload();
+            const name = saveName.trim() || generateBracketCode();
+            const { data, error } = await supabase
               .from("bracket_saves")
-              .select("id", { count: "exact", head: true })
-              .eq("user_id", userId);
-            if (countError) throw countError;
-            if ((count || 0) < MAX_USER_BRACKETS) {
-              const payload = buildSavePayload();
-              const name = saveName.trim() || generateBracketCode();
-              const { data, error } = await supabase
-                .from("bracket_saves")
-                .insert([{ user_id: userId, name, data: payload }])
-                .select("id,name")
-                .maybeSingle();
-              if (error) throw error;
-              const saved = data as { id: string; name?: string } | null;
-              if (saved?.id) {
-                bracketId = saved.id;
-                currentSaveIdRef.current = saved.id;
-                setCurrentSaveId(saved.id);
-                setCurrentSaveName(saved.name || name);
-                sharePageUrl = buildSharePageUrl(saved.id, API_BASE_URL || undefined);
-              }
+              .insert([{ user_id: userId, name, data: payload }])
+              .select("id,name")
+              .maybeSingle();
+            if (error) throw error;
+            const saved = data as { id: string; name?: string } | null;
+            if (saved?.id) {
+              bracketId = saved.id;
+              currentSaveIdRef.current = saved.id;
+              setCurrentSaveId(saved.id);
+              setCurrentSaveName(saved.name || name);
+              sharePageUrl = buildSharePageUrl(saved.id, API_BASE_URL || undefined);
             }
           } catch {
             // fallback to guest share below

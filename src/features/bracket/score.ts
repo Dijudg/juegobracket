@@ -18,6 +18,8 @@ type ScoreFixture = {
   awayId?: string;
   homeScore?: number | null;
   awayScore?: number | null;
+  homePenaltyScore?: number | null;
+  awayPenaltyScore?: number | null;
 };
 
 export type ScoreSheetData = {
@@ -37,10 +39,12 @@ export type BracketScoreSummary = {
   winnerCount?: number;
   goalCount?: number;
   uniqueExactCount?: number;
+  penaltyExactCount?: number;
 };
 
 export type FullBracketScoreInput = BracketScoreInput & {
   scorePredictions: ScorePredictionState;
+  penaltyPredictions?: ScorePredictionState;
 };
 
 const FULL_POINTS = {
@@ -52,6 +56,7 @@ const FULL_POINTS = {
   quarterBonus: 4,
   semifinalBonus: 2,
   finalBonus: 5,
+  exactPenalty: 1,
 } as const;
 
 const WORLD_FIXTURES_URL =
@@ -277,6 +282,34 @@ const resolveScoresFromRow = (row: Record<string, any>) => {
   return { homeScore, awayScore };
 };
 
+const resolvePenaltyScoresFromRow = (row: Record<string, any>) => {
+  const homePenaltyScore = readNumber(row, [
+    "penal_local",
+    "penales_local",
+    "penalesLocal",
+    "penaltyHome",
+    "homePenalty",
+    "home_penalty",
+    "penalty_home",
+    "penalties_home",
+    "homePenalties",
+    "pen_local",
+  ]);
+  const awayPenaltyScore = readNumber(row, [
+    "penal_visita",
+    "penales_visita",
+    "penalesVisita",
+    "penaltyAway",
+    "awayPenalty",
+    "away_penalty",
+    "penalty_away",
+    "penalties_away",
+    "awayPenalties",
+    "pen_visita",
+  ]);
+  return { homePenaltyScore, awayPenaltyScore };
+};
+
 const resolveWinnerFromScores = (row: Record<string, any>) => {
   const { homeScore, awayScore } = resolveScoresFromRow(row);
   if (homeScore === null || awayScore === null) return "";
@@ -383,11 +416,14 @@ const registerMatchLikeRow = (
   ]);
   const winnerId = stringifyToken(directWinner) || resolveWinnerFromScores(row);
   const { homeScore, awayScore } = resolveScoresFromRow(row);
+  const { homePenaltyScore, awayPenaltyScore } = resolvePenaltyScoresFromRow(row);
   const extra = {
     homeId: normalizeKey(homeId),
     awayId: normalizeKey(awayId),
     homeScore,
     awayScore,
+    homePenaltyScore,
+    awayPenaltyScore,
   };
   registerFixtureAliases(fixturesById, fixtureId, winnerId, extra);
   fixtureAliases.forEach((alias) => registerFixtureAliases(fixturesById, alias, winnerId, extra));
@@ -493,6 +529,18 @@ const loadFallbackScoreSheetData = async (): Promise<ScoreSheetData> => {
   const fixtureHeaders = fixtureLines[0].split("\t").map((h) => h.trim().toLowerCase());
   const idxFixtureId = fixtureHeaders.findIndex((h) => h === "id_partido");
   const idxWinnerId = fixtureHeaders.findIndex((h) => h === "ganador_id");
+  const idxHomeScore = fixtureHeaders.findIndex((h) =>
+    ["gol_local", "gollocal", "homescore", "home_score", "score_home", "local_score", "homegoals"].includes(h),
+  );
+  const idxAwayScore = fixtureHeaders.findIndex((h) =>
+    ["gol_visita", "golvisita", "awayscore", "away_score", "score_away", "visit_score", "awaygoals"].includes(h),
+  );
+  const idxHomePenalty = fixtureHeaders.findIndex((h) =>
+    ["penal_local", "penales_local", "penaleslocal", "penaltyhome", "homepenalty", "home_penalty", "penalty_home", "penalties_home", "homepenalties", "pen_local"].includes(h),
+  );
+  const idxAwayPenalty = fixtureHeaders.findIndex((h) =>
+    ["penal_visita", "penales_visita", "penalesvisita", "penaltyaway", "awaypenalty", "away_penalty", "penalty_away", "penalties_away", "awaypenalties", "pen_visita"].includes(h),
+  );
   if (idxFixtureId < 0 || idxWinnerId < 0) {
     throw new Error("No se encontraron columnas de resultados en partidos-mundial.");
   }
@@ -503,6 +551,10 @@ const loadFallbackScoreSheetData = async (): Promise<ScoreSheetData> => {
     fixturesById.set(fixtureId, {
       fixtureId,
       winnerId: normalizeKey(row[idxWinnerId]),
+      homeScore: idxHomeScore >= 0 ? readNumber({ value: row[idxHomeScore] }, ["value"]) : null,
+      awayScore: idxAwayScore >= 0 ? readNumber({ value: row[idxAwayScore] }, ["value"]) : null,
+      homePenaltyScore: idxHomePenalty >= 0 ? readNumber({ value: row[idxHomePenalty] }, ["value"]) : null,
+      awayPenaltyScore: idxAwayPenalty >= 0 ? readNumber({ value: row[idxAwayPenalty] }, ["value"]) : null,
     });
   }
 
@@ -641,6 +693,7 @@ export const computeFullBracketScore = (
   let exactCount = 0;
   let winnerCount = 0;
   let goalCount = 0;
+  let penaltyExactCount = 0;
 
   Object.entries(input.scorePredictions || {}).forEach(([predictionId, prediction]) => {
     if (
@@ -688,6 +741,23 @@ export const computeFullBracketScore = (
       pointsByTab[tab] += points;
       pointsByMatchId[predictionId] = (pointsByMatchId[predictionId] || 0) + points;
     }
+
+    const actualWentToPenalties =
+      actualHome === actualAway &&
+      typeof fixture.homePenaltyScore === "number" &&
+      typeof fixture.awayPenaltyScore === "number";
+    const penaltyPrediction = input.penaltyPredictions?.[predictionId];
+    const exactPenalty =
+      actualWentToPenalties &&
+      typeof penaltyPrediction?.home === "number" &&
+      typeof penaltyPrediction?.away === "number" &&
+      penaltyPrediction.home === fixture.homePenaltyScore &&
+      penaltyPrediction.away === fixture.awayPenaltyScore;
+    if (exactPenalty) {
+      pointsByTab[tab] += FULL_POINTS.exactPenalty;
+      pointsByMatchId[predictionId] = (pointsByMatchId[predictionId] || 0) + FULL_POINTS.exactPenalty;
+      penaltyExactCount += 1;
+    }
   });
 
   const addAllCorrectBonus = (pickIds: string[], points: number, tab: ScoreTab, bonusKey: string) => {
@@ -732,13 +802,14 @@ export const computeFullBracketScore = (
   const totalPoints = pointsByTab.repechajes + pointsByTab.grupos + pointsByTab.dieciseisavos + pointsByTab.llaves;
   return {
     totalPoints,
-    hitCount: exactCount + winnerCount + goalCount,
+    hitCount: exactCount + winnerCount + goalCount + penaltyExactCount,
     evaluatedCount,
     pointsByTab,
     pointsByMatchId,
     exactCount,
     winnerCount,
     goalCount,
+    penaltyExactCount,
     uniqueExactCount: 0,
   };
 };
