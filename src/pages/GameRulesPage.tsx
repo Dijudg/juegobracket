@@ -84,8 +84,9 @@ export default function GameRulesPage() {
 
             <RuleCard icon={<CheckCircle2 className="size-5" />} title="Predicciones">
               <p>
-                El usuario puede realizar y cambiar sus predicciones hasta 15 minutos antes de iniciar el partido. Si no
-                realiza una predicción para un partido, no suma puntos.
+                El usuario puede realizar y cambiar sus predicciones hasta 15 minutos antes de iniciar el partido. Si el
+                marcador queda vacío al cerrarse la predicción, se completa con el resultado final oficial publicado por
+                El Telégrafo.
               </p>
             </RuleCard>
 

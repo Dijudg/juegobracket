@@ -430,6 +430,8 @@ export default function LeaderboardPage() {
                     picks: payload.picks || {},
                     intercontinentalPicks: payload.intercontinentalPicks || {},
                     uefaPicks: payload.uefaPicks || {},
+                    selections: payload.selections || {},
+                    bestThirdIds: payload.bestThirdIds || [],
                   },
                   sheetData,
                 );

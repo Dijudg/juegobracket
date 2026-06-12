@@ -1096,12 +1096,24 @@ export default function BracketGamePage() {
   const [viewBracketMeta, setViewBracketMeta] = useState<{ name?: string; updatedAt?: string; shortCode?: string } | null>(null);
   const [phaseBlock, setPhaseBlock] = useState<{ title: string; missing: string[] } | null>(null);
   const bracketScoreInput = useMemo(
-    () => ({
-      picks,
-      intercontinentalPicks,
-      uefaPicks,
-    }),
-    [picks, intercontinentalPicks, uefaPicks],
+    () => {
+      const scoreSelections: BracketSavePayload["selections"] = {};
+      Object.entries(selections).forEach(([group, selection]) => {
+        scoreSelections[group] = {
+          primeroId: selection.primero?.id,
+          segundoId: selection.segundo?.id,
+          terceroId: selection.tercero?.id,
+        };
+      });
+      return {
+        picks,
+        intercontinentalPicks,
+        uefaPicks,
+        selections: scoreSelections,
+        bestThirdIds,
+      };
+    },
+    [picks, intercontinentalPicks, uefaPicks, selections, bestThirdIds],
   );
   const fullScoreInput = useMemo(
     () => ({

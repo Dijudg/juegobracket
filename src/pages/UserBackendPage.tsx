@@ -692,6 +692,8 @@ export default function UserBackendPage() {
       picks: selectedPayload?.picks || {},
       intercontinentalPicks: selectedPayload?.intercontinentalPicks || {},
       uefaPicks: selectedPayload?.uefaPicks || {},
+      selections: selectedPayload?.selections || {},
+      bestThirdIds: selectedPayload?.bestThirdIds || [],
     }),
     [selectedPayload],
   );

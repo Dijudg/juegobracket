@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { PlayoffPickState, ScorePredictionState } from "./types";
+import type { BracketSavePayload, PlayoffPickState, ScorePredictionState } from "./types";
 import localTeamsPayload from "../../data/teams.json";
 import localStandingsPayload from "../../data/standings.json";
 import localMatchesPayload from "../../data/matches.json";
@@ -9,6 +9,8 @@ export type BracketScoreInput = {
   picks: Record<string, string | undefined>;
   intercontinentalPicks: PlayoffPickState;
   uefaPicks: PlayoffPickState;
+  selections?: BracketSavePayload["selections"];
+  bestThirdIds?: string[];
 };
 
 type ScoreFixture = {
@@ -22,9 +24,21 @@ type ScoreFixture = {
   awayPenaltyScore?: number | null;
 };
 
+type OfficialGroupStanding = {
+  group: string;
+  position: number;
+  teamId: string;
+  points: number;
+  played: number;
+  wins: number;
+  goalDifference: number;
+  goalsFor: number;
+};
+
 export type ScoreSheetData = {
   fixturesById: Map<string, ScoreFixture>;
   selectionByToken: Map<string, string>;
+  groupStandings: Map<string, OfficialGroupStanding[]>;
 };
 
 export type ScoreTab = "repechajes" | "grupos" | "dieciseisavos" | "llaves";
@@ -40,6 +54,8 @@ export type BracketScoreSummary = {
   goalCount?: number;
   uniqueExactCount?: number;
   penaltyExactCount?: number;
+  groupPositionHitCount?: number;
+  bestThirdHitCount?: number;
 };
 
 export type FullBracketScoreInput = BracketScoreInput & {
@@ -88,6 +104,10 @@ const PLAYOFF_PICK_TO_FIXTURE: Record<string, string> = {
   "UEFA4-SF2": "RD2",
   "UEFA4-FINAL": "RD3",
 };
+
+const FIXTURE_TO_PLAYOFF_PICK = Object.fromEntries(
+  Object.entries(PLAYOFF_PICK_TO_FIXTURE).map(([pickId, fixtureId]) => [fixtureId, pickId]),
+) as Record<string, string>;
 
 let scoreSheetCachePromise: Promise<ScoreSheetData> | null = null;
 
@@ -139,8 +159,31 @@ const resolveFixtureIdFromPick = (pickId: string) => {
   if (PLAYOFF_PICK_TO_FIXTURE[key]) return PLAYOFF_PICK_TO_FIXTURE[key];
   if (/^(R32|R16|QF|SF)-\d+$/.test(key)) return `P${key.split("-")[1]}`;
   if (/^(THIRD|FINAL)-\d+$/.test(key)) return `P${key.split("-")[1]}`;
+  if (/^\d+$/.test(key)) return `P${Number.parseInt(key, 10)}`;
   if (/^P\d+$/.test(key)) return key;
   return null;
+};
+
+const resolvePickIdFromFixture = (fixtureId: string) => {
+  const key = normalizeKey(fixtureId);
+  if (FIXTURE_TO_PLAYOFF_PICK[key]) return FIXTURE_TO_PLAYOFF_PICK[key];
+  const fixtureNum = parseFixtureNumericId(key);
+  if (fixtureNum === null || fixtureNum < 73 || fixtureNum > 104) return null;
+  if (fixtureNum <= 88) return `r32-${fixtureNum}`;
+  if (fixtureNum <= 96) return `r16-${fixtureNum}`;
+  if (fixtureNum <= 100) return `qf-${fixtureNum}`;
+  if (fixtureNum <= 102) return `sf-${fixtureNum}`;
+  if (fixtureNum === 103) return "third-103";
+  return "final-104";
+};
+
+const resolveScorePredictionIdFromFixture = (fixtureId: string) => {
+  const key = normalizeKey(fixtureId);
+  if (FIXTURE_TO_PLAYOFF_PICK[key]) return FIXTURE_TO_PLAYOFF_PICK[key];
+  const fixtureNum = parseFixtureNumericId(key);
+  if (fixtureNum === null || fixtureNum < 1 || fixtureNum > 104) return null;
+  if (fixtureNum <= 72) return `${fixtureNum}`;
+  return resolvePickIdFromFixture(key);
 };
 
 const resolveSelectionLabel = (token: string, map: Map<string, string>) => {
@@ -377,6 +420,8 @@ const registerMatchLikeRow = (
 ) => {
   const row = toRecord(raw);
   if (!row) return;
+  const status = normalizeComparable(stringifyToken(firstValue(row, ["status", "estado", "matchStatus", "match_status"])));
+  if (status && !["FINALIZADO", "FINAL", "FINISHED", "COMPLETED"].includes(status)) return;
   const fixtureId = stringifyToken(
     firstValue(row, [
       "id_partido",
@@ -461,6 +506,7 @@ const buildTelegrafoScoreData = (
 ): ScoreSheetData | null => {
   const fixturesById = new Map<string, ScoreFixture>();
   const selectionByToken = new Map<string, string>();
+  const groupStandings = new Map<string, OfficialGroupStanding[]>();
 
   unwrapArray(teamsPayload, ["teams", "data", "items"]).forEach((team) => {
     registerTeamLikeRow(selectionByToken, team);
@@ -476,6 +522,31 @@ const buildTelegrafoScoreData = (
     if (Array.isArray(row.teams)) {
       row.teams.forEach((team) => registerTeamLikeRow(selectionByToken, team));
     }
+    const group = normalizeKey(stringifyToken(firstValue(row, ["nombre", "group", "grupo", "name"])));
+    const teams = Array.isArray(row.equipos) ? row.equipos : Array.isArray(row.teams) ? row.teams : [];
+    if (!group || teams.length === 0) return;
+    const parsed = teams
+      .map((rawTeam, index): OfficialGroupStanding | null => {
+        const team = toRecord(rawTeam);
+        if (!team) return null;
+        const teamId = stringifyToken(
+          firstValue(team, ["codigo_fixture", "code", "fifa_code", "seleccion_id", "teamId", "team_id", "id"]),
+        );
+        if (!teamId) return null;
+        return {
+          group,
+          position: readNumber(team, ["orden", "position", "posicion", "rank"]) || index + 1,
+          teamId: normalizeKey(teamId),
+          points: readNumber(team, ["pts", "points", "puntos"]) || 0,
+          played: readNumber(team, ["pj", "played", "gamesPlayed"]) || 0,
+          wins: readNumber(team, ["pg", "wins", "gamesWon"]) || 0,
+          goalDifference: readNumber(team, ["dif", "goalDifference", "goal_difference"]) || 0,
+          goalsFor: readNumber(team, ["gf", "goalsFor", "goals_for"]) || 0,
+        };
+      })
+      .filter((team): team is OfficialGroupStanding => !!team)
+      .sort((a, b) => a.position - b.position);
+    if (parsed.length > 0) groupStandings.set(group, parsed);
   });
   unwrapArray(matchesPayload, ["matches", "fixtures", "data", "items"]).forEach((match, index) => {
     registerMatchLikeRow(fixturesById, selectionByToken, match, [`P${index + 1}`]);
@@ -486,8 +557,8 @@ const buildTelegrafoScoreData = (
     registerMatchLikeRow(fixturesById, selectionByToken, match);
   });
 
-  if (fixturesById.size === 0 && selectionByToken.size === 0) return null;
-  return { fixturesById, selectionByToken };
+  if (fixturesById.size === 0 && selectionByToken.size === 0 && groupStandings.size === 0) return null;
+  return { fixturesById, selectionByToken, groupStandings };
 };
 
 const loadRemoteTelegrafoScoreData = async (): Promise<ScoreSheetData | null> => {
@@ -504,11 +575,13 @@ const loadRemoteTelegrafoScoreData = async (): Promise<ScoreSheetData | null> =>
 const mergeScoreData = (...sources: Array<ScoreSheetData | null | undefined>): ScoreSheetData => {
   const fixturesById = new Map<string, ScoreFixture>();
   const selectionByToken = new Map<string, string>();
+  const groupStandings = new Map<string, OfficialGroupStanding[]>();
   sources.forEach((source) => {
     source?.selectionByToken.forEach((value, key) => selectionByToken.set(key, value));
     source?.fixturesById.forEach((value, key) => fixturesById.set(key, value));
+    source?.groupStandings.forEach((value, key) => groupStandings.set(key, value));
   });
-  return { fixturesById, selectionByToken };
+  return { fixturesById, selectionByToken, groupStandings };
 };
 
 const loadFallbackScoreSheetData = async (): Promise<ScoreSheetData> => {
@@ -523,6 +596,7 @@ const loadFallbackScoreSheetData = async (): Promise<ScoreSheetData> => {
   const [fixturesRaw, seleccionesRaw] = await Promise.all([fixturesRes.text(), seleccionesRes.text()]);
   const fixturesById = new Map<string, ScoreFixture>();
   const selectionByToken = new Map<string, string>();
+  const groupStandings = new Map<string, OfficialGroupStanding[]>();
 
   const fixtureLines = parseLines(fixturesRaw);
   if (fixtureLines.length < 2) throw new Error("Tabla de partidos vacia.");
@@ -576,7 +650,7 @@ const loadFallbackScoreSheetData = async (): Promise<ScoreSheetData> => {
     }
   }
 
-  return { fixturesById, selectionByToken };
+  return { fixturesById, selectionByToken, groupStandings };
 };
 
 const resolveTabForIds = (pickId: string, fixtureId: string): ScoreTab => {
@@ -616,11 +690,20 @@ export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
       localMatchesPayload,
       localPlayoffPayload,
     );
-    const merged = mergeScoreData(fallbackData, telegrafoData, localTelegrafoData);
-    if (merged.fixturesById.size === 0) {
+    const merged = mergeScoreData(fallbackData, localTelegrafoData, telegrafoData);
+    const authoritativeFixtures = [telegrafoData, localTelegrafoData, fallbackData]
+      .find((source) => source && source.fixturesById.size > 0)
+      ?.fixturesById;
+    if (!authoritativeFixtures || authoritativeFixtures.size === 0) {
       throw new Error("No se pudo cargar la tabla de resultados.");
     }
-    return merged;
+    return {
+      fixturesById: authoritativeFixtures,
+      selectionByToken: merged.selectionByToken,
+      groupStandings: telegrafoData?.groupStandings.size
+        ? telegrafoData.groupStandings
+        : localTelegrafoData?.groupStandings || merged.groupStandings,
+    };
   })().catch((error) => {
     scoreSheetCachePromise = null;
     throw error;
@@ -629,17 +712,130 @@ export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
   return scoreSheetCachePromise;
 };
 
+const completeMissingOfficialPicks = (
+  picks: Record<string, string | undefined>,
+  sheetData: ScoreSheetData,
+  acceptsPickId: (pickId: string) => boolean,
+) => {
+  const completed = { ...(picks || {}) };
+  sheetData.fixturesById.forEach((fixture, fixtureAlias) => {
+    const pickId = resolvePickIdFromFixture(fixtureAlias);
+    if (!pickId || !acceptsPickId(pickId) || completed[pickId]) return;
+    const winnerId = normalizeKey(fixture.winnerId);
+    if (!winnerId || winnerId === "EMPATE" || winnerId.includes("/")) return;
+    completed[pickId] = winnerId;
+  });
+  return completed;
+};
+
+const completeMissingOfficialScores = (
+  predictions: ScorePredictionState,
+  sheetData: ScoreSheetData,
+  penalties = false,
+) => {
+  const completed = { ...(predictions || {}) };
+  sheetData.fixturesById.forEach((fixture, fixtureAlias) => {
+    const predictionId = resolveScorePredictionIdFromFixture(fixtureAlias);
+    if (!predictionId) return;
+    const current = completed[predictionId];
+    if (typeof current?.home === "number" && typeof current?.away === "number") return;
+    const home = penalties ? fixture.homePenaltyScore : fixture.homeScore;
+    const away = penalties ? fixture.awayPenaltyScore : fixture.awayScore;
+    if (typeof home !== "number" || typeof away !== "number") return;
+    completed[predictionId] = { home, away };
+  });
+  return completed;
+};
+
+const isOfficialGroupStageComplete = (sheetData: ScoreSheetData) =>
+  sheetData.groupStandings.size === 12 &&
+  Array.from(sheetData.groupStandings.values()).every(
+    (group) => group.length === 4 && group.every((team) => team.played >= 3),
+  );
+
+const resolveOfficialBestThirds = (sheetData: ScoreSheetData) =>
+  Array.from(sheetData.groupStandings.values())
+    .map((group) => group[2])
+    .filter((team): team is OfficialGroupStanding => !!team)
+    .sort(
+      (a, b) =>
+        b.points - a.points ||
+        b.goalDifference - a.goalDifference ||
+        b.goalsFor - a.goalsFor ||
+        b.wins - a.wins ||
+        a.group.localeCompare(b.group, "es"),
+    )
+    .slice(0, 8);
+
+const completeMissingOfficialGroupPicks = (
+  input: BracketScoreInput,
+  sheetData: ScoreSheetData,
+): Pick<BracketScoreInput, "selections" | "bestThirdIds"> => {
+  const selections = { ...(input.selections || {}) };
+  const bestThirdIds = [...(input.bestThirdIds || [])];
+  if (!isOfficialGroupStageComplete(sheetData)) return { selections, bestThirdIds };
+
+  sheetData.groupStandings.forEach((standing, group) => {
+    const current = selections[group] || {};
+    selections[group] = {
+      primeroId: current.primeroId || standing[0]?.teamId,
+      segundoId: current.segundoId || standing[1]?.teamId,
+      terceroId: current.terceroId || standing[2]?.teamId,
+    };
+  });
+
+  const selected = new Set(
+    bestThirdIds.map((teamId) => resolveComparableSelection(teamId, sheetData.selectionByToken)),
+  );
+  resolveOfficialBestThirds(sheetData).forEach((team) => {
+    const comparable = resolveComparableSelection(team.teamId, sheetData.selectionByToken);
+    if (bestThirdIds.length >= 8 || selected.has(comparable)) return;
+    bestThirdIds.push(team.teamId);
+    selected.add(comparable);
+  });
+
+  return { selections, bestThirdIds };
+};
+
+export const applyOfficialResultsToBracketScoreInput = (
+  input: BracketScoreInput,
+  sheetData: ScoreSheetData,
+): BracketScoreInput => {
+  const completedGroups = completeMissingOfficialGroupPicks(input, sheetData);
+  return {
+    ...input,
+    ...completedGroups,
+    picks: completeMissingOfficialPicks(input.picks, sheetData, (pickId) => !pickId.startsWith("INT-") && !pickId.startsWith("UEFA")),
+    intercontinentalPicks: completeMissingOfficialPicks(input.intercontinentalPicks, sheetData, (pickId) => pickId.startsWith("INT-")),
+    uefaPicks: completeMissingOfficialPicks(input.uefaPicks, sheetData, (pickId) => pickId.startsWith("UEFA")),
+  };
+};
+
+export const applyOfficialResultsToFullScoreInput = (
+  input: FullBracketScoreInput,
+  sheetData: ScoreSheetData,
+): FullBracketScoreInput => {
+  const completedBase = applyOfficialResultsToBracketScoreInput(input, sheetData);
+  return {
+    ...input,
+    ...completedBase,
+    scorePredictions: completeMissingOfficialScores(input.scorePredictions, sheetData),
+    penaltyPredictions: completeMissingOfficialScores(input.penaltyPredictions || {}, sheetData, true),
+  };
+};
+
 export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSheetData): BracketScoreSummary => {
+  const effectiveInput = applyOfficialResultsToBracketScoreInput(input, sheetData);
   const allPickEntries: Array<{ pickId: string; pickWinnerToken: string }> = [];
-  Object.entries(input.picks || {}).forEach(([pickId, pickWinnerToken]) => {
+  Object.entries(effectiveInput.picks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
     allPickEntries.push({ pickId, pickWinnerToken });
   });
-  Object.entries(input.intercontinentalPicks || {}).forEach(([pickId, pickWinnerToken]) => {
+  Object.entries(effectiveInput.intercontinentalPicks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
     allPickEntries.push({ pickId, pickWinnerToken });
   });
-  Object.entries(input.uefaPicks || {}).forEach(([pickId, pickWinnerToken]) => {
+  Object.entries(effectiveInput.uefaPicks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
     allPickEntries.push({ pickId, pickWinnerToken });
   });
@@ -654,6 +850,8 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
 
   let hitCount = 0;
   let evaluatedCount = 0;
+  let groupPositionHitCount = 0;
+  let bestThirdHitCount = 0;
   for (const { pickId, pickWinnerToken } of allPickEntries) {
     const fixtureId = resolveFixtureIdFromPick(pickId);
     if (!fixtureId) continue;
@@ -674,14 +872,66 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
     hitCount += 1;
   }
 
+  if (isOfficialGroupStageComplete(sheetData)) {
+    const slots = [
+      ["primeroId", 0],
+      ["segundoId", 1],
+      ["terceroId", 2],
+    ] as const;
+    sheetData.groupStandings.forEach((standing, group) => {
+      slots.forEach(([slot, position]) => {
+        const predicted = effectiveInput.selections?.[group]?.[slot];
+        const actual = standing[position]?.teamId;
+        if (!predicted || !actual) return;
+        evaluatedCount += 1;
+        if (
+          resolveComparableSelection(predicted, sheetData.selectionByToken) !==
+          resolveComparableSelection(actual, sheetData.selectionByToken)
+        ) {
+          return;
+        }
+        const key = `grupo-${group.toLowerCase()}-${slot.replace("Id", "")}`;
+        pointsByTab.grupos += POINTS_PER_HIT;
+        pointsByMatchId[key] = POINTS_PER_HIT;
+        hitCount += 1;
+        groupPositionHitCount += 1;
+      });
+    });
+
+    const officialBestThirds = new Set(
+      resolveOfficialBestThirds(sheetData).map((team) =>
+        resolveComparableSelection(team.teamId, sheetData.selectionByToken),
+      ),
+    );
+    (effectiveInput.bestThirdIds || []).slice(0, 8).forEach((predicted, index) => {
+      evaluatedCount += 1;
+      const comparable = resolveComparableSelection(predicted, sheetData.selectionByToken);
+      if (!comparable || !officialBestThirds.has(comparable)) return;
+      const key = `mejor-tercero-${index + 1}`;
+      pointsByTab.grupos += POINTS_PER_HIT;
+      pointsByMatchId[key] = POINTS_PER_HIT;
+      hitCount += 1;
+      bestThirdHitCount += 1;
+    });
+  }
+
   const totalPoints = pointsByTab.repechajes + pointsByTab.grupos + pointsByTab.dieciseisavos + pointsByTab.llaves;
-  return { totalPoints, hitCount, evaluatedCount, pointsByTab, pointsByMatchId };
+  return {
+    totalPoints,
+    hitCount,
+    evaluatedCount,
+    pointsByTab,
+    pointsByMatchId,
+    groupPositionHitCount,
+    bestThirdHitCount,
+  };
 };
 
 export const computeFullBracketScore = (
   input: FullBracketScoreInput,
   sheetData: ScoreSheetData,
 ): BracketScoreSummary => {
+  const effectiveInput = applyOfficialResultsToFullScoreInput(input, sheetData);
   const pointsByTab: Record<ScoreTab, number> = {
     repechajes: 0,
     grupos: 0,
@@ -695,7 +945,7 @@ export const computeFullBracketScore = (
   let goalCount = 0;
   let penaltyExactCount = 0;
 
-  Object.entries(input.scorePredictions || {}).forEach(([predictionId, prediction]) => {
+  Object.entries(effectiveInput.scorePredictions || {}).forEach(([predictionId, prediction]) => {
     if (
       !prediction ||
       typeof prediction.home !== "number" ||
@@ -746,7 +996,7 @@ export const computeFullBracketScore = (
       actualHome === actualAway &&
       typeof fixture.homePenaltyScore === "number" &&
       typeof fixture.awayPenaltyScore === "number";
-    const penaltyPrediction = input.penaltyPredictions?.[predictionId];
+    const penaltyPrediction = effectiveInput.penaltyPredictions?.[predictionId];
     const exactPenalty =
       actualWentToPenalties &&
       typeof penaltyPrediction?.home === "number" &&
@@ -760,10 +1010,16 @@ export const computeFullBracketScore = (
     }
   });
 
-  const addAllCorrectBonus = (pickIds: string[], points: number, tab: ScoreTab, bonusKey: string) => {
-    if (!pickIds.length) return;
+  const addAllCorrectBonus = (
+    pickIds: string[],
+    expectedCount: number,
+    points: number,
+    tab: ScoreTab,
+    bonusKey: string,
+  ) => {
+    if (pickIds.length !== expectedCount) return;
     const allCorrect = pickIds.every((pickId) => {
-      const predicted = input.picks?.[pickId];
+      const predicted = effectiveInput.picks?.[pickId];
       if (!predicted) return false;
       const fixtureId = resolveFixtureIdFromPick(pickId);
       if (!fixtureId) return false;
@@ -778,26 +1034,35 @@ export const computeFullBracketScore = (
     pointsByMatchId[bonusKey] = (pointsByMatchId[bonusKey] || 0) + points;
   };
 
-  const pickKeys = Object.keys(input.picks || {});
+  const pickKeys = Object.keys(effectiveInput.picks || {});
   addAllCorrectBonus(
     pickKeys.filter((id) => /^r32-/i.test(id)),
+    16,
     FULL_POINTS.roundOf16Bonus,
     "dieciseisavos",
     "bonus-octavos",
   );
   addAllCorrectBonus(
     pickKeys.filter((id) => /^r16-/i.test(id)),
+    8,
     FULL_POINTS.quarterBonus,
     "llaves",
     "bonus-cuartos",
   );
   addAllCorrectBonus(
     pickKeys.filter((id) => /^qf-/i.test(id)),
+    4,
     FULL_POINTS.semifinalBonus,
     "llaves",
     "bonus-semifinal",
   );
-  addAllCorrectBonus(["final-104"].filter((id) => input.picks?.[id]), FULL_POINTS.finalBonus, "llaves", "bonus-final");
+  addAllCorrectBonus(
+    ["final-104"].filter((id) => effectiveInput.picks?.[id]),
+    1,
+    FULL_POINTS.finalBonus,
+    "llaves",
+    "bonus-final",
+  );
 
   const totalPoints = pointsByTab.repechajes + pointsByTab.grupos + pointsByTab.dieciseisavos + pointsByTab.llaves;
   return {
