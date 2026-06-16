@@ -11,6 +11,7 @@ export type BracketDeadlineState = {
 };
 
 const buildRepechajeCutoff = () => new Date(2026, 3, 4, 23, 59, 59, 999);
+const MATCH_LOCK_OFFSET_MS = 20 * 60 * 1000;
 
 const PLAYOFF_MATCH_TO_FIXTURE: Record<string, string> = {
   "INT-K2-SF": "RI1",
@@ -149,13 +150,13 @@ export const computeBracketDeadlineState = (fixtures: Fixture[], now = new Date(
 
     const kickoff = parseFixtureDateAndTime(fixture.fecha, fixture.hora);
     if (!kickoff) return;
-    if (kickoff.getTime() <= now.getTime()) {
+    if (kickoff.getTime() - now.getTime() <= MATCH_LOCK_OFFSET_MS) {
       lockedFixtureIds[fixtureId] = true;
     }
   });
 
   const groupYear = pickGroupYear(fixtures, now.getFullYear());
-  const groupCutoff = new Date(groupYear, 5, 23, 23, 59, 59, 999);
+  const groupCutoff = new Date(groupYear, 5, 24, 23, 59, 59, 999);
   const groupExpired = now.getTime() > groupCutoff.getTime();
 
   const hiddenTabs: Record<BracketTab, boolean> = {
@@ -189,5 +190,5 @@ export const isFixtureLockedByPredictionDeadline = (fixture: Fixture | undefined
   if (!fixture) return false;
   const kickoff = parseFixtureDateAndTime(fixture.fecha, fixture.hora);
   if (!kickoff) return false;
-  return kickoff.getTime() - now.getTime() <= 15 * 60 * 1000;
+  return kickoff.getTime() - now.getTime() <= MATCH_LOCK_OFFSET_MS;
 };

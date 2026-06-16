@@ -14,7 +14,7 @@ const REPECHAJE_TEAM_META: Record<string, { nombre: string; flagCode: string }> 
   WAL: { nombre: "Gales", flagCode: "gb-wls" },
   BIH: { nombre: "Bosnia y Herzegovina", flagCode: "ba" },
   UKR: { nombre: "Ucrania", flagCode: "ua" },
-  SWE: { nombre: "Suecia", flagCode: "se" },
+  SUE: { nombre: "Suecia", flagCode: "se" },
   POL: { nombre: "Polonia", flagCode: "pl" },
   ALB: { nombre: "Albania", flagCode: "al" },
   TUR: { nombre: "Turquía", flagCode: "tr" },
@@ -29,6 +29,7 @@ const REPECHAJE_TEAM_META: Record<string, { nombre: string; flagCode: string }> 
 
 const REPECHAJE_TEAM_ALIASES: Record<string, string> = {
   NRL: "NIR",
+  SWE: "SUE",
 };
 
 const normalizeCode = (value?: string) => (value || "").trim().toUpperCase();
@@ -59,8 +60,8 @@ export const applyRepechajeMeta = (team: Team): Team => {
   if (!meta) return team;
   return {
     ...team,
-    id: team.id || code,
-    codigo: team.codigo || code,
+    id: code,
+    codigo: code,
     nombre: meta.nombre,
     escudo: getRepechajeFlagUrl(meta.flagCode),
   };

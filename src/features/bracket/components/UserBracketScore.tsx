@@ -71,6 +71,10 @@ const FIXTURE_LABELS: Record<string, string> = {
   RD2: "Repechaje UEFA ruta D semifinal 2",
   RD3: "Repechaje UEFA ruta D final",
 };
+const TEAM_ALIASES: Record<string, string> = {
+  SWE: "SUE",
+  NRL: "NIR",
+};
 
 let scoreSheetCachePromise: Promise<ScoreSheetData> | null = null;
 
@@ -83,6 +87,20 @@ const normalizeComparable = (value?: string) =>
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, ""),
   );
+
+const registerSelectionToken = (map: Map<string, string>, rawToken?: string, rawLabel?: string) => {
+  const token = normalizeKey(rawToken);
+  const label = (rawLabel || rawToken || "").trim();
+  if (!token || !label) return;
+  map.set(token, label);
+  map.set(normalizeComparable(label), label);
+
+  const canonical = TEAM_ALIASES[token] || token;
+  if (canonical !== token) map.set(canonical, label);
+  Object.entries(TEAM_ALIASES).forEach(([alias, target]) => {
+    if (target === token || target === canonical) map.set(alias, label);
+  });
+};
 
 const parseCSVLine = (line: string): string[] => {
   const result: string[] = [];
@@ -203,9 +221,9 @@ const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
         const id = normalizeKey(cols[idxId]);
         const code = normalizeKey(cols[idxCode]);
         const normalizedSelection = selection.trim();
-        if (id) selectionByToken.set(id, normalizedSelection);
-        if (code) selectionByToken.set(code, normalizedSelection);
-        selectionByToken.set(normalizeKey(normalizedSelection), normalizedSelection);
+        registerSelectionToken(selectionByToken, id, normalizedSelection);
+        registerSelectionToken(selectionByToken, code, normalizedSelection);
+        registerSelectionToken(selectionByToken, normalizedSelection, normalizedSelection);
       }
     }
 

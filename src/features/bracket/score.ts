@@ -4,6 +4,7 @@ import localTeamsPayload from "../../data/teams.json";
 import localStandingsPayload from "../../data/standings.json";
 import localMatchesPayload from "../../data/matches.json";
 import localPlayoffPayload from "../../data/playoff-match-snapshots.json";
+import { isPlayoffFixtureId, loadPlayoffScoreSheetData } from "./playoffScoreSheet";
 
 export type BracketScoreInput = {
   picks: Record<string, string | undefined>;
@@ -13,7 +14,7 @@ export type BracketScoreInput = {
   bestThirdIds?: string[];
 };
 
-type ScoreFixture = {
+export type ScoreFixture = {
   fixtureId: string;
   winnerId: string;
   homeId?: string;
@@ -24,7 +25,7 @@ type ScoreFixture = {
   awayPenaltyScore?: number | null;
 };
 
-type OfficialGroupStanding = {
+export type OfficialGroupStanding = {
   group: string;
   position: number;
   teamId: string;
@@ -85,6 +86,10 @@ const TELEGRAFO_MATCHES_URL = "https://especiales.eltelegrafo.com.ec/api/matches
 const TELEGRAFO_PLAYOFF_SNAPSHOTS_URL =
   "https://especiales.eltelegrafo.com.ec/api/playoff-match-snapshots.json";
 const POINTS_PER_HIT = 3;
+const TEAM_ALIASES: Record<string, string> = {
+  SWE: "SUE",
+  NRL: "NIR",
+};
 
 const PLAYOFF_PICK_TO_FIXTURE: Record<string, string> = {
   "INT-K2-SF": "RI1",
@@ -207,7 +212,7 @@ const PLAYOFF_SNAPSHOT_META: Record<string, { fixtureId: string; home?: string; 
   "LIGUILLA-UEFA-RUTA-A-SF-1": { fixtureId: "RA1", home: "ITA", away: "NIR" },
   "LIGUILLA-UEFA-RUTA-A-SF-2": { fixtureId: "RA2", home: "WAL", away: "BIH" },
   "LIGUILLA-UEFA-RUTA-A-FINAL": { fixtureId: "RA3", finalFrom: "LIGUILLA-UEFA-RUTA-A" },
-  "LIGUILLA-UEFA-RUTA-B-SF-1": { fixtureId: "RB1", home: "UKR", away: "SWE" },
+  "LIGUILLA-UEFA-RUTA-B-SF-1": { fixtureId: "RB1", home: "UKR", away: "SUE" },
   "LIGUILLA-UEFA-RUTA-B-SF-2": { fixtureId: "RB2", home: "POL", away: "ALB" },
   "LIGUILLA-UEFA-RUTA-B-FINAL": { fixtureId: "RB3", finalFrom: "LIGUILLA-UEFA-RUTA-B" },
   "LIGUILLA-UEFA-RUTA-C-SF-1": { fixtureId: "RC1", home: "TUR", away: "ROU" },
@@ -277,6 +282,11 @@ const registerSelectionToken = (map: Map<string, string>, rawToken: unknown, raw
   if (!token || !label) return;
   map.set(token, label);
   map.set(normalizeComparable(label), label);
+  const canonical = TEAM_ALIASES[token] || token;
+  if (canonical !== token) map.set(canonical, label);
+  Object.entries(TEAM_ALIASES).forEach(([alias, target]) => {
+    if (target === token || target === canonical) map.set(alias, label);
+  });
 };
 
 const registerTeamLikeRow = (map: Map<string, string>, raw: unknown) => {
@@ -680,9 +690,10 @@ export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
   if (scoreSheetCachePromise) return scoreSheetCachePromise;
 
   scoreSheetCachePromise = (async () => {
-    const [telegrafoData, fallbackData] = await Promise.all([
+    const [telegrafoData, fallbackData, playoffSheetData] = await Promise.all([
       loadRemoteTelegrafoScoreData().catch(() => null),
       loadFallbackScoreSheetData().catch(() => null),
+      loadPlayoffScoreSheetData().catch(() => null),
     ]);
     const localTelegrafoData = buildTelegrafoScoreData(
       localTeamsPayload,
@@ -690,15 +701,22 @@ export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
       localMatchesPayload,
       localPlayoffPayload,
     );
-    const merged = mergeScoreData(fallbackData, localTelegrafoData, telegrafoData);
+    const merged = mergeScoreData(fallbackData, localTelegrafoData, telegrafoData, playoffSheetData);
     const authoritativeFixtures = [telegrafoData, localTelegrafoData, fallbackData]
       .find((source) => source && source.fixturesById.size > 0)
       ?.fixturesById;
-    if (!authoritativeFixtures || authoritativeFixtures.size === 0) {
+    if ((!authoritativeFixtures || authoritativeFixtures.size === 0) && !playoffSheetData?.fixturesById.size) {
       throw new Error("No se pudo cargar la tabla de resultados.");
     }
+    const fixturesById = new Map(authoritativeFixtures || []);
+    Array.from(fixturesById.keys()).forEach((fixtureId) => {
+      if (isPlayoffFixtureId(fixtureId)) fixturesById.delete(fixtureId);
+    });
+    playoffSheetData?.fixturesById.forEach((fixture, fixtureId) => {
+      fixturesById.set(fixtureId, fixture);
+    });
     return {
-      fixturesById: authoritativeFixtures,
+      fixturesById,
       selectionByToken: merged.selectionByToken,
       groupStandings: telegrafoData?.groupStandings.size
         ? telegrafoData.groupStandings
@@ -825,17 +843,16 @@ export const applyOfficialResultsToFullScoreInput = (
 };
 
 export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSheetData): BracketScoreSummary => {
-  const effectiveInput = applyOfficialResultsToBracketScoreInput(input, sheetData);
   const allPickEntries: Array<{ pickId: string; pickWinnerToken: string }> = [];
-  Object.entries(effectiveInput.picks || {}).forEach(([pickId, pickWinnerToken]) => {
+  Object.entries(input.picks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
     allPickEntries.push({ pickId, pickWinnerToken });
   });
-  Object.entries(effectiveInput.intercontinentalPicks || {}).forEach(([pickId, pickWinnerToken]) => {
+  Object.entries(input.intercontinentalPicks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
     allPickEntries.push({ pickId, pickWinnerToken });
   });
-  Object.entries(effectiveInput.uefaPicks || {}).forEach(([pickId, pickWinnerToken]) => {
+  Object.entries(input.uefaPicks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
     allPickEntries.push({ pickId, pickWinnerToken });
   });
@@ -880,7 +897,7 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
     ] as const;
     sheetData.groupStandings.forEach((standing, group) => {
       slots.forEach(([slot, position]) => {
-        const predicted = effectiveInput.selections?.[group]?.[slot];
+        const predicted = input.selections?.[group]?.[slot];
         const actual = standing[position]?.teamId;
         if (!predicted || !actual) return;
         evaluatedCount += 1;
@@ -903,7 +920,7 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
         resolveComparableSelection(team.teamId, sheetData.selectionByToken),
       ),
     );
-    (effectiveInput.bestThirdIds || []).slice(0, 8).forEach((predicted, index) => {
+    (input.bestThirdIds || []).slice(0, 8).forEach((predicted, index) => {
       evaluatedCount += 1;
       const comparable = resolveComparableSelection(predicted, sheetData.selectionByToken);
       if (!comparable || !officialBestThirds.has(comparable)) return;
@@ -931,7 +948,6 @@ export const computeFullBracketScore = (
   input: FullBracketScoreInput,
   sheetData: ScoreSheetData,
 ): BracketScoreSummary => {
-  const effectiveInput = applyOfficialResultsToFullScoreInput(input, sheetData);
   const pointsByTab: Record<ScoreTab, number> = {
     repechajes: 0,
     grupos: 0,
@@ -945,7 +961,7 @@ export const computeFullBracketScore = (
   let goalCount = 0;
   let penaltyExactCount = 0;
 
-  Object.entries(effectiveInput.scorePredictions || {}).forEach(([predictionId, prediction]) => {
+  Object.entries(input.scorePredictions || {}).forEach(([predictionId, prediction]) => {
     if (
       !prediction ||
       typeof prediction.home !== "number" ||
@@ -996,7 +1012,7 @@ export const computeFullBracketScore = (
       actualHome === actualAway &&
       typeof fixture.homePenaltyScore === "number" &&
       typeof fixture.awayPenaltyScore === "number";
-    const penaltyPrediction = effectiveInput.penaltyPredictions?.[predictionId];
+    const penaltyPrediction = input.penaltyPredictions?.[predictionId];
     const exactPenalty =
       actualWentToPenalties &&
       typeof penaltyPrediction?.home === "number" &&
@@ -1019,7 +1035,7 @@ export const computeFullBracketScore = (
   ) => {
     if (pickIds.length !== expectedCount) return;
     const allCorrect = pickIds.every((pickId) => {
-      const predicted = effectiveInput.picks?.[pickId];
+      const predicted = input.picks?.[pickId];
       if (!predicted) return false;
       const fixtureId = resolveFixtureIdFromPick(pickId);
       if (!fixtureId) return false;
@@ -1034,7 +1050,7 @@ export const computeFullBracketScore = (
     pointsByMatchId[bonusKey] = (pointsByMatchId[bonusKey] || 0) + points;
   };
 
-  const pickKeys = Object.keys(effectiveInput.picks || {});
+  const pickKeys = Object.keys(input.picks || {});
   addAllCorrectBonus(
     pickKeys.filter((id) => /^r32-/i.test(id)),
     16,
@@ -1057,7 +1073,7 @@ export const computeFullBracketScore = (
     "bonus-semifinal",
   );
   addAllCorrectBonus(
-    ["final-104"].filter((id) => effectiveInput.picks?.[id]),
+    ["final-104"].filter((id) => input.picks?.[id]),
     1,
     FULL_POINTS.finalBonus,
     "llaves",
