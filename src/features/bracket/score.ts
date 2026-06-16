@@ -50,6 +50,7 @@ export type BracketScoreSummary = {
   evaluatedCount: number;
   pointsByTab: Record<ScoreTab, number>;
   pointsByMatchId: Record<string, number>;
+  pointReasonsByMatchId?: Record<string, string[]>;
   exactCount?: number;
   winnerCount?: number;
   goalCount?: number;
@@ -875,6 +876,7 @@ export const computeBracketScore = (
     llaves: 0,
   };
   const pointsByMatchId: Record<string, number> = {};
+  const pointReasonsByMatchId: Record<string, string[]> = {};
 
   let hitCount = 0;
   let evaluatedCount = 0;
@@ -898,6 +900,7 @@ export const computeBracketScore = (
 
     pointsByTab[tab] += POINTS_PER_HIT;
     pointsByMatchId[pickId] = (pointsByMatchId[pickId] || 0) + POINTS_PER_HIT;
+    pointReasonsByMatchId[pickId] = ["Ganador"];
     hitCount += 1;
   }
 
@@ -922,6 +925,7 @@ export const computeBracketScore = (
         const key = `grupo-${group.toLowerCase()}-${slot.replace("Id", "")}`;
         pointsByTab.grupos += POINTS_PER_HIT;
         pointsByMatchId[key] = POINTS_PER_HIT;
+        pointReasonsByMatchId[key] = ["Posición de grupo"];
         hitCount += 1;
         groupPositionHitCount += 1;
       });
@@ -939,6 +943,7 @@ export const computeBracketScore = (
       const key = `mejor-tercero-${index + 1}`;
       pointsByTab.grupos += POINTS_PER_HIT;
       pointsByMatchId[key] = POINTS_PER_HIT;
+      pointReasonsByMatchId[key] = ["Mejor tercero"];
       hitCount += 1;
       bestThirdHitCount += 1;
     });
@@ -951,6 +956,7 @@ export const computeBracketScore = (
     evaluatedCount,
     pointsByTab,
     pointsByMatchId,
+    pointReasonsByMatchId,
     groupPositionHitCount,
     bestThirdHitCount,
   };
@@ -967,6 +973,7 @@ export const computeFullBracketScore = (
     llaves: 0,
   };
   const pointsByMatchId: Record<string, number> = {};
+  const pointReasonsByMatchId: Record<string, string[]> = {};
   let evaluatedCount = 0;
   let exactCount = 0;
   let winnerCount = 0;
@@ -993,9 +1000,11 @@ export const computeFullBracketScore = (
     const tab = resolveTabForIds(predictionId, fixture.fixtureId);
     const exact = prediction.home === actualHome && prediction.away === actualAway;
     let points = 0;
+    const reasons: string[] = [];
 
     if (exact) {
       points += FULL_POINTS.exactScore;
+      reasons.push("Marcador exacto");
       exactCount += 1;
     } else {
       const predictedWinner =
@@ -1003,14 +1012,17 @@ export const computeFullBracketScore = (
       const actualWinner = actualHome === actualAway ? "EMPATE" : actualHome > actualAway ? "HOME" : "AWAY";
       if (predictedWinner === actualWinner) {
         points += FULL_POINTS.winner;
+        reasons.push("Ganador");
         winnerCount += 1;
       }
       if (prediction.home === actualHome) {
         points += FULL_POINTS.goal;
+        reasons.push("Gol local");
         goalCount += 1;
       }
       if (prediction.away === actualAway) {
         points += FULL_POINTS.goal;
+        reasons.push("Gol visitante");
         goalCount += 1;
       }
     }
@@ -1018,6 +1030,7 @@ export const computeFullBracketScore = (
     if (points > 0) {
       pointsByTab[tab] += points;
       pointsByMatchId[predictionId] = (pointsByMatchId[predictionId] || 0) + points;
+      pointReasonsByMatchId[predictionId] = reasons;
     }
 
     const actualWentToPenalties =
@@ -1034,6 +1047,10 @@ export const computeFullBracketScore = (
     if (exactPenalty) {
       pointsByTab[tab] += FULL_POINTS.exactPenalty;
       pointsByMatchId[predictionId] = (pointsByMatchId[predictionId] || 0) + FULL_POINTS.exactPenalty;
+      pointReasonsByMatchId[predictionId] = [
+        ...(pointReasonsByMatchId[predictionId] || []),
+        "Penales exactos",
+      ];
       penaltyExactCount += 1;
     }
   });
@@ -1060,6 +1077,7 @@ export const computeFullBracketScore = (
     if (!allCorrect) return;
     pointsByTab[tab] += points;
     pointsByMatchId[bonusKey] = (pointsByMatchId[bonusKey] || 0) + points;
+    pointReasonsByMatchId[bonusKey] = ["Bono de fase"];
   };
 
   const pickKeys = Object.keys(input.picks || {});
@@ -1099,6 +1117,7 @@ export const computeFullBracketScore = (
     evaluatedCount,
     pointsByTab,
     pointsByMatchId,
+    pointReasonsByMatchId,
     exactCount,
     winnerCount,
     goalCount,

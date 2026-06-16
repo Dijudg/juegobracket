@@ -108,6 +108,13 @@ const parseOfficialFixtureNumber = (fixtureId?: string) => {
   return Number.isFinite(num) ? num : null;
 };
 
+const officialFixtureRequiresWinner = (fixtureId?: string) => {
+  const key = (fixtureId || "").toString().trim().toUpperCase();
+  if (/^(RI|RA|RB|RC|RD)\d+$/.test(key)) return true;
+  const num = parseOfficialFixtureNumber(key);
+  return num !== null && num >= 73;
+};
+
 const resolvePredictionIdFromOfficialFixture = (fixtureId?: string) => {
   const key = (fixtureId || "").toString().trim().toUpperCase();
   if (!key) return "";
@@ -337,6 +344,9 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 
 const hasScorePrediction = (prediction?: { home?: number | null; away?: number | null }) =>
   typeof prediction?.home === "number" && typeof prediction?.away === "number";
+
+const CLOSED_SCORE_PLACEHOLDER = { home: 0, away: 0 } as const;
+const CLOSED_PENALTY_PLACEHOLDER = { home: 1, away: 0 } as const;
 
 const scoreWinnerSide = (prediction?: { home?: number | null; away?: number | null }) => {
   if (!hasScorePrediction(prediction)) return null;
@@ -1166,6 +1176,7 @@ export default function BracketGamePage() {
   const { summary: fullScoreSummary } = useFullBracketScore(fullScoreInput, isViewOnly && gameMode === "full");
   const bracketScoreSummary = gameMode === "full" ? fullScoreSummary : classicScoreSummary;
   const scoreByMatchId = bracketScoreSummary?.pointsByMatchId || {};
+  const scoreReasonsByMatchId = bracketScoreSummary?.pointReasonsByMatchId || {};
   const phaseBlockBannerPick = useMemo(() => pickStopBanner(), [!!phaseBlock]);
   const r32BannerPick = useMemo(() => pickStopBanner(), [showR32Warning]);
   const bracketCaptureRef = useRef<HTMLDivElement>(null);
@@ -4414,8 +4425,7 @@ const scorePredictionsForBracket = useMemo(() => {
     if (!predictionId || hasScorePrediction(next[predictionId])) return;
     if (!isFixtureLockedByPredictionDeadline(fixture, new Date(nowTs))) return;
     const official = readOfficialScorePrediction(predictionId, fixture.id);
-    if (!official) return;
-    next[predictionId] = official;
+    next[predictionId] = official || CLOSED_SCORE_PLACEHOLDER;
   });
   return next;
 }, [fixtures, gameMode, nowTs, readOfficialScorePrediction, scorePredictions]);
@@ -4429,11 +4439,17 @@ const penaltyPredictionsForBracket = useMemo(() => {
     if (!predictionId || hasScorePrediction(next[predictionId])) return;
     if (!isFixtureLockedByPredictionDeadline(fixture, new Date(nowTs))) return;
     const official = readOfficialPenaltyPrediction(predictionId, fixture.id);
-    if (!official) return;
-    next[predictionId] = official;
+    if (official) {
+      next[predictionId] = official;
+      return;
+    }
+    if (!officialFixtureRequiresWinner(fixtureId)) return;
+    const score = scorePredictionsForBracket[predictionId];
+    if (!hasScorePrediction(score) || score.home !== score.away) return;
+    next[predictionId] = CLOSED_PENALTY_PLACEHOLDER;
   });
   return next;
-}, [fixtures, gameMode, nowTs, penaltyPredictions, readOfficialPenaltyPrediction]);
+}, [fixtures, gameMode, nowTs, penaltyPredictions, readOfficialPenaltyPrediction, scorePredictionsForBracket]);
 
 const picksForBracket = useMemo(() => {
   if (gameMode === "full") return picks;
@@ -5539,6 +5555,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
               mirror={mirror}
               seedLabel={getSeedLabelR32}
               scoreByMatchId={scoreByMatchId}
+              scoreReasonsByMatchId={scoreReasonsByMatchId}
               isMatchLocked={isMatchBlockedByDeadline}
               scorePredictions={gameMode === "full" ? scorePredictionsForBracket : undefined}
               penaltyPredictions={gameMode === "full" ? penaltyPredictionsForBracket : undefined}
@@ -5557,6 +5574,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
       penaltyPredictions,
       scheduleByMatch,
       scoreByMatchId,
+      scoreReasonsByMatchId,
       scorePredictions,
     ],
   );
@@ -6748,6 +6766,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                                   disabled={isPhaseLocked("intercontinental") || phaseDeadlineLocked.repechajes}
                                   showFinalHint={showRepechajeFinalHint}
                                   scoreByMatchId={scoreByMatchId}
+                                  scoreReasonsByMatchId={scoreReasonsByMatchId}
                                   isMatchLocked={isMatchBlockedByDeadline}
                                   scorePredictions={gameMode === "full" ? scorePredictionsForBracket : undefined}
                                   onScoreChange={gameMode === "full" ? handleScorePredictionChange : undefined}
@@ -6782,6 +6801,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                                   disabled={isPhaseLocked("uefa") || phaseDeadlineLocked.repechajes}
                                   showFinalHint={showRepechajeFinalHint}
                                   scoreByMatchId={scoreByMatchId}
+                                  scoreReasonsByMatchId={scoreReasonsByMatchId}
                                   isMatchLocked={isMatchBlockedByDeadline}
                                   scorePredictions={gameMode === "full" ? scorePredictionsForBracket : undefined}
                                   onScoreChange={gameMode === "full" ? handleScorePredictionChange : undefined}
@@ -6929,6 +6949,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                             locked={isScorePredictionLocked(matchKey)}
                             onScoreChange={handleScorePredictionChange}
                             scorePoints={scoreByMatchId[matchKey] || 0}
+                            scoreReasons={scoreReasonsByMatchId[matchKey] || []}
                           />
                         );
                       })}
@@ -7429,6 +7450,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                   navTarget={bracketNavTarget}
                   onNavHandled={clearBracketNavTarget}
                   scoreByMatchId={scoreByMatchId}
+                  scoreReasonsByMatchId={scoreReasonsByMatchId}
                   scorePredictions={gameMode === "full" ? scorePredictionsForBracket : undefined}
                   penaltyPredictions={gameMode === "full" ? penaltyPredictionsForBracket : undefined}
                   isMatchLocked={isMatchBlockedByDeadline}
@@ -7503,6 +7525,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
               onWinnerPick={gameMode === "full" ? undefined : applyWinner}
               phaseLabel="Llaves finales"
               scorePoints={scoreByMatchId[scoreModalMatch.id] || 0}
+              scoreReasons={scoreReasonsByMatchId[scoreModalMatch.id] || []}
             />
             {hasScorePrediction(scorePredictions[scoreModalMatch.id]) &&
             scorePredictions[scoreModalMatch.id]!.home === scorePredictions[scoreModalMatch.id]!.away ? (

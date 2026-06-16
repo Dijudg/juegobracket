@@ -11,6 +11,7 @@ export const PlayoffKeyBlock = ({
   disabled,
   showFinalHint,
   scoreByMatchId,
+  scoreReasonsByMatchId,
   isMatchLocked,
   scorePredictions,
   onScoreChange,
@@ -23,6 +24,7 @@ export const PlayoffKeyBlock = ({
   disabled?: boolean;
   showFinalHint?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
+  scoreReasonsByMatchId?: Record<string, string[] | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
   scorePredictions?: Record<string, ScorePrediction | undefined>;
   onScoreChange?: (matchId: string, side: "home" | "away", value: number | null) => void;
@@ -42,6 +44,7 @@ export const PlayoffKeyBlock = ({
   const renderRepechajeMatch = (match?: PlayoffMatchData) => {
     if (!match) return null;
     const scorePoints = scoreByMatchId?.[match.id] || 0;
+    const scoreReasons = scoreReasonsByMatchId?.[match.id] || [];
     const deadlineLocked = !!isMatchLocked?.(match.id);
     const teams = [match.homeTeam, match.awayTeam];
     const isIntercontinentalSemi =
@@ -68,7 +71,12 @@ export const PlayoffKeyBlock = ({
           </div>
         )}
         <div className="matchNumber">{match.title}</div>
-        {scorePoints > 0 && <div className="score-hit-badge">+{scorePoints} puntos</div>}
+        {scorePoints > 0 && (
+          <div className="score-hit-badge">
+            <span className="score-hit-badge__points">+{scorePoints} puntos</span>
+            {scoreReasons.length > 0 && <span className="score-hit-badge__reason">{scoreReasons.join(" + ")}</span>}
+          </div>
+        )}
         {teams.map((team, idx) => {
           const code = getTeamCode(team);
           const isSelected = !!code && match.winnerCode === code;

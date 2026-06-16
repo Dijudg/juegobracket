@@ -34,6 +34,7 @@ export const KnockoutBracket = ({
   onPenaltyClick,
   locked = false,
   scoreByMatchId,
+  scoreReasonsByMatchId,
   scorePredictions,
   penaltyPredictions,
   isMatchLocked,
@@ -58,6 +59,7 @@ export const KnockoutBracket = ({
   onPenaltyClick?: (match: Match) => void;
   locked?: boolean;
   scoreByMatchId?: Record<string, number | undefined>;
+  scoreReasonsByMatchId?: Record<string, string[] | undefined>;
   scorePredictions?: Record<string, ScorePrediction | undefined>;
   penaltyPredictions?: Record<string, ScorePrediction | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
@@ -409,6 +411,7 @@ export const KnockoutBracket = ({
   }) => {
     if (!match) return null;
     const scorePoints = scoreByMatchId?.[match.id] || 0;
+    const scoreReasons = scoreReasonsByMatchId?.[match.id] || [];
     const hardLocked = !!locked;
     const deadlineLocked = !!isMatchLocked?.(match.id);
     const teamA = match.equipoA;
@@ -450,7 +453,12 @@ export const KnockoutBracket = ({
               </>
             )}
             <div className="relative z-[2] flex flex-col items-center gap-1 w-full h-full">
-              {scorePoints > 0 && <div className="score-hit-badge score-hit-badge--compact">+{scorePoints} puntos</div>}
+              {scorePoints > 0 && (
+                <div className="score-hit-badge score-hit-badge--compact">
+                  <span className="score-hit-badge__points">+{scorePoints} puntos</span>
+                  {scoreReasons.length > 0 && <span className="score-hit-badge__reason">{scoreReasons.join(" + ")}</span>}
+                </div>
+              )}
               <div className="flex items-center justify-evenly w-full">
                 <TeamButton
                   team={teamA}

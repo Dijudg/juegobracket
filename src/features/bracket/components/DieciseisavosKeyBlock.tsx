@@ -18,6 +18,7 @@ export const DieciseisavosKeyBlock = ({
   seedLabel,
   onBlockedPick,
   scoreByMatchId,
+  scoreReasonsByMatchId,
   isMatchLocked,
   scorePredictions,
   penaltyPredictions,
@@ -33,6 +34,7 @@ export const DieciseisavosKeyBlock = ({
   seedLabel?: (team?: Team) => string;
   onBlockedPick?: () => void;
   scoreByMatchId?: Record<string, number | undefined>;
+  scoreReasonsByMatchId?: Record<string, string[] | undefined>;
   isMatchLocked?: (matchId: string) => boolean;
   scorePredictions?: Record<string, ScorePrediction | undefined>;
   penaltyPredictions?: Record<string, ScorePrediction | undefined>;
@@ -117,6 +119,7 @@ export const DieciseisavosKeyBlock = ({
   const renderMatch = ({ match, schedule, readOnly }: BlockMatch) => {
     if (!match) return null;
     const scorePoints = scoreByMatchId?.[match.id] || 0;
+    const scoreReasons = scoreReasonsByMatchId?.[match.id] || [];
     const label = match.label || match.id;
     const dateLabel = formatFixtureDate(schedule?.fecha) || "\u00A0";
     const score = scorePredictions?.[match.id];
@@ -149,7 +152,12 @@ export const DieciseisavosKeyBlock = ({
         }
       >
         <div className="matchNumber">Partido {label}</div>
-        {scorePoints > 0 && <div className="score-hit-badge">+{scorePoints} puntos</div>}
+        {scorePoints > 0 && (
+          <div className="score-hit-badge">
+            <span className="score-hit-badge__points">+{scorePoints} puntos</span>
+            {scoreReasons.length > 0 && <span className="score-hit-badge__reason">{scoreReasons.join(" + ")}</span>}
+          </div>
+        )}
         {renderTeam({
           team: match.equipoA,
           matchId: match.id,
