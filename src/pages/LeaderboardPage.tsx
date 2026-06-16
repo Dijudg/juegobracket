@@ -9,9 +9,10 @@ import leaderboardBanner from "../assets/polla-banner.jpg";
 import { supabase } from "../utils/supabaseClient";
 import { fetchFanaticoData } from "../utils/fanaticoApi";
 import { resolveSiteBase } from "../utils/apiBase";
-import { useNavigation } from "../contexts/NavigationContext";
-import type { BracketSavePayload } from "../features/bracket/types";
+import { computeBracketDeadlineState } from "../features/bracket/deadlines";
+import type { BracketSavePayload, Fixture } from "../features/bracket/types";
 import { computeBracketScore, computeFullBracketScore, loadScoreSheetData } from "../features/bracket/score";
+import type { ScoreTab } from "../features/bracket/score";
 import "../styles/globals.css";
 
 type TopCardData = {
@@ -23,8 +24,12 @@ type TopCardData = {
   shareUrl: string;
 };
 
+type RankingGameMode = "classic" | "full";
+type RankingView = "global" | RankingGameMode;
+
 type BracketShareItem = {
   id: string;
+  mode: RankingGameMode;
   gameCode: string;
   shareUrl: string;
 };
@@ -56,7 +61,7 @@ type BracketRow = {
   expires_at: string | null;
 };
 
-type RankingGameMode = "classic" | "full";
+type LeaderboardRowsByView = Record<RankingView, LeaderboardEntry[]>;
 
 type EligibleBracket = {
   row: BracketRow;
@@ -81,6 +86,19 @@ type SlideCard = {
 const GUEST_USER_ID = "00000000-0000-0000-0000-000000000000";
 const SELECCIONES_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=0&single=true&output=csv";
+const WORLD_FIXTURES_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=171585554&single=true&output=tsv";
+const EMPTY_LEADERBOARD_ROWS: LeaderboardRowsByView = {
+  global: [],
+  classic: [],
+  full: [],
+};
+
+const RANKING_FILTERS: Array<{ id: RankingView; label: string }> = [
+  { id: "global", label: "Ranking Global" },
+  { id: "classic", label: "Clásico" },
+  { id: "full", label: "Completo" },
+];
 
 const normalizeKey = (value?: string) => (value || "").toString().trim().toUpperCase();
 const normalizeComparable = (value?: string) =>
@@ -164,6 +182,62 @@ const parseCSVLine = (line: string): string[] => {
   }
   result.push(current.trim());
   return result;
+};
+
+const parseTSVLine = (line: string): string[] => line.replace(/\r/g, "").split("\t");
+
+const parseFanaticoFixtures = (fixtures?: Array<Record<string, unknown>>): Fixture[] =>
+  (fixtures || []).map((fixture, idx) => ({
+    id: `${fixture.id_partido || fixture.id || `fx-${idx + 1}`}`,
+    fecha: fixture.fecha?.toString(),
+    hora: fixture.hora?.toString(),
+    fase: fixture.fase?.toString(),
+    group: fixture.grupo?.toString().toUpperCase(),
+    jornada: fixture.jornada?.toString(),
+    homeId: fixture.local_id?.toString(),
+    awayId: fixture.visita_id?.toString(),
+    estadio: fixture.estadio?.toString(),
+    locacion: fixture.locacion?.toString(),
+  }));
+
+const loadFallbackFixtures = async (): Promise<Fixture[]> => {
+  const response = await fetch(WORLD_FIXTURES_URL);
+  if (!response.ok) return [];
+  const raw = await response.text();
+  const lines = raw
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return [];
+
+  const headers = parseTSVLine(lines[0]).map((h) => h.trim().toLowerCase());
+  const idxId = headers.indexOf("id_partido");
+  const idxFecha = headers.indexOf("fecha");
+  const idxHora = headers.indexOf("hora");
+  const idxFase = headers.indexOf("fase");
+  const idxGrupo = headers.indexOf("grupo");
+  const idxJornada = headers.indexOf("jornada");
+  const idxLocal = headers.indexOf("local_id");
+  const idxVisita = headers.indexOf("visita_id");
+  const idxEstadio = headers.indexOf("estadio");
+  const idxLocacion = headers.findIndex((h) => h.includes("locación") || h.includes("ubicación"));
+
+  return lines.slice(1).map((line, idx) => {
+    const cols = parseTSVLine(line);
+    return {
+      id: idxId >= 0 ? cols[idxId] : `fx-${idx + 1}`,
+      fecha: idxFecha >= 0 ? cols[idxFecha] : undefined,
+      hora: idxHora >= 0 ? cols[idxHora] : undefined,
+      fase: idxFase >= 0 ? cols[idxFase] : undefined,
+      group: idxGrupo >= 0 ? cols[idxGrupo]?.toUpperCase() : undefined,
+      jornada: idxJornada >= 0 ? cols[idxJornada] : undefined,
+      homeId: idxLocal >= 0 ? cols[idxLocal] : undefined,
+      awayId: idxVisita >= 0 ? cols[idxVisita] : undefined,
+      estadio: idxEstadio >= 0 ? cols[idxEstadio] : undefined,
+      locacion: idxLocacion >= 0 ? cols[idxLocacion] : undefined,
+    };
+  });
 };
 
 const buildTeamIndex = (teams?: Array<{ id?: string; codigo_fixture?: string; seleccion?: string; escudo_url?: string }>) => {
@@ -330,21 +404,60 @@ const chunk = <T,>(items: T[], size: number) => {
   return output;
 };
 
+const createEmptyRankingEntry = (
+  userId: string,
+  payload: BracketSavePayload,
+  row: BracketRow,
+): LeaderboardEntry => {
+  const displayName = extractName(payload, userId);
+  return {
+    userId,
+    displayName,
+    avatarUrl: extractAvatar(payload),
+    totalPoints: 0,
+    totalHits: 0,
+    totalEvaluated: 0,
+    bracketCount: 0,
+    bestBracketPoints: 0,
+    bestCardUpdatedAt: "",
+    updatedAt: row.updated_at || "",
+    bestCard: null,
+    brackets: [],
+    searchTerms: buildSearchTerms(payload, displayName),
+  };
+};
+
+const sortRankingEntries = (entries: LeaderboardEntry[]) => {
+  const ranking = entries.sort((a, b) => {
+    if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+    if (b.totalHits !== a.totalHits) return b.totalHits - a.totalHits;
+    if (b.bestBracketPoints !== a.bestBracketPoints) return b.bestBracketPoints - a.bestBracketPoints;
+    return compareIso(b.updatedAt, a.updatedAt);
+  });
+
+  ranking.forEach((entry) => {
+    entry.brackets.sort((a, b) => {
+      if (a.mode !== b.mode) return a.mode === "classic" ? -1 : 1;
+      return a.gameCode.localeCompare(b.gameCode);
+    });
+    entry.searchTerms = Array.from(new Set(entry.searchTerms.map((term) => term.trim()).filter(Boolean)));
+  });
+
+  return ranking;
+};
+
 export default function LeaderboardPage() {
-  const { navigateTo } = useNavigation();
   const { width: viewportWidth } = useWindowSize();
   const cardsPerSlide = viewportWidth >= 1024 ? 3 : 1;
 
-  const [rows, setRows] = useState<LeaderboardEntry[]>([]);
+  const [rowsByView, setRowsByView] = useState<LeaderboardRowsByView>(EMPTY_LEADERBOARD_ROWS);
+  const [rankingView, setRankingView] = useState<RankingView>("global");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [usersSearch, setUsersSearch] = useState("");
   const [visibleUsers, setVisibleUsers] = useState(6);
-  const totalGlobalPoints = useMemo(
-    () => rows.reduce((acc, row) => acc + (row.totalPoints || 0), 0),
-    [rows],
-  );
+  const rows = rowsByView[rankingView];
   const rankByUserId = useMemo(() => {
     const map = new Map<string, number>();
     rows.forEach((row, index) => {
@@ -364,7 +477,7 @@ export default function LeaderboardPage() {
       setError(null);
       try {
         const nowIso = new Date().toISOString();
-        const [sheetData, bracketResult, fanaticoData, csvTeams] = await Promise.all([
+        const [sheetData, bracketResult, fanaticoData, csvTeams, fallbackFixtures] = await Promise.all([
           loadScoreSheetData(),
           supabase
             .from("bracket_saves")
@@ -375,15 +488,25 @@ export default function LeaderboardPage() {
             .limit(2000),
           fetchFanaticoData(),
           loadFallbackTeamsFromCsv().catch(() => []),
+          loadFallbackFixtures().catch(() => []),
         ]);
 
         if (bracketResult.error) throw bracketResult.error;
 
         const brackets = (bracketResult.data || []) as BracketRow[];
-        const byUser = new Map<string, LeaderboardEntry>();
         const combinedTeams = [...(fanaticoData?.teams || []), ...csvTeams];
         const teamIndex = buildTeamIndex(combinedTeams);
         const siteBase = resolveSiteBase() || (typeof window !== "undefined" ? window.location.origin : "");
+        const deadlineFixtures = fanaticoData?.fixtures?.length
+          ? parseFanaticoFixtures(fanaticoData.fixtures as Array<Record<string, unknown>>)
+          : fallbackFixtures;
+        const deadlineState = computeBracketDeadlineState(deadlineFixtures, new Date());
+        const classicEnabledTabs: Partial<Record<ScoreTab, boolean>> = {
+          repechajes: true,
+          grupos: deadlineState.phaseLocked.grupos,
+          dieciseisavos: deadlineState.phaseLocked.dieciseisavos,
+          llaves: deadlineState.phaseLocked.llaves,
+        };
         const eligibleByUserMode = new Map<string, EligibleBracket[]>();
 
         for (const row of brackets) {
@@ -408,11 +531,65 @@ export default function LeaderboardPage() {
           items
             .slice()
             .sort((a, b) => compareIso(b.row.updated_at || "", a.row.updated_at || ""))
-            .slice(0, 2),
+            .slice(0, 1),
         );
 
-        for (const { row, payload, mode } of eligibleBrackets) {
+        const addBracketToRows = (
+          target: Map<string, LeaderboardEntry>,
+          eligible: EligibleBracket,
+          summary: ReturnType<typeof computeBracketScore>,
+        ) => {
+          const { row, payload, mode } = eligible;
           const userId = (row.user_id || "").toString();
+          const entry = target.get(userId) || createEmptyRankingEntry(userId, payload, row);
+          const cardCandidate = buildBestCard(payload, teamIndex, row.id, summary.totalPoints, siteBase);
+          const displayName = extractName(payload, userId);
+          const avatarUrl = extractAvatar(payload);
+          const gameCode = (row.short_code || row.id || "").toString().toUpperCase();
+          const bracketItem: BracketShareItem = {
+            id: row.id,
+            mode,
+            gameCode,
+            shareUrl: cardCandidate.shareUrl,
+          };
+
+          entry.totalPoints += summary.totalPoints;
+          entry.totalHits += summary.hitCount;
+          entry.totalEvaluated += summary.evaluatedCount;
+          entry.bracketCount += 1;
+          entry.brackets.push(bracketItem);
+          entry.searchTerms.push(...buildSearchTerms(payload, displayName));
+          if (!entry.avatarUrl && avatarUrl) entry.avatarUrl = avatarUrl;
+          if (entry.displayName.startsWith("Usuario ") && displayName && !displayName.startsWith("Usuario ")) {
+            entry.displayName = displayName;
+          }
+          if (compareIso(entry.updatedAt, row.updated_at || "") < 0) {
+            entry.updatedAt = row.updated_at || entry.updatedAt;
+          }
+
+          const shouldReplaceBest =
+            !entry.bestCard ||
+            summary.totalPoints > entry.bestBracketPoints ||
+            (summary.totalPoints === entry.bestBracketPoints &&
+              compareIso(entry.bestCardUpdatedAt, row.updated_at || "") < 0);
+
+          if (shouldReplaceBest) {
+            entry.bestBracketPoints = summary.totalPoints;
+            entry.bestCardUpdatedAt = row.updated_at || entry.bestCardUpdatedAt;
+            entry.bestCard = cardCandidate;
+          }
+
+          target.set(userId, entry);
+        };
+
+        const rowsByMode: Record<RankingView, Map<string, LeaderboardEntry>> = {
+          global: new Map(),
+          classic: new Map(),
+          full: new Map(),
+        };
+
+        for (const eligible of eligibleBrackets) {
+          const { payload, mode } = eligible;
           const summary =
             mode === "full"
               ? computeFullBracketScore(
@@ -434,83 +611,22 @@ export default function LeaderboardPage() {
                     bestThirdIds: payload.bestThirdIds || [],
                   },
                   sheetData,
+                  { enabledTabs: classicEnabledTabs },
                 );
 
-          const cardCandidate = buildBestCard(payload, teamIndex, row.id, summary.totalPoints, siteBase);
-          const prev = byUser.get(userId);
-          const displayName = extractName(payload, userId);
-          const avatarUrl = extractAvatar(payload);
-          const rowSearchTerms = buildSearchTerms(payload, displayName);
-          const gameCode = (row.short_code || row.id || "").toString().toUpperCase();
-          const bracketItem: BracketShareItem = {
-            id: row.id,
-            gameCode,
-            shareUrl: cardCandidate.shareUrl,
-          };
-
-          if (!prev) {
-            byUser.set(userId, {
-              userId,
-              displayName,
-              avatarUrl,
-              totalPoints: summary.totalPoints,
-              totalHits: summary.hitCount,
-              totalEvaluated: summary.evaluatedCount,
-              bracketCount: 1,
-              bestBracketPoints: summary.totalPoints,
-              bestCardUpdatedAt: row.updated_at || "",
-              updatedAt: row.updated_at || "",
-              bestCard: cardCandidate,
-              brackets: [bracketItem],
-              searchTerms: rowSearchTerms,
-            });
-            continue;
-          }
-
-          prev.totalPoints += summary.totalPoints;
-          prev.totalHits += summary.hitCount;
-          prev.totalEvaluated += summary.evaluatedCount;
-          prev.bracketCount += 1;
-          prev.brackets.push(bracketItem);
-          prev.searchTerms.push(...rowSearchTerms);
-          if (!prev.avatarUrl && avatarUrl) prev.avatarUrl = avatarUrl;
-          if (prev.displayName.startsWith("Usuario ") && displayName && !displayName.startsWith("Usuario ")) {
-            prev.displayName = displayName;
-          }
-          if (compareIso(prev.updatedAt, row.updated_at || "") < 0) {
-            prev.updatedAt = row.updated_at || prev.updatedAt;
-          }
-
-          const shouldReplaceBest =
-            summary.totalPoints > prev.bestBracketPoints ||
-            (summary.totalPoints === prev.bestBracketPoints &&
-              compareIso(prev.bestCardUpdatedAt, row.updated_at || "") < 0);
-
-          if (shouldReplaceBest) {
-            prev.bestBracketPoints = summary.totalPoints;
-            prev.bestCardUpdatedAt = row.updated_at || prev.bestCardUpdatedAt;
-            prev.bestCard = cardCandidate;
-          }
+          addBracketToRows(rowsByMode.global, eligible, summary);
+          addBracketToRows(rowsByMode[mode], eligible, summary);
         }
 
-        const ranking = Array.from(byUser.values()).sort((a, b) => {
-          if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-          if (b.totalHits !== a.totalHits) return b.totalHits - a.totalHits;
-          if (b.bestBracketPoints !== a.bestBracketPoints) return b.bestBracketPoints - a.bestBracketPoints;
-          return compareIso(b.updatedAt, a.updatedAt);
-        });
-        ranking.forEach((entry) => {
-          entry.brackets.sort((a, b) => {
-            return a.gameCode.localeCompare(b.gameCode);
-          });
-          entry.searchTerms = Array.from(new Set(entry.searchTerms.map((term) => term.trim()).filter(Boolean)));
-        });
-
         if (!active) return;
-        setRows(ranking);
+        setRowsByView({
+          global: sortRankingEntries(Array.from(rowsByMode.global.values())),
+          classic: sortRankingEntries(Array.from(rowsByMode.classic.values())),
+          full: sortRankingEntries(Array.from(rowsByMode.full.values())),
+        });
       } catch {
         if (!active) return;
-        setError("No se pudo cargar el ranking global.");
+        setError("No se pudo cargar el ranking.");
       } finally {
         if (!active) return;
         setLoading(false);
@@ -522,6 +638,14 @@ export default function LeaderboardPage() {
       active = false;
     };
   }, []);
+
+  const rankingViewLabel = RANKING_FILTERS.find((filter) => filter.id === rankingView)?.label || "Ranking Global";
+  const rankingDescription =
+    rankingView === "global"
+      ? "Para definir el ganador global solo cuentan el último bracket clásico y el último bracket completo de cada jugador."
+      : rankingView === "classic"
+        ? "Ranking clásico: cuenta únicamente el último bracket clásico de cada jugador."
+        : "Ranking completo: cuenta únicamente el último bracket completo de cada jugador.";
 
   const topCards = useMemo<SlideCard[]>(() => {
     return rows
@@ -552,7 +676,11 @@ export default function LeaderboardPage() {
   useEffect(() => {
     setVisibleUsers(6);
     setExpandedUserId(null);
-  }, [usersSearch]);
+  }, [usersSearch, rankingView]);
+
+  useEffect(() => {
+    setSlideIndex(0);
+  }, [rankingView]);
 
   useEffect(() => {
     setSlideIndex((current) => Math.min(current, Math.max(0, slides.length - 1)));
@@ -599,9 +727,24 @@ export default function LeaderboardPage() {
 
       <main className="mx-auto w-full max-w-7xl px-4 pb-10">
         <section className="rounded-2xl  p-4 md:p-6">
-           <div className="mb-4 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+          <div className="mb-4 overflow-hidden rounded-xl border border-white/10 bg-black/30">
                 <img src={leaderboardBanner} alt="Banner leaderboard" className="h-44 w-full object-cover md:h-56" />
               </div>
+
+          <div className="ranking-filter" role="tablist" aria-label="Filtrar ranking por modo de juego">
+            {RANKING_FILTERS.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                role="tab"
+                aria-selected={rankingView === filter.id}
+                onClick={() => setRankingView(filter.id)}
+                className={`ranking-filter__button${rankingView === filter.id ? " is-active" : ""}`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
           
 
           <div className="mt-6 flex flex-col gap-6 md:flex-row md:items-start">
@@ -699,7 +842,7 @@ export default function LeaderboardPage() {
               {!loading && !error && (
                 <div className="grid gap-2 mt-10">
                   <div className="flex gap-3 p-2 md:flex-row md:items-center md:justify-between">
-                    <h1 className="w-2/3 text-2xl font-black md:text-3xl">Top 5</h1>
+                    <h1 className="w-2/3 text-2xl font-black md:text-3xl">Top 5 {rankingViewLabel}</h1>
                    
                   </div>
                   {topFiveRows.length === 0 && (
@@ -726,7 +869,7 @@ export default function LeaderboardPage() {
                             <div className="min-w-0">
                               <p className="truncate text-2xl font-semibold">{entry.displayName}</p>
                               <p className="text-xs text-[#c6f600] ">
-                                {entry.bracketCount} juegos jugados
+                                {entry.bracketCount} juegos puntuables
                               </p>
                             </div>
                           </div>
@@ -753,7 +896,7 @@ export default function LeaderboardPage() {
                     <div className="w-2/3">
                       <h1 className="text-2xl font-black md:text-3xl">Tabla de posiciones</h1>
                       <p className="mt-1 text-xs font-semibold text-gray-400 md:text-sm">
-                        Para definir el ganador global solo cuentan los 2 últimos brackets clásicos y los 2 últimos completos de cada jugador.
+                        {rankingDescription}
                       </p>
                     </div>
                     <div className="relative w-full ">
@@ -831,7 +974,7 @@ export default function LeaderboardPage() {
                                   href={bracket.shareUrl}
                                   className=" px-2 py-1 text-xs font-semibold text-[#c6f600] transition-colors hover:border-[#c6f600] hover:bg-[#c6f600]/10"
                                 >
-                                  {`Juego ${index + 1}`}
+                                  {`${bracket.mode === "classic" ? "Clásico" : "Completo"} ${index + 1}`}
                                 </a>
                               ))}
                             </div>

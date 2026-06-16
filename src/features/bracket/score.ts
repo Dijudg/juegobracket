@@ -59,6 +59,10 @@ export type BracketScoreSummary = {
   bestThirdHitCount?: number;
 };
 
+export type BracketScoreOptions = {
+  enabledTabs?: Partial<Record<ScoreTab, boolean>>;
+};
+
 export type FullBracketScoreInput = BracketScoreInput & {
   scorePredictions: ScorePredictionState;
   penaltyPredictions?: ScorePredictionState;
@@ -686,6 +690,9 @@ const resolveTabForIds = (pickId: string, fixtureId: string): ScoreTab => {
   return "grupos";
 };
 
+const isScoreTabEnabled = (tab: ScoreTab, options?: BracketScoreOptions) =>
+  options?.enabledTabs?.[tab] !== false;
+
 export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
   if (scoreSheetCachePromise) return scoreSheetCachePromise;
 
@@ -842,7 +849,11 @@ export const applyOfficialResultsToFullScoreInput = (
   };
 };
 
-export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSheetData): BracketScoreSummary => {
+export const computeBracketScore = (
+  input: BracketScoreInput,
+  sheetData: ScoreSheetData,
+  options: BracketScoreOptions = {},
+): BracketScoreSummary => {
   const allPickEntries: Array<{ pickId: string; pickWinnerToken: string }> = [];
   Object.entries(input.picks || {}).forEach(([pickId, pickWinnerToken]) => {
     if (!pickWinnerToken) return;
@@ -875,6 +886,7 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
     const fixture = sheetData.fixturesById.get(fixtureId);
     if (!fixture) continue;
     const tab = resolveTabForIds(pickId, fixture.fixtureId);
+    if (!isScoreTabEnabled(tab, options)) continue;
 
     const winnerToken = normalizeKey(fixture.winnerId);
     if (!winnerToken || winnerToken === "EMPATE" || winnerToken.includes("/")) continue;
@@ -889,7 +901,7 @@ export const computeBracketScore = (input: BracketScoreInput, sheetData: ScoreSh
     hitCount += 1;
   }
 
-  if (isOfficialGroupStageComplete(sheetData)) {
+  if (isScoreTabEnabled("grupos", options) && isOfficialGroupStageComplete(sheetData)) {
     const slots = [
       ["primeroId", 0],
       ["segundoId", 1],
