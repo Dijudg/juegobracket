@@ -2832,11 +2832,11 @@ export default function BracketGamePage() {
         return;
       }
       if (!authSession?.access_token) return;
-      if (!pageParams?.resetGame && !skipAutoLoadRef.current) {
+      if (!pageParams?.resetGame && !pageParams?.editBracketId && !skipAutoLoadRef.current) {
         loadLatestBracket();
       }
       loadSavedBrackets();
-    }, [isViewOnly, authSession?.access_token, pageParams?.resetGame, loadLatestBracket, loadSavedBrackets]);
+    }, [isViewOnly, authSession?.access_token, pageParams?.resetGame, pageParams?.editBracketId, loadLatestBracket, loadSavedBrackets]);
   useEffect(() => {
     if (!isViewOnly) return;
     if (!skipAutoLoadRef.current) {
@@ -3277,7 +3277,25 @@ export default function BracketGamePage() {
           const fixtureNumber = Number.parseInt(normalizeMatchKey(fixture.id), 10);
           return fixtureGroup === g && Number.isFinite(fixtureNumber) && fixtureNumber <= 72;
         });
-        if (groupFixtures.length === 0 || groupFixtures.some((fixture) => !hasScorePrediction(scorePredictions[normalizeMatchKey(fixture.id)]))) {
+        const hasMissingScore = groupFixtures.some((fixture) => {
+          const matchKey = normalizeMatchKey(fixture.id);
+          let prediction = scorePredictions[matchKey];
+          if (
+            !hasScorePrediction(prediction) &&
+            isFixtureLockedByPredictionDeadline(fixture, new Date(nowTs))
+          ) {
+            const officialFixture =
+              officialScoreData?.fixturesById.get(`P${matchKey}`) ||
+              officialScoreData?.fixturesById.get(matchKey);
+            prediction =
+              typeof officialFixture?.homeScore === "number" &&
+              typeof officialFixture.awayScore === "number"
+                ? { home: officialFixture.homeScore, away: officialFixture.awayScore }
+                : CLOSED_SCORE_PLACEHOLDER;
+          }
+          return !hasScorePrediction(prediction);
+        });
+        if (groupFixtures.length === 0 || hasMissingScore) {
           missing.push(g);
         }
         return;
@@ -3288,7 +3306,7 @@ export default function BracketGamePage() {
       }
     });
     return { complete: missing.length === 0, missing };
-  }, [fixtures, gameMode, scorePredictions, selections]);
+  }, [fixtures, gameMode, nowTs, officialScoreData, scorePredictions, selections]);
 
   const thirdsComplete = bestThirdIds.length === MAX_THIRD;
 
@@ -3756,7 +3774,11 @@ export default function BracketGamePage() {
         resetAll();
         pendingLoadRef.current = null;
         skipAutoLoadRef.current = true;
-        applySavedBracket(payload);
+        if (teams.length > 0) {
+          applySavedBracket(payload);
+        } else {
+          pendingLoadRef.current = payload;
+        }
         currentSaveIdRef.current = data.id;
         setCurrentSaveId(data.id);
         setCurrentSaveName(data.name || "Mi bracket");
@@ -3776,7 +3798,7 @@ export default function BracketGamePage() {
         setHomeLoadBusyId(null);
       }
     },
-    [applySavedBracket, authSession?.user?.id, defaultStartTab, resetAll],
+    [applySavedBracket, authSession?.user?.id, defaultStartTab, resetAll, teams.length],
   );
 
   const handleDeleteSavedBracketFromHome = useCallback(
@@ -3808,14 +3830,27 @@ export default function BracketGamePage() {
     },
     [authSession?.user?.id, currentSaveId],
   );
+  const editGameLoadRef = useRef<string | null>(null);
+  useEffect(() => {
+    const editBracketId = pageParams?.editBracketId as string | undefined;
+    const editToken = pageParams?.editGame as number | undefined;
+    if (!editBracketId || !authSession?.access_token) return;
+    const signature = `${editBracketId}:${editToken || ""}`;
+    if (editGameLoadRef.current === signature) return;
+    editGameLoadRef.current = signature;
+    skipAutoLoadRef.current = true;
+    void handleLoadSavedBracketFromHome(editBracketId).then(() => {
+      navigateTo("home", {});
+    });
+  }, [authSession?.access_token, handleLoadSavedBracketFromHome, navigateTo, pageParams?.editBracketId, pageParams?.editGame]);
   const newGamePromptShownRef = useRef(false);
   const suspendAutoAdvanceRef = useRef(false);
   const lastResetFromPanelRef = useRef<number | null>(null);
   const skipAutoLoadRef = useRef(false);
   useEffect(() => {
-    if (pageParams?.resetGame) return;
+    if (pageParams?.resetGame || pageParams?.editBracketId) return;
     skipAutoLoadRef.current = false;
-  }, [authSession?.access_token, pageParams?.resetGame]);
+  }, [authSession?.access_token, pageParams?.resetGame, pageParams?.editBracketId]);
   const resetQueryRef = useRef<string | null>(null);
   useEffect(() => {
     const resetParam = viewParams?.get("reset");
@@ -4063,6 +4098,8 @@ export default function BracketGamePage() {
             typeof officialFixture.awayScore === "number"
           ) {
             prediction = { home: officialFixture.homeScore, away: officialFixture.awayScore };
+          } else {
+            prediction = CLOSED_SCORE_PLACEHOLDER;
           }
         }
         if (!hasScorePrediction(prediction)) return;
@@ -6380,25 +6417,6 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                     <div className="game-mode-home__laurel game-mode-home__laurel--right" aria-hidden="true">›</div>
                   </div>
 
-                  {authSession?.access_token && (
-                    <div className="game-mode-home__saved" aria-label="Juegos guardados">
-                      <div className="game-mode-home__saved-header">
-                        <div className="min-w-0">
-                          <h2>Mis juegos</h2>
-                          <p>Revisa, continúa o administra tus juegos realizados desde tu perfil.</p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="game-mode-home__saved-cta"
-                        onClick={() => navigateTo("backend")}
-                      >
-                        Ver mis juegos realizados
-                        <ChevronRight />
-                      </button>
-                    </div>
-                  )}
-
                   <div className="game-mode-home__cards">
                     <button
                       type="button"
@@ -6450,6 +6468,25 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                       </span>
                     </button>
                   </div>
+
+                  {authSession?.access_token && (
+                    <div className="game-mode-home__saved" aria-label="Juegos guardados">
+                      <div className="game-mode-home__saved-header">
+                        <div className="min-w-0">
+                          <h2>Mis juegos</h2>
+                          <p>Revisa, continúa o administra tus juegos realizados desde tu perfil.</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="game-mode-home__saved-cta"
+                        onClick={() => navigateTo("backend")}
+                      >
+                        Ver mis juegos realizados
+                        <ChevronRight />
+                      </button>
+                    </div>
+                  )}
                 </section>
                 )}
               </>

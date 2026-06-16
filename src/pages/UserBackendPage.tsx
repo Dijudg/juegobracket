@@ -24,7 +24,7 @@ import {
   getTeamEscudo,
   resolveRepechajeCode,
 } from "../features/bracket/utils";
-import { useBracketScore } from "../features/bracket/score";
+import { useBracketScore, useFullBracketScore } from "../features/bracket/score";
 import { EmbeddedViewerMenu } from "../features/bracket/components/EmbeddedViewerMenu";
 import thirdLookup from "../data/third_lookup.json";
 import winnerCardBg from "../assets/final.jpg";
@@ -440,6 +440,8 @@ export default function UserBackendPage() {
   const [activeTab, setActiveTab] = useState<"profile" | "settings" | "claim">("profile");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [gameDeleteBusyId, setGameDeleteBusyId] = useState<string | null>(null);
+  const [gameActionError, setGameActionError] = useState<string | null>(null);
   const [claimCode, setClaimCode] = useState("");
   const [claimBusy, setClaimBusy] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -683,10 +685,6 @@ export default function UserBackendPage() {
     }
     return selectedItem.data as BracketSavePayload;
   }, [selectedItem?.data]);
-  const selectedBracketCode = useMemo(
-    () => (selectedItem?.short_code || selectedItem?.id || "").toString().toUpperCase(),
-    [selectedItem?.id, selectedItem?.short_code],
-  );
   const selectedScoreInput = useMemo(
     () => ({
       picks: selectedPayload?.picks || {},
@@ -694,13 +692,23 @@ export default function UserBackendPage() {
       uefaPicks: selectedPayload?.uefaPicks || {},
       selections: selectedPayload?.selections || {},
       bestThirdIds: selectedPayload?.bestThirdIds || [],
+      scorePredictions: selectedPayload?.scorePredictions || {},
+      penaltyPredictions: selectedPayload?.penaltyPredictions || {},
     }),
     [selectedPayload],
   );
-  const { summary: selectedScoreSummary, loading: selectedScoreLoading } = useBracketScore(
+  const selectedIsFullMode = selectedPayload?.gameMode === "full";
+  const selectedScoreEnabled = !!selectedItem && viewerId === selectedItem.id;
+  const { summary: selectedClassicScoreSummary, loading: selectedClassicScoreLoading } = useBracketScore(
     selectedScoreInput,
-    !!selectedItem && viewerId === selectedItem.id,
+    selectedScoreEnabled && !selectedIsFullMode,
   );
+  const { summary: selectedFullScoreSummary, loading: selectedFullScoreLoading } = useFullBracketScore(
+    selectedScoreInput,
+    selectedScoreEnabled && selectedIsFullMode,
+  );
+  const selectedScoreSummary = selectedIsFullMode ? selectedFullScoreSummary : selectedClassicScoreSummary;
+  const selectedScoreLoading = selectedIsFullMode ? selectedFullScoreLoading : selectedClassicScoreLoading;
 
   const userLabel = useMemo(() => user?.email || user?.id || "Usuario", [user]);
   const teamIndex = useMemo(() => {
@@ -992,6 +1000,40 @@ export default function UserBackendPage() {
     }
   };
 
+  const handleEditGame = (id: string) => {
+    if (!id) return;
+    navigateTo("home", { editBracketId: id, editGame: Date.now() });
+  };
+
+  const handleDeleteGame = async (id: string) => {
+    if (!session?.user?.id || !id) return;
+    if (typeof window !== "undefined" && !window.confirm("¿Eliminar este juego guardado?")) return;
+    setGameActionError(null);
+    setGameDeleteBusyId(id);
+    try {
+      const { error: deleteError } = await supabase
+        .from("bracket_saves")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", session.user.id);
+      if (deleteError) throw deleteError;
+      setItems((prev) => prev.filter((item) => item.id !== id));
+      setDetailsMap((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      if (selectedId === id) {
+        setSelectedId(null);
+        setViewerId(null);
+      }
+    } catch (err) {
+      setGameActionError(err instanceof Error ? err.message : "No pudimos borrar este juego.");
+    } finally {
+      setGameDeleteBusyId(null);
+    }
+  };
+
   const renderGameCard = (game: { name: string; latestId: string }) => {
     const latest = detailsMap[game.latestId];
     let payload = latest?.data as BracketSavePayload | undefined;
@@ -1091,6 +1133,26 @@ export default function UserBackendPage() {
           )}
           {shareBusyId === game.latestId && shareStatus && (
             <div className="mt-2 text-xs text-gray-400">{shareStatus}</div>
+          )}
+          <div className="mt-3 grid w-full grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => handleEditGame(game.latestId)}
+              className="rounded-full border border-[#c6f600] bg-transparent px-3 py-2 text-sm font-bold text-[#c6f600] hover:bg-[#c6f600] hover:text-black"
+            >
+              Editar
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeleteGame(game.latestId)}
+              disabled={gameDeleteBusyId === game.latestId}
+              className="rounded-full border border-red-400/70 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-200 hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {gameDeleteBusyId === game.latestId ? "Borrando..." : "Borrar"}
+            </button>
+          </div>
+          {gameActionError && (
+            <div className="mt-2 text-xs text-red-300">{gameActionError}</div>
           )}
         </div>
       </div>
@@ -1886,9 +1948,12 @@ export default function UserBackendPage() {
                     {!detailsBusy && selectedItem ? (
                       <div className="mt-3 rounded-lg border border-neutral-800 bg-black/40 p-4">
                         <div className="flex items-center justify-between gap-3">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-sm text-gray-300">
                             <span className="text-[#c6f600] font-semibold">{selectedItem.name || "Mi Pron?stico del Mundial 2026"}</span>
+                            <span className="ml-2 font-black text-white">
+                              {selectedScoreLoading ? "..." : `${selectedScoreSummary?.totalPoints || 0} pts`}
+                            </span>
                           </p>
                           <p className="text-xs text-gray-400">Actualizado: {formatDate(selectedItem.updated_at)}</p>
                         </div>
@@ -1905,18 +1970,6 @@ export default function UserBackendPage() {
                         </div>
                         {viewerId === selectedItem.id ? (
                           <div className="mt-4 flex flex-col gap-3">
-                            <div className="rounded-lg border border-neutral-800 bg-black/50 px-3 py-3">
-                              <div className="text-xs uppercase tracking-wide text-gray-400">
-                                Tus puntos totales de esta polla mundialista
-                              </div>
-                              <div className="mt-1 text-2xl font-black text-[#c6f600]">
-                                {selectedScoreLoading ? "..." : `${selectedScoreSummary?.totalPoints || 0} pts`}
-                              </div>
-                              <div className="mt-2 text-xs text-gray-400">
-                                Código del bracket:{" "}
-                                <span className="font-semibold text-white">{selectedBracketCode || "--"}</span>
-                              </div>
-                            </div>
                             <EmbeddedViewerMenu
                               tab={viewerTab}
                               playoffTab={viewerPlayoffTab}

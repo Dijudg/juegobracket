@@ -1477,19 +1477,20 @@ body{
 
 .game-mode-home__saved{
   max-width: 1040px;
-  margin: 0 auto 34px;
+  margin: 34px auto 0;
   padding: 18px;
   border: 1px solid rgba(255,255,255,.16);
   border-radius: 12px;
   background: rgba(0,0,0,.58);
   box-shadow: 0 16px 36px rgba(0,0,0,.28);
   backdrop-filter: blur(12px);
+  text-align: center;
 }
 
 .game-mode-home__saved-header{
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 14px;
   margin-bottom: 14px;
 }
@@ -1643,6 +1644,7 @@ body{
   font-weight: 1000;
   text-transform: uppercase;
   transition: filter 160ms ease, transform 160ms ease;
+  margin: 0 auto;
 }
 
 .game-mode-home__saved-cta:hover{
@@ -1821,12 +1823,14 @@ body{
   }
 
   .game-mode-home__saved{
-    margin-bottom: 42px;
+    margin-top: 42px;
+    margin-bottom: 0;
     padding: 14px;
   }
 
   .game-mode-home__saved-header{
-    align-items: flex-start;
+    align-items: center;
+    justify-content: center;
   }
 
   .game-mode-home__saved-item{
