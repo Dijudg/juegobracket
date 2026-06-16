@@ -1976,6 +1976,7 @@ body{
 }
 
 .score-prediction-card{
+  position: relative;
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--full-group-accent, #111827) 38%, rgba(0,0,0,.34));
   border-radius: 8px;
@@ -1985,6 +1986,11 @@ body{
   box-shadow:
     0 1px 0 rgba(255,255,255,.26) inset,
     0 10px 24px color-mix(in srgb, var(--full-group-accent, #000) 16%, transparent);
+}
+
+.score-prediction-card__hit{
+  top: 50%;
+  z-index: 5;
 }
 
 .score-prediction-card__top{

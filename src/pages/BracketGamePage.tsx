@@ -6928,6 +6928,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                             value={scorePredictionsForBracket[matchKey]}
                             locked={isScorePredictionLocked(matchKey)}
                             onScoreChange={handleScorePredictionChange}
+                            scorePoints={scoreByMatchId[matchKey] || 0}
                           />
                         );
                       })}
@@ -7501,6 +7502,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
               onScoreChange={handleScorePredictionChange}
               onWinnerPick={gameMode === "full" ? undefined : applyWinner}
               phaseLabel="Llaves finales"
+              scorePoints={scoreByMatchId[scoreModalMatch.id] || 0}
             />
             {hasScorePrediction(scorePredictions[scoreModalMatch.id]) &&
             scorePredictions[scoreModalMatch.id]!.home === scorePredictions[scoreModalMatch.id]!.away ? (

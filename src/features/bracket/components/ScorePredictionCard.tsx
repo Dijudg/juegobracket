@@ -13,6 +13,7 @@ type ScorePredictionCardProps = {
   locked?: boolean;
   compact?: boolean;
   selectedWinnerId?: string;
+  scorePoints?: number;
   onScoreChange: (matchId: string, side: "home" | "away", value: number | null) => void;
   onWinnerPick?: (matchId: string, team?: Team) => void;
 };
@@ -55,6 +56,7 @@ export const ScorePredictionCard = ({
   locked,
   compact,
   selectedWinnerId,
+  scorePoints = 0,
   onScoreChange,
   onWinnerPick,
 }: ScorePredictionCardProps) => {
@@ -67,6 +69,7 @@ export const ScorePredictionCard = ({
 
   return (
     <div className={`score-prediction-card${compact ? " score-prediction-card--compact" : ""}`}>
+      {scorePoints > 0 && <div className="score-hit-badge score-prediction-card__hit">+{scorePoints} puntos</div>}
       <div className="score-prediction-card__top">
         <span className="score-prediction-card__phase">{phaseLabel}</span>
         <span className="score-prediction-card__date">{dateTimeLabel || "Fecha"}</span>
@@ -128,6 +131,7 @@ export const ScorePredictionMatchCard = ({
   onScoreChange,
   onWinnerPick,
   phaseLabel,
+  scorePoints,
 }: {
   match: Match;
   schedule?: MatchSchedule;
@@ -136,6 +140,7 @@ export const ScorePredictionMatchCard = ({
   onScoreChange: (matchId: string, side: "home" | "away", value: number | null) => void;
   onWinnerPick?: (matchId: string, team?: Team) => void;
   phaseLabel?: string;
+  scorePoints?: number;
 }) => (
   <ScorePredictionCard
     matchId={match.id}
@@ -149,5 +154,6 @@ export const ScorePredictionMatchCard = ({
     selectedWinnerId={match.ganador?.id}
     onScoreChange={onScoreChange}
     onWinnerPick={onWinnerPick}
+    scorePoints={scorePoints}
   />
 );
