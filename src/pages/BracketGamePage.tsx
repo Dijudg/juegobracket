@@ -6384,58 +6384,18 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                     <div className="game-mode-home__saved" aria-label="Juegos guardados">
                       <div className="game-mode-home__saved-header">
                         <div className="min-w-0">
-                          <h2>Juegos guardados</h2>
-                          <p>Continúa un bracket pendiente o borra los que ya no quieras conservar.</p>
+                          <h2>Mis juegos</h2>
+                          <p>Revisa, continúa o administra tus juegos realizados desde tu perfil.</p>
                         </div>
-                        <button
-                          type="button"
-                          className="game-mode-home__saved-refresh"
-                          onClick={() => void loadSavedBrackets()}
-                          aria-label="Actualizar juegos guardados"
-                        >
-                          <RefreshCw />
-                        </button>
                       </div>
-                      {homeSavedError && <p className="game-mode-home__saved-error">{homeSavedError}</p>}
-                      {savedBrackets.length === 0 ? (
-                        <p className="game-mode-home__saved-empty">Todavía no tienes juegos guardados.</p>
-                      ) : (
-                        <div className="game-mode-home__saved-list">
-                          {savedBrackets.map((item) => {
-                            const isLoading = homeLoadBusyId === item.id;
-                            const isDeleting = homeDeleteBusyId === item.id;
-                            return (
-                              <div className="game-mode-home__saved-item" key={item.id}>
-                                <div className="game-mode-home__saved-meta">
-                                  <strong>{item.name || "Mi bracket"}</strong>
-                                  <span>Actualizado {formatSavedBracketDate(item.updated_at || item.created_at)}</span>
-                                </div>
-                                <div className="game-mode-home__saved-actions">
-                                  <button
-                                    type="button"
-                                    className="game-mode-home__saved-open"
-                                    disabled={isLoading || isDeleting}
-                                    onClick={() => void handleLoadSavedBracketFromHome(item.id)}
-                                  >
-                                    <Pencil />
-                                    {isLoading ? "Cargando..." : "Continuar"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="game-mode-home__saved-delete"
-                                    disabled={isLoading || isDeleting}
-                                    onClick={() => void handleDeleteSavedBracketFromHome(item.id)}
-                                    aria-label={`Borrar ${item.name || "Mi bracket"}`}
-                                  >
-                                    <Trash2 />
-                                    {isDeleting ? "Borrando..." : "Borrar"}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        className="game-mode-home__saved-cta"
+                        onClick={() => navigateTo("backend")}
+                      >
+                        Ver mis juegos realizados
+                        <ChevronRight />
+                      </button>
                     </div>
                   )}
 

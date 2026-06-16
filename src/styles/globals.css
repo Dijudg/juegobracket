@@ -1628,6 +1628,33 @@ body{
   color: #050505;
 }
 
+.game-mode-home__saved-cta{
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #c6f600;
+  border-radius: 8px;
+  background: #c6f600;
+  color: #050505;
+  padding: 0 18px;
+  font-size: 14px;
+  font-weight: 1000;
+  text-transform: uppercase;
+  transition: filter 160ms ease, transform 160ms ease;
+}
+
+.game-mode-home__saved-cta:hover{
+  filter: brightness(.96);
+  transform: translateY(-1px);
+}
+
+.game-mode-home__saved-cta svg{
+  width: 18px;
+  height: 18px;
+}
+
 .game-mode-home__saved-delete{
   border: 1px solid rgba(248,113,113,.65);
   background: rgba(127,29,29,.32);

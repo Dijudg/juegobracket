@@ -72,7 +72,7 @@ export type FullBracketScoreInput = BracketScoreInput & {
 const FULL_POINTS = {
   exactScore: 5,
   winner: 2,
-  goal: 1,
+  goal: 0,
   uniqueExact: 5,
   roundOf16Bonus: 8,
   quarterBonus: 4,
@@ -1015,14 +1015,12 @@ export const computeFullBracketScore = (
         reasons.push("Ganador");
         winnerCount += 1;
       }
-      if (prediction.home === actualHome) {
+      if (FULL_POINTS.goal > 0 && prediction.home === actualHome) {
         points += FULL_POINTS.goal;
-        reasons.push("Gol local");
         goalCount += 1;
       }
-      if (prediction.away === actualAway) {
+      if (FULL_POINTS.goal > 0 && prediction.away === actualAway) {
         points += FULL_POINTS.goal;
-        reasons.push("Gol visitante");
         goalCount += 1;
       }
     }

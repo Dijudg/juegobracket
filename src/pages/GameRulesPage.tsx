@@ -7,7 +7,6 @@ import { useNavigation } from "../contexts/NavigationContext";
 const scoringRules = [
   ["Marcador Acertado", "5"],
   ["Ganador Acertado", "2"],
-  ["Gol Acertado", "1"],
   ["Penales Exactos", "1"],
   ["Predicción Única", "5"],
   ["Bono Octavos", "8"],
@@ -20,7 +19,6 @@ const tieBreakers = [
   "Campeón: si existe un empate en puntaje, gana la posición quien haya acertado el campeón del torneo.",
   "Marcador acertado: si persiste el empate, gana quien tenga más marcadores exactos acertados.",
   "Ganador acertado: si persiste el empate, gana quien tenga más ganadores acertados.",
-  "Gol acertado: si persiste el empate, gana quien tenga más goles acertados.",
   "Marcador único: si persiste el empate, gana quien tenga más marcadores únicos.",
   "Si después de evaluar estos criterios todavía persiste el empate, los jugadores quedan en la misma posición.",
 ];
@@ -130,10 +128,6 @@ export default function GameRulesPage() {
                 <p>
                   <strong className="text-white">Ganador:</strong> si no aciertas el marcador exacto, pero aciertas el
                   ganador o el empate, sumas los puntos.
-                </p>
-                <p>
-                  <strong className="text-white">Gol acertado:</strong> si no aciertas el marcador exacto, pero aciertas los
-                  goles de uno de los equipos, sumas los puntos.
                 </p>
                 <p>
                   <strong className="text-white">Penales exactos:</strong> si el partido llega a penaltis y aciertas
