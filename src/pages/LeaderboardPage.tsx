@@ -10,9 +10,10 @@ import { supabase } from "../utils/supabaseClient";
 import { fetchFanaticoData } from "../utils/fanaticoApi";
 import { resolveSiteBase } from "../utils/apiBase";
 import { computeBracketDeadlineState } from "../features/bracket/deadlines";
-import type { BracketSavePayload, Fixture } from "../features/bracket/types";
+import type { BracketSavePayload, Fixture, Match, ScorePredictionState, Seeds, Team } from "../features/bracket/types";
 import { computeBracketScore, computeFullBracketScore, loadScoreSheetData } from "../features/bracket/score";
 import type { ScoreTab } from "../features/bracket/score";
+import thirdLookup from "../data/third_lookup.json";
 import "../styles/globals.css";
 
 type TopCardData = {
@@ -84,6 +85,8 @@ type SlideCard = {
 };
 
 const GUEST_USER_ID = "00000000-0000-0000-0000-000000000000";
+const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
+const MAX_THIRD = 8;
 const SELECCIONES_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=0&single=true&output=csv";
 const WORLD_FIXTURES_URL =
@@ -287,6 +290,198 @@ const buildTeamIndex = (teams?: Array<{ id?: string; codigo_fixture?: string; se
   return map;
 };
 
+const teamFromToken = (token: string | undefined, group: string | undefined, teamIndex: Map<string, TeamIndexValue>): Team | undefined => {
+  const key = normalizeKey(token);
+  if (!key || key === "EMPATE" || key.includes("/")) return undefined;
+  const match = teamIndex.get(key) || teamIndex.get(normalizeComparable(key));
+  return {
+    id: key,
+    codigo: key,
+    nombre: match?.name || key,
+    grupo: group?.toUpperCase() || "",
+    escudo: match?.escudo,
+  };
+};
+
+const buildSeedsFromPayload = (payload: BracketSavePayload, teamIndex: Map<string, TeamIndexValue>): Seeds => {
+  const firsts: Seeds["firsts"] = {};
+  const seconds: Seeds["seconds"] = {};
+  const thirds: Seeds["thirds"] = {};
+  GROUP_LETTERS.forEach((group) => {
+    const pick = payload.selections?.[group];
+    firsts[group] = teamFromToken(pick?.primeroId, group, teamIndex);
+    seconds[group] = teamFromToken(pick?.segundoId, group, teamIndex);
+    thirds[group] = teamFromToken(pick?.terceroId, group, teamIndex);
+  });
+  return { firsts, seconds, thirds };
+};
+
+const normalizeThirdGroups = (groups: string[]) =>
+  Array.from(new Set(groups.map((g) => g.toUpperCase()).filter((g) => GROUP_LETTERS.includes(g))))
+    .sort()
+    .slice(0, MAX_THIRD);
+
+const assignThirdGroupsToSeeds = (thirdsQualified: string[]) => {
+  const orderedThirds = normalizeThirdGroups(thirdsQualified);
+  const key = orderedThirds.join("");
+  const lookup = thirdLookup as Record<string, Record<string, string>>;
+  const exact = lookup[key];
+  if (exact) return exact;
+  const used = new Set<string>();
+  const entry: Record<string, string> = {};
+  ["B1", "C1", "E1", "F1", "H1", "I1", "K1", "L1"].forEach((seed, idx) => {
+    const group = orderedThirds[idx % Math.max(1, orderedThirds.length)];
+    if (group && !used.has(group)) {
+      entry[seed] = group;
+      used.add(group);
+    }
+  });
+  return entry;
+};
+
+const buildRoundOf32ForPodium = (seeds: Seeds, thirdsQualifiedGroups: string[]): Match[] => {
+  const entry = assignThirdGroupsToSeeds(thirdsQualifiedGroups);
+  const slotTeam = (slot: string): Team | undefined => {
+    const group = slot.slice(0, 1);
+    const rank = slot.slice(1);
+    if (rank === "1") return seeds.firsts[group];
+    if (rank === "2") return seeds.seconds[group];
+    if (rank === "3") return seeds.thirds[group];
+    return undefined;
+  };
+  const thirdSeedToTeam = (code: string): Team | undefined => seeds.thirds[entry[code]];
+  const roundOf32Base = [
+    { id: "73", home: "A1", away: "LKP_A1" },
+    { id: "74", home: "E2", away: "I2" },
+    { id: "75", home: "I1", away: "C2" },
+    { id: "76", home: "E1", away: "LKP_E1" },
+    { id: "77", home: "A2", away: "B2" },
+    { id: "78", home: "L1", away: "LKP_L1" },
+    { id: "79", home: "D1", away: "LKP_D1" },
+    { id: "80", home: "G1", away: "J2" },
+    { id: "81", home: "B1", away: "LKP_B1" },
+    { id: "82", home: "F1", away: "LKP_F1" },
+    { id: "83", home: "C1", away: "F2" },
+    { id: "84", home: "H1", away: "J2" },
+    { id: "85", home: "B1", away: "LKP_B1" },
+    { id: "86", home: "J1", away: "H2" },
+    { id: "87", home: "K1", away: "LKP_K1" },
+    { id: "88", home: "D2", away: "G2" },
+  ] as const;
+  return roundOf32Base.map((cfg) => ({
+    id: `r32-${cfg.id}`,
+    label: cfg.id,
+    equipoA: cfg.home.startsWith("LKP_") ? thirdSeedToTeam(cfg.home.slice(4)) : slotTeam(cfg.home),
+    equipoB: cfg.away.startsWith("LKP_") ? thirdSeedToTeam(cfg.away.slice(4)) : slotTeam(cfg.away),
+  }));
+};
+
+const winnerFromMatch = (
+  match: Match,
+  picks: Record<string, string | undefined>,
+  scorePredictions: ScorePredictionState,
+  penaltyPredictions: ScorePredictionState,
+): Team | undefined => {
+  const score = scorePredictions[match.id];
+  if (match.equipoA && match.equipoB && typeof score?.home === "number" && typeof score.away === "number") {
+    if (score.home > score.away) return match.equipoA;
+    if (score.away > score.home) return match.equipoB;
+    const penalty = penaltyPredictions[match.id];
+    if (typeof penalty?.home === "number" && typeof penalty.away === "number") {
+      if (penalty.home > penalty.away) return match.equipoA;
+      if (penalty.away > penalty.home) return match.equipoB;
+    }
+  }
+  const picked = picks[match.id];
+  if (picked && (normalizeKey(match.equipoA?.id) === normalizeKey(picked) || normalizeKey(match.equipoB?.id) === normalizeKey(picked))) {
+    return normalizeKey(match.equipoA?.id) === normalizeKey(picked) ? match.equipoA : match.equipoB;
+  }
+  return undefined;
+};
+
+const buildFinalMatchesForPodium = (base: Match[], payload: BracketSavePayload) => {
+  const picks = payload.picks || {};
+  const scores = payload.scorePredictions || {};
+  const penalties = payload.penaltyPredictions || {};
+  const attachWinners = (matches: Match[]) =>
+    matches.map((match) => {
+      const ganador = winnerFromMatch(match, picks, scores, penalties);
+      const perdedor =
+        ganador && match.equipoA && match.equipoB
+          ? normalizeKey(ganador.id) === normalizeKey(match.equipoA.id)
+            ? match.equipoB
+            : match.equipoA
+          : undefined;
+      return { ...match, ganador, perdedor };
+    });
+  const r32 = attachWinners(base);
+  const winner = (items: Match[], id: string) => items.find((m) => m.id === id)?.ganador;
+  const r16 = attachWinners(
+    [
+      { id: "r16-89", label: "89", a: "r32-73", b: "r32-74" },
+      { id: "r16-90", label: "90", a: "r32-75", b: "r32-76" },
+      { id: "r16-91", label: "91", a: "r32-77", b: "r32-78" },
+      { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
+      { id: "r16-93", label: "93", a: "r32-81", b: "r32-82" },
+      { id: "r16-94", label: "94", a: "r32-83", b: "r32-84" },
+      { id: "r16-95", label: "95", a: "r32-85", b: "r32-86" },
+      { id: "r16-96", label: "96", a: "r32-87", b: "r32-88" },
+    ].map((m) => ({ id: m.id, label: m.label, equipoA: winner(r32, m.a), equipoB: winner(r32, m.b) })),
+  );
+  const qf = attachWinners(
+    [
+      { id: "qf-97", label: "97", a: "r16-89", b: "r16-90" },
+      { id: "qf-98", label: "98", a: "r16-91", b: "r16-92" },
+      { id: "qf-99", label: "99", a: "r16-93", b: "r16-94" },
+      { id: "qf-100", label: "100", a: "r16-95", b: "r16-96" },
+    ].map((m) => ({ id: m.id, label: m.label, equipoA: winner(r16, m.a), equipoB: winner(r16, m.b) })),
+  );
+  const sf = attachWinners(
+    [
+      { id: "sf-101", label: "101", a: "qf-97", b: "qf-98" },
+      { id: "sf-102", label: "102", a: "qf-99", b: "qf-100" },
+    ].map((m) => ({ id: m.id, label: m.label, equipoA: winner(qf, m.a), equipoB: winner(qf, m.b) })),
+  );
+  const final = attachWinners([{ id: "final-104", label: "104", equipoA: winner(sf, "sf-101"), equipoB: winner(sf, "sf-102") }]);
+  const thirdPlace = attachWinners([
+    {
+      id: "third-103",
+      label: "103",
+      equipoA: sf.find((m) => m.id === "sf-101")?.perdedor,
+      equipoB: sf.find((m) => m.id === "sf-102")?.perdedor,
+    },
+  ]);
+  return { final: final[0], thirdPlace: thirdPlace[0] };
+};
+
+const teamToCard = (team?: Team): ShareCardTeam => ({
+  name: team?.nombre || team?.id || "Por definir",
+  escudo: team?.escudo,
+});
+
+const buildFullModeCardPodium = (payload: BracketSavePayload, teamIndex: Map<string, TeamIndexValue>) => {
+  const seeds = buildSeedsFromPayload(payload, teamIndex);
+  const thirdsAvailable = GROUP_LETTERS.map((group) => seeds.thirds[group]).filter(Boolean) as Team[];
+  const thirdsQualifiedGroups = (payload.bestThirdIds || [])
+    .map((id) => {
+      const key = normalizeKey(id);
+      return thirdsAvailable.find(
+        (team) => normalizeKey(team.id) === key || normalizeKey(team.codigo) === key || normalizeComparable(team.nombre) === normalizeComparable(key),
+      );
+    })
+    .filter(Boolean)
+    .map((team) => team!.grupo?.toUpperCase())
+    .filter(Boolean) as string[];
+  if (thirdsQualifiedGroups.length < MAX_THIRD) return null;
+  const matches = buildRoundOf32ForPodium(seeds, thirdsQualifiedGroups);
+  const { final, thirdPlace } = buildFinalMatchesForPodium(matches, payload);
+  return {
+    champion: teamToCard(final?.ganador),
+    runnerUp: teamToCard(final?.perdedor),
+    third: teamToCard(thirdPlace?.ganador),
+  };
+};
+
 const loadFallbackTeamsFromCsv = async () => {
   const response = await fetch(SELECCIONES_URL);
   if (!response.ok) return [] as Array<{ id?: string; codigo_fixture?: string; seleccion?: string; escudo_url?: string }>;
@@ -349,6 +544,7 @@ const buildBestCard = (
   siteBase: string,
 ): TopCardData => {
   const picks = payload.picks || {};
+  const fullPodium = payload.gameMode === "full" ? buildFullModeCardPodium(payload, teamIndex) : null;
   const championToken = picks["final-104"];
   const sf1 = normalizeKey(picks["sf-101"]);
   const sf2 = normalizeKey(picks["sf-102"]);
@@ -368,9 +564,9 @@ const buildBestCard = (
   return {
     bracketId,
     points,
-    champion: resolveTeamCardByName(championToken, teamIndex),
-    runnerUp: resolveTeamCardById(runnerKey, teamIndex),
-    third: resolveTeamCardById(thirdToken, teamIndex),
+    champion: fullPodium?.champion || resolveTeamCardByName(championToken, teamIndex),
+    runnerUp: fullPodium?.runnerUp || resolveTeamCardById(runnerKey, teamIndex),
+    third: fullPodium?.third || resolveTeamCardById(thirdToken, teamIndex),
     shareUrl,
   };
 };

@@ -14,7 +14,7 @@ import {
 } from "../utils/authConsent";
 import { sendConsentNotification } from "../utils/consentNotify";
 import { fetchFanaticoData } from "../utils/fanaticoApi";
-import type { BracketSavePayload, GroupSelections, Match, Seeds, Team } from "../features/bracket/types";
+import type { BracketSavePayload, GroupSelections, Match, ScorePredictionState, Seeds, Team } from "../features/bracket/types";
 import {
   applyRepechajeMeta,
   ensureRepechajeTeams,
@@ -252,8 +252,28 @@ const buildRoundOf32 = (
 const buildNextRounds = (
   base: Match[],
   picks: Record<string, string | undefined>,
+  scorePredictions: ScorePredictionState = {},
+  penaltyPredictions: ScorePredictionState = {},
+  gameMode: BracketSavePayload["gameMode"] = "classic",
 ): { final: Match[]; thirdPlace: Match[] } => {
   const pickWinner = (match: Match): Team | undefined => {
+    if (gameMode === "full") {
+      const score = scorePredictions[match.id];
+      if (
+        match.equipoA &&
+        match.equipoB &&
+        typeof score?.home === "number" &&
+        typeof score.away === "number"
+      ) {
+        if (score.home > score.away) return match.equipoA;
+        if (score.away > score.home) return match.equipoB;
+        const penalty = penaltyPredictions[match.id];
+        if (typeof penalty?.home === "number" && typeof penalty.away === "number") {
+          if (penalty.home > penalty.away) return match.equipoA;
+          if (penalty.away > penalty.home) return match.equipoB;
+        }
+      }
+    }
     const picked = picks[match.id];
     if (picked && (match.equipoA?.id === picked || match.equipoB?.id === picked)) {
       return match.equipoA?.id === picked ? match.equipoA : match.equipoB;
@@ -809,7 +829,13 @@ export default function UserBackendPage() {
         return { champion: championFallback, runnerUp: undefined, third: thirdFallback };
       }
       const { matches } = buildRoundOf32(seeds, thirdsQualifiedGroups, thirdLookup as Record<string, Record<string, string>>);
-      const { final, thirdPlace } = buildNextRounds(matches, picks);
+      const { final, thirdPlace } = buildNextRounds(
+        matches,
+        picks,
+        payload.scorePredictions || {},
+        payload.penaltyPredictions || {},
+        payload.gameMode,
+      );
       const finalMatch = final[0];
       const thirdMatch = thirdPlace[0];
       return {
