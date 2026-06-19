@@ -106,6 +106,12 @@ const RANKING_FILTERS: Array<{ id: RankingView; label: string }> = [
 const normalizeKey = (value?: string) => (value || "").toString().trim().toUpperCase();
 const normalizeComparable = (value?: string) =>
   normalizeKey((value || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+const normalizeMatchKey = (value?: string) => {
+  if (!value) return "";
+  const cleaned = value.toString().trim().replace(/^P/i, "");
+  const noZeros = cleaned.replace(/^0+/, "");
+  return noZeros || cleaned;
+};
 const hasResolvedPick = (value?: string) => {
   const key = normalizeKey(value);
   return !!key && key !== "EMPATE" && !key.includes("/") && key !== "POR DEFINIR";
@@ -303,6 +309,78 @@ const teamFromToken = (token: string | undefined, group: string | undefined, tea
   };
 };
 
+const buildFullModeGroupsFromScores = (
+  payload: BracketSavePayload,
+  teamIndex: Map<string, TeamIndexValue>,
+  fixtures: Fixture[],
+) => {
+  const selections: BracketSavePayload["selections"] = {};
+  const groupSelections: Record<string, { primero?: Team; segundo?: Team; tercero?: Team }> = {};
+  const tables: Record<string, Array<Team & { pts: number; pj: number; pg: number; gf: number; gc: number; dif: number }>> = {};
+  const scores = payload.scorePredictions || {};
+
+  GROUP_LETTERS.forEach((group) => {
+    const rows = new Map<string, Team & { pts: number; pj: number; pg: number; gf: number; gc: number; dif: number }>();
+    fixtures
+      .filter((fixture) => {
+        const fixtureGroup = fixture.group?.toUpperCase();
+        const fixtureNumber = Number.parseInt(normalizeMatchKey(fixture.id), 10);
+        return fixtureGroup === group && Number.isFinite(fixtureNumber) && fixtureNumber <= 72;
+      })
+      .forEach((fixture) => {
+        const matchKey = normalizeMatchKey(fixture.id);
+        const prediction = scores[matchKey] || scores[`P${matchKey}`] || scores[fixture.id];
+        if (typeof prediction?.home !== "number" || typeof prediction.away !== "number") return;
+        const home = teamFromToken(fixture.homeId, group, teamIndex);
+        const away = teamFromToken(fixture.awayId, group, teamIndex);
+        if (!home || !away) return;
+        if (!rows.has(home.id)) rows.set(home.id, { ...home, pts: 0, pj: 0, pg: 0, gf: 0, gc: 0, dif: 0 });
+        if (!rows.has(away.id)) rows.set(away.id, { ...away, pts: 0, pj: 0, pg: 0, gf: 0, gc: 0, dif: 0 });
+        const homeRow = rows.get(home.id)!;
+        const awayRow = rows.get(away.id)!;
+        homeRow.pj += 1;
+        awayRow.pj += 1;
+        homeRow.gf += prediction.home;
+        homeRow.gc += prediction.away;
+        awayRow.gf += prediction.away;
+        awayRow.gc += prediction.home;
+        if (prediction.home === prediction.away) {
+          homeRow.pts += 1;
+          awayRow.pts += 1;
+        } else if (prediction.home > prediction.away) {
+          homeRow.pts += 3;
+          homeRow.pg += 1;
+        } else {
+          awayRow.pts += 3;
+          awayRow.pg += 1;
+        }
+      });
+
+    const table = Array.from(rows.values())
+      .map((row) => ({ ...row, dif: row.gf - row.gc }))
+      .sort((a, b) => b.pts - a.pts || b.dif - a.dif || b.gf - a.gf || b.pg - a.pg || a.nombre.localeCompare(b.nombre, "es"));
+    tables[group] = table;
+    groupSelections[group] = {
+      primero: table[0],
+      segundo: table[1],
+      tercero: table[2],
+    };
+    selections[group] = {
+      primeroId: table[0]?.id,
+      segundoId: table[1]?.id,
+      terceroId: table[2]?.id,
+    };
+  });
+
+  const bestThirdIds = GROUP_LETTERS.map((group) => tables[group]?.[2])
+    .filter((team): team is Team & { pts: number; pj: number; pg: number; gf: number; gc: number; dif: number } => Boolean(team))
+    .sort((a, b) => b.pts - a.pts || b.dif - a.dif || b.gf - a.gf || b.pg - a.pg || a.nombre.localeCompare(b.nombre, "es"))
+    .slice(0, MAX_THIRD)
+    .map((team) => team.id);
+
+  return { selections, groupSelections, bestThirdIds };
+};
+
 const buildSeedsFromPayload = (payload: BracketSavePayload, teamIndex: Map<string, TeamIndexValue>): Seeds => {
   const firsts: Seeds["firsts"] = {};
   const seconds: Seeds["seconds"] = {};
@@ -329,10 +407,10 @@ const assignThirdGroupsToSeeds = (thirdsQualified: string[]) => {
   if (exact) return exact;
   const used = new Set<string>();
   const entry: Record<string, string> = {};
-  ["B1", "C1", "E1", "F1", "H1", "I1", "K1", "L1"].forEach((seed, idx) => {
+  ["A1", "B1", "D1", "E1", "G1", "I1", "K1", "L1"].forEach((seed, idx) => {
     const group = orderedThirds[idx % Math.max(1, orderedThirds.length)];
     if (group && !used.has(group)) {
-      entry[seed] = group;
+      entry[seed] = `3${group}`;
       used.add(group);
     }
   });
@@ -349,19 +427,22 @@ const buildRoundOf32ForPodium = (seeds: Seeds, thirdsQualifiedGroups: string[]):
     if (rank === "3") return seeds.thirds[group];
     return undefined;
   };
-  const thirdSeedToTeam = (code: string): Team | undefined => seeds.thirds[entry[code]];
+  const thirdSeedToTeam = (code: string): Team | undefined => {
+    const group = entry[code]?.[1];
+    return group ? seeds.thirds[group] : undefined;
+  };
   const roundOf32Base = [
-    { id: "73", home: "A1", away: "LKP_A1" },
-    { id: "74", home: "E2", away: "I2" },
-    { id: "75", home: "I1", away: "C2" },
-    { id: "76", home: "E1", away: "LKP_E1" },
-    { id: "77", home: "A2", away: "B2" },
-    { id: "78", home: "L1", away: "LKP_L1" },
-    { id: "79", home: "D1", away: "LKP_D1" },
-    { id: "80", home: "G1", away: "J2" },
-    { id: "81", home: "B1", away: "LKP_B1" },
-    { id: "82", home: "F1", away: "LKP_F1" },
-    { id: "83", home: "C1", away: "F2" },
+    { id: "73", home: "A2", away: "B2" },
+    { id: "74", home: "E1", away: "LKP_E1" },
+    { id: "75", home: "F1", away: "C2" },
+    { id: "76", home: "C1", away: "F2" },
+    { id: "77", home: "I1", away: "LKP_I1" },
+    { id: "78", home: "E2", away: "I2" },
+    { id: "79", home: "A1", away: "LKP_A1" },
+    { id: "80", home: "L1", away: "LKP_L1" },
+    { id: "81", home: "D1", away: "LKP_D1" },
+    { id: "82", home: "G1", away: "LKP_G1" },
+    { id: "83", home: "K2", away: "L2" },
     { id: "84", home: "H1", away: "J2" },
     { id: "85", home: "B1", away: "LKP_B1" },
     { id: "86", home: "J1", away: "H2" },
@@ -459,10 +540,15 @@ const teamToCard = (team?: Team): ShareCardTeam => ({
   escudo: team?.escudo,
 });
 
-const buildFullModeCardPodium = (payload: BracketSavePayload, teamIndex: Map<string, TeamIndexValue>) => {
-  const seeds = buildSeedsFromPayload(payload, teamIndex);
+const buildFullModeCardPodium = (payload: BracketSavePayload, teamIndex: Map<string, TeamIndexValue>, fixtures: Fixture[]) => {
+  const derived = buildFullModeGroupsFromScores(payload, teamIndex, fixtures);
+  const seeds =
+    derived.bestThirdIds.length >= MAX_THIRD
+      ? buildSeedsFromPayload({ ...payload, selections: derived.selections }, teamIndex)
+      : buildSeedsFromPayload(payload, teamIndex);
   const thirdsAvailable = GROUP_LETTERS.map((group) => seeds.thirds[group]).filter(Boolean) as Team[];
-  const thirdsQualifiedGroups = (payload.bestThirdIds || [])
+  const bestThirdIds = derived.bestThirdIds.length >= MAX_THIRD ? derived.bestThirdIds : payload.bestThirdIds || [];
+  const thirdsQualifiedGroups = bestThirdIds
     .map((id) => {
       const key = normalizeKey(id);
       return thirdsAvailable.find(
@@ -539,12 +625,13 @@ const resolveTeamCardByName = (token: string | undefined, teamIndex: Map<string,
 const buildBestCard = (
   payload: BracketSavePayload,
   teamIndex: Map<string, TeamIndexValue>,
+  fixtures: Fixture[],
   bracketId: string,
   points: number,
   siteBase: string,
 ): TopCardData => {
   const picks = payload.picks || {};
-  const fullPodium = payload.gameMode === "full" ? buildFullModeCardPodium(payload, teamIndex) : null;
+  const fullPodium = payload.gameMode === "full" ? buildFullModeCardPodium(payload, teamIndex, fixtures) : null;
   const championToken = picks["final-104"];
   const sf1 = normalizeKey(picks["sf-101"]);
   const sf2 = normalizeKey(picks["sf-102"]);
@@ -738,7 +825,7 @@ export default function LeaderboardPage() {
           const { row, payload, mode } = eligible;
           const userId = (row.user_id || "").toString();
           const entry = target.get(userId) || createEmptyRankingEntry(userId, payload, row);
-          const cardCandidate = buildBestCard(payload, teamIndex, row.id, summary.totalPoints, siteBase);
+          const cardCandidate = buildBestCard(payload, teamIndex, deadlineFixtures, row.id, summary.totalPoints, siteBase);
           const displayName = extractName(payload, userId);
           const avatarUrl = extractAvatar(payload);
           const gameCode = (row.short_code || row.id || "").toString().toUpperCase();

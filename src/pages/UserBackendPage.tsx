@@ -14,7 +14,7 @@ import {
 } from "../utils/authConsent";
 import { sendConsentNotification } from "../utils/consentNotify";
 import { fetchFanaticoData } from "../utils/fanaticoApi";
-import type { BracketSavePayload, GroupSelections, Match, ScorePredictionState, Seeds, Team } from "../features/bracket/types";
+import type { BracketSavePayload, Fixture, GroupSelections, Match, ScorePredictionState, Seeds, Team } from "../features/bracket/types";
 import {
   applyRepechajeMeta,
   ensureRepechajeTeams,
@@ -107,6 +107,8 @@ const DEFAULT_HOME_URL = "https://especiales.eltelegrafo.com.ec/fanaticomundiali
 const LS_TEAMS = "fm-teams";
 const seleccionesUrl =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsjy3zJUdvr3npRU/pub?gid=0&single=true&output=csv";
+const worldFixturesUrl =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=171585554&single=true&output=tsv";
 
 const parseCSVLine = (line: string): string[] => {
   const result: string[] = [];
@@ -128,6 +130,62 @@ const parseCSVLine = (line: string): string[] => {
 };
 
 const normalizeTeamKey = (value?: string) => (value || "").trim().toUpperCase();
+const normalizeMatchKey = (value?: string) => {
+  if (!value) return "";
+  const cleaned = value.toString().trim().replace(/^P/i, "");
+  const noZeros = cleaned.replace(/^0+/, "");
+  return noZeros || cleaned;
+};
+
+const parseTSVLine = (line: string): string[] => line.replace(/\r/g, "").split("\t");
+
+const parseFanaticoFixtures = (fixtures?: Array<Record<string, unknown>>): Fixture[] =>
+  (fixtures || []).map((fixture, idx) => ({
+    id: `${fixture.id_partido || fixture.id || `fx-${idx + 1}`}`,
+    fecha: fixture.fecha?.toString(),
+    hora: fixture.hora?.toString(),
+    fase: fixture.fase?.toString(),
+    group: fixture.grupo?.toString().toUpperCase(),
+    jornada: fixture.jornada?.toString(),
+    homeId: fixture.local_id?.toString(),
+    awayId: fixture.visita_id?.toString(),
+    estadio: fixture.estadio?.toString(),
+    locacion: fixture.locacion?.toString(),
+  }));
+
+const loadFallbackFixtures = async (): Promise<Fixture[]> => {
+  const response = await fetch(worldFixturesUrl);
+  if (!response.ok) return [];
+  const raw = await response.text();
+  const lines = raw.replace(/\r/g, "").split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = parseTSVLine(lines[0]).map((h) => h.trim().toLowerCase());
+  const idxId = headers.indexOf("id_partido");
+  const idxFecha = headers.indexOf("fecha");
+  const idxHora = headers.indexOf("hora");
+  const idxFase = headers.indexOf("fase");
+  const idxGrupo = headers.indexOf("grupo");
+  const idxJornada = headers.indexOf("jornada");
+  const idxLocal = headers.indexOf("local_id");
+  const idxVisita = headers.indexOf("visita_id");
+  const idxEstadio = headers.indexOf("estadio");
+  const idxLocacion = headers.findIndex((h) => h.includes("locación") || h.includes("ubicación"));
+  return lines.slice(1).map((line, idx) => {
+    const cols = parseTSVLine(line);
+    return {
+      id: idxId >= 0 ? cols[idxId] : `fx-${idx + 1}`,
+      fecha: idxFecha >= 0 ? cols[idxFecha] : undefined,
+      hora: idxHora >= 0 ? cols[idxHora] : undefined,
+      fase: idxFase >= 0 ? cols[idxFase] : undefined,
+      group: idxGrupo >= 0 ? cols[idxGrupo]?.toUpperCase() : undefined,
+      jornada: idxJornada >= 0 ? cols[idxJornada] : undefined,
+      homeId: idxLocal >= 0 ? cols[idxLocal] : undefined,
+      awayId: idxVisita >= 0 ? cols[idxVisita] : undefined,
+      estadio: idxEstadio >= 0 ? cols[idxEstadio] : undefined,
+      locacion: idxLocacion >= 0 ? cols[idxLocacion] : undefined,
+    };
+  });
+};
 
 const buildSeedsFromSelections = (selections: GroupSelections): Seeds => {
   const firsts: Record<string, Team | undefined> = {};
@@ -442,6 +500,7 @@ export default function UserBackendPage() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [coverUrl, setCoverUrl] = useState("");
   const [teams, setTeams] = useState<Team[]>([]);
+  const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
@@ -520,6 +579,10 @@ export default function UserBackendPage() {
     const loadTeams = async () => {
       try {
         const apiData = await fetchFanaticoData();
+        const apiFixtures = parseFanaticoFixtures(apiData?.fixtures as Array<Record<string, unknown>> | undefined);
+        if (mounted) {
+          setFixtures(apiFixtures.length ? apiFixtures : await loadFallbackFixtures().catch(() => []));
+        }
         if (apiData?.teams?.length) {
           const parsedTeams: Team[] = apiData.teams.map((team, idx) => ({
             id: team.id?.toString() || team.codigo_fixture?.toString() || `team-${idx + 1}`,
@@ -578,7 +641,10 @@ export default function UserBackendPage() {
         const mergedTeams = ensureRepechajeTeams(parsed.map(applyRepechajeMeta));
         if (mounted) setTeams(mergedTeams);
       } catch {
-        if (mounted) setTeams(readTeamsFromStorage());
+        if (mounted) {
+          setTeams(readTeamsFromStorage());
+          setFixtures(await loadFallbackFixtures().catch(() => []));
+        }
       }
     };
     loadTeams();
@@ -811,13 +877,87 @@ export default function UserBackendPage() {
     [resolveTeamForGroup],
   );
 
+  const buildFullModeGroupsFromScores = useCallback(
+    (payload?: BracketSavePayload) => {
+      const selectionsFromScores: GroupSelections = {};
+      const tables: Record<string, Array<Team & { pts: number; pj: number; pg: number; gf: number; gc: number; dif: number }>> = {};
+      if (!payload) return { selections: selectionsFromScores, bestThirdIds: [] as string[] };
+      const scores = payload.scorePredictions || {};
+
+      GROUP_LETTERS.forEach((group) => {
+        const rows = new Map<string, Team & { pts: number; pj: number; pg: number; gf: number; gc: number; dif: number }>();
+        teams
+          .filter((team) => team.grupo?.toUpperCase() === group)
+          .forEach((team) => {
+            rows.set(team.id, { ...team, pts: 0, pj: 0, pg: 0, gf: 0, gc: 0, dif: 0 });
+          });
+
+        fixtures
+          .filter((fixture) => {
+            const fixtureGroup = fixture.group?.toUpperCase();
+            const fixtureNumber = Number.parseInt(normalizeMatchKey(fixture.id), 10);
+            return fixtureGroup === group && Number.isFinite(fixtureNumber) && fixtureNumber <= 72;
+          })
+          .forEach((fixture) => {
+            const matchKey = normalizeMatchKey(fixture.id);
+            const prediction = scores[matchKey] || scores[`P${matchKey}`] || scores[fixture.id];
+            if (typeof prediction?.home !== "number" || typeof prediction.away !== "number") return;
+            const home = fixture.homeId ? resolveTeamForGroup(fixture.homeId, group) : undefined;
+            const away = fixture.awayId ? resolveTeamForGroup(fixture.awayId, group) : undefined;
+            if (!home || !away) return;
+            if (!rows.has(home.id)) rows.set(home.id, { ...home, pts: 0, pj: 0, pg: 0, gf: 0, gc: 0, dif: 0 });
+            if (!rows.has(away.id)) rows.set(away.id, { ...away, pts: 0, pj: 0, pg: 0, gf: 0, gc: 0, dif: 0 });
+            const homeRow = rows.get(home.id)!;
+            const awayRow = rows.get(away.id)!;
+            homeRow.pj += 1;
+            awayRow.pj += 1;
+            homeRow.gf += prediction.home;
+            homeRow.gc += prediction.away;
+            awayRow.gf += prediction.away;
+            awayRow.gc += prediction.home;
+            if (prediction.home === prediction.away) {
+              homeRow.pts += 1;
+              awayRow.pts += 1;
+            } else if (prediction.home > prediction.away) {
+              homeRow.pts += 3;
+              homeRow.pg += 1;
+            } else {
+              awayRow.pts += 3;
+              awayRow.pg += 1;
+            }
+          });
+
+        const table = Array.from(rows.values())
+          .map((row) => ({ ...row, dif: row.gf - row.gc }))
+          .sort((a, b) => b.pts - a.pts || b.dif - a.dif || b.gf - a.gf || b.pg - a.pg || a.nombre.localeCompare(b.nombre, "es"));
+        tables[group] = table;
+        selectionsFromScores[group] = {
+          primero: table[0],
+          segundo: table[1],
+          tercero: table[2],
+        };
+      });
+
+      const bestThirdIds = GROUP_LETTERS.map((group) => tables[group]?.[2])
+        .filter((team): team is Team & { pts: number; pj: number; pg: number; gf: number; gc: number; dif: number } => Boolean(team))
+        .sort((a, b) => b.pts - a.pts || b.dif - a.dif || b.gf - a.gf || b.pg - a.pg || a.nombre.localeCompare(b.nombre, "es"))
+        .slice(0, MAX_THIRD)
+        .map((team) => team.id);
+
+      return { selections: selectionsFromScores, bestThirdIds };
+    },
+    [fixtures, resolveTeamForGroup, teams],
+  );
+
   const computePodium = useCallback(
     (payload?: BracketSavePayload): PodiumResult => {
       if (!payload) return {};
-      const selections = buildSelectionsFromPayload(payload);
+      const fullModeGroups = payload.gameMode === "full" ? buildFullModeGroupsFromScores(payload) : null;
+      const selections = fullModeGroups?.selections || buildSelectionsFromPayload(payload);
       const seeds = buildSeedsFromSelections(selections);
       const thirdsAvailable = GROUP_LETTERS.map((g) => selections[g]?.tercero).filter(Boolean) as Team[];
-      const thirdsQualifiedGroups = (payload.bestThirdIds || [])
+      const bestThirdIds = fullModeGroups?.bestThirdIds?.length ? fullModeGroups.bestThirdIds : payload.bestThirdIds || [];
+      const thirdsQualifiedGroups = bestThirdIds
         .map((id) => thirdsAvailable.find((team) => team.id === id))
         .filter(Boolean)
         .map((team) => team!.grupo?.toUpperCase())
@@ -844,7 +984,7 @@ export default function UserBackendPage() {
         third: thirdMatch?.ganador || thirdFallback,
       };
     },
-    [buildSelectionsFromPayload, resolveTeamForGroup],
+    [buildFullModeGroupsFromScores, buildSelectionsFromPayload, resolveTeamForGroup],
   );
 
   const buildShareUrl = useCallback((id: string) => {
