@@ -40,6 +40,7 @@ type AuthModalProps = {
   onConsentNewsChange: (value: boolean) => void;
   onConsentUpdatesChange: (value: boolean) => void;
   onSubmit: () => void;
+  onSuccessContinue?: () => void;
   onOAuth: (provider: "google") => void;
   onGoogleCredential?: (credential: string) => void | Promise<void>;
 };
@@ -67,11 +68,20 @@ export const AuthModal = ({
   onConsentNewsChange,
   onConsentUpdatesChange,
   onSubmit,
+  onSuccessContinue,
   onOAuth,
   onGoogleCredential,
 }: AuthModalProps) => {
   const overlayRef = useRef<HTMLDivElement>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
+  const showSuccessContinue = authMode === "signup" && !!authSuccess && !authBusy;
+  const handlePrimaryAction = () => {
+    if (showSuccessContinue) {
+      onSuccessContinue?.();
+      return;
+    }
+    onSubmit();
+  };
 
   useEffect(() => {
     if (!open || !googleClientId || !onGoogleCredential) return;
@@ -295,13 +305,13 @@ export const AuthModal = ({
 
           <button
             type="button"
-            onClick={onSubmit}
+            onClick={handlePrimaryAction}
             disabled={authBusy}
             className={`mt-4 w-full px-3 py-2 rounded-md font-semibold ${
               authBusy ? "bg-neutral-700 text-gray-400" : "bg-[#c6f600] text-black hover:brightness-95"
             }`}
           >
-            {submitLabel || (authMode === "signup" ? "Crear cuenta" : "Iniciar sesión")}
+            {showSuccessContinue ? "Continuar" : submitLabel || (authMode === "signup" ? "Crear cuenta" : "Iniciar sesión")}
           </button>
         </div>
       </ModalFlipFrame>

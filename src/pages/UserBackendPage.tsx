@@ -356,14 +356,14 @@ const buildNextRounds = (
   const findWinner = (id: string) => r32.find((m) => m.id === id)?.ganador;
 
   const r16map = [
-    { id: "r16-89", label: "89", a: "r32-73", b: "r32-74" },
-    { id: "r16-90", label: "90", a: "r32-75", b: "r32-76" },
-    { id: "r16-91", label: "91", a: "r32-77", b: "r32-78" },
+    { id: "r16-89", label: "89", a: "r32-73", b: "r32-75" },
+    { id: "r16-90", label: "90", a: "r32-74", b: "r32-77" },
+    { id: "r16-91", label: "91", a: "r32-76", b: "r32-78" },
     { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
-    { id: "r16-93", label: "93", a: "r32-81", b: "r32-82" },
-    { id: "r16-94", label: "94", a: "r32-83", b: "r32-84" },
-    { id: "r16-95", label: "95", a: "r32-85", b: "r32-86" },
-    { id: "r16-96", label: "96", a: "r32-87", b: "r32-88" },
+    { id: "r16-93", label: "93", a: "r32-83", b: "r32-84" },
+    { id: "r16-94", label: "94", a: "r32-81", b: "r32-82" },
+    { id: "r16-95", label: "95", a: "r32-86", b: "r32-88" },
+    { id: "r16-96", label: "96", a: "r32-85", b: "r32-87" },
   ];
 
   const r16 = attachWinners(
@@ -377,8 +377,8 @@ const buildNextRounds = (
 
   const qfMap = [
     { id: "qf-97", label: "97", a: "r16-89", b: "r16-90" },
-    { id: "qf-98", label: "98", a: "r16-91", b: "r16-92" },
-    { id: "qf-99", label: "99", a: "r16-93", b: "r16-94" },
+    { id: "qf-98", label: "98", a: "r16-93", b: "r16-94" },
+    { id: "qf-99", label: "99", a: "r16-91", b: "r16-92" },
     { id: "qf-100", label: "100", a: "r16-95", b: "r16-96" },
   ];
   const qf = attachWinners(
@@ -1453,7 +1453,7 @@ export default function UserBackendPage() {
           source: consentPayload.consent_source,
           apiBaseUrl: API_BASE_URL,
         });
-        setAuthSuccess("Cuenta creada. Revisa tu correo para confirmar.");
+        setAuthSuccess("Tu cuenta ha sido creada.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email: authEmail,
@@ -1700,6 +1700,10 @@ export default function UserBackendPage() {
       onConsentNewsChange={setConsentNews}
       onConsentUpdatesChange={setConsentUpdates}
       onSubmit={handleAuthSubmit}
+      onSuccessContinue={() => {
+        closeAuthModal();
+        navigateTo("home", { resetGame: Date.now() });
+      }}
       onOAuth={handleOAuthSignIn}
     />
   );

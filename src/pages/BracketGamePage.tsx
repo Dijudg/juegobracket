@@ -870,16 +870,16 @@ const buildNextRounds = (
 
   const findWinner = (id: string) => r32.find((m) => m.id === id)?.ganador;
 
- const r16map = [
-  { id: "r16-89", label: "89", a: "r32-73", b: "r32-74" },
-  { id: "r16-90", label: "90", a: "r32-75", b: "r32-76" },
-  { id: "r16-91", label: "91", a: "r32-77", b: "r32-78" },
-  { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
-  { id: "r16-93", label: "93", a: "r32-81", b: "r32-82" },
-  { id: "r16-94", label: "94", a: "r32-83", b: "r32-84" },
-  { id: "r16-95", label: "95", a: "r32-85", b: "r32-86" },
-  { id: "r16-96", label: "96", a: "r32-87", b: "r32-88" },
-];
+  const r16map = [
+    { id: "r16-89", label: "89", a: "r32-73", b: "r32-75" },
+    { id: "r16-90", label: "90", a: "r32-74", b: "r32-77" },
+    { id: "r16-91", label: "91", a: "r32-76", b: "r32-78" },
+    { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
+    { id: "r16-93", label: "93", a: "r32-83", b: "r32-84" },
+    { id: "r16-94", label: "94", a: "r32-81", b: "r32-82" },
+    { id: "r16-95", label: "95", a: "r32-86", b: "r32-88" },
+    { id: "r16-96", label: "96", a: "r32-85", b: "r32-87" },
+  ];
 
   const r16 = attachWinners(
     r16map.map((m) => ({
@@ -892,8 +892,8 @@ const buildNextRounds = (
 
   const qfMap = [
     { id: "qf-97", label: "97", a: "r16-89", b: "r16-90" },
-    { id: "qf-98", label: "98", a: "r16-91", b: "r16-92" },
-    { id: "qf-99", label: "99", a: "r16-93", b: "r16-94" },
+    { id: "qf-98", label: "98", a: "r16-93", b: "r16-94" },
+    { id: "qf-99", label: "99", a: "r16-91", b: "r16-92" },
     { id: "qf-100", label: "100", a: "r16-95", b: "r16-96" },
   ];
   const qf = attachWinners(
@@ -2172,15 +2172,7 @@ export default function BracketGamePage() {
           mode: authMode,
           method: "email",
         });
-        if (authIntent === "save" || readPendingAuthSave()) {
-          setAuthSuccess(
-            data.session
-              ? "Cuenta creada. Guardando tu juego..."
-              : "Cuenta creada. Revisa tu correo para confirmar. Conservamos tu partida y la guardaremos cuando inicies sesión.",
-          );
-        } else {
-          setAuthSuccess("Cuenta creada. Revisa tu correo para confirmar.");
-        }
+        setAuthSuccess("Tu cuenta ha sido creada.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email: authEmail,
@@ -4854,8 +4846,8 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
 
     const prereqMap: Record<string, string[]> = {
       "qf-97": ["r16-89", "r16-90"],
-      "qf-98": ["r16-91", "r16-92"],
-      "qf-99": ["r16-93", "r16-94"],
+      "qf-98": ["r16-93", "r16-94"],
+      "qf-99": ["r16-91", "r16-92"],
       "qf-100": ["r16-95", "r16-96"],
       "sf-101": ["qf-97", "qf-98"],
       "sf-102": ["qf-99", "qf-100"],
@@ -7593,31 +7585,20 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
             </div>
             <h3 className="text-3xl font-black uppercase text-[#c6f600]">Usuario registrado</h3>
             <p className="mt-2 text-sm text-gray-200">
-              Tu cuenta fue creada y tu partida quedó guardada correctamente.
+              Tu cuenta ha sido creada.
             </p>
-            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+            <div className="mt-5">
               <button
                 type="button"
                 onClick={() => {
                   setRegisteredSavePopup(false);
                   closeAuthModal();
                   closeSaveModal();
+                  navigateTo("home", { resetGame: Date.now() });
                 }}
-                className="flex-1 rounded-md bg-[#c6f600] px-4 py-3 text-sm font-black uppercase text-black hover:brightness-95"
+                className="w-full rounded-md bg-[#c6f600] px-4 py-3 text-sm font-black uppercase text-black hover:brightness-95"
               >
-                Continuar jugando
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRegisteredSavePopup(false);
-                  closeAuthModal();
-                  closeSaveModal();
-                  navigateTo("backend");
-                }}
-                className="flex-1 rounded-md border border-neutral-700 px-4 py-3 text-sm font-black uppercase text-gray-100 hover:border-[#c6f600]"
-              >
-                Ver partidas
+                Continuar
               </button>
             </div>
           </div>
@@ -7709,6 +7690,11 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
           onConsentNewsChange={setConsentNews}
           onConsentUpdatesChange={setConsentUpdates}
           onSubmit={handleAuthSubmit}
+          onSuccessContinue={() => {
+            closeAuthModal();
+            closeSaveModal();
+            navigateTo("home", { resetGame: Date.now() });
+          }}
           onOAuth={handleOAuthSignIn}
           onGoogleCredential={handleGoogleCredential}
         />
