@@ -1,6 +1,6 @@
 import type { BracketSavePayload, GroupSelections, Match, ScorePredictionState, Seeds, Team } from "./types";
 
-export const CURRENT_BRACKET_SAVE_VERSION = 5;
+export const CURRENT_BRACKET_SAVE_VERSION = 6;
 
 const MAX_THIRD = 8;
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
@@ -84,7 +84,6 @@ const LKP_ALLOWED_GROUPS: Record<string, string[]> = {
 };
 
 const postR32MatchPattern = /^(r16|qf|sf|third|final)-/i;
-const scoreMatchPattern = /^(r32|r16|qf|sf|third|final)-/i;
 
 const normalizeKey = (value?: string) => (value || "").toString().trim().toUpperCase();
 
@@ -331,48 +330,19 @@ const countValidClassicPostR32Picks = (
   }, 0);
 };
 
-const sameTeams = (left: Match, right?: Match) => {
-  if (!right?.equipoA || !right.equipoB || !left.equipoA || !left.equipoB) return false;
-  const leftTeams = [normalizeKey(left.equipoA.id), normalizeKey(left.equipoB.id)].sort().join("|");
-  const rightTeams = [normalizeKey(right.equipoA.id), normalizeKey(right.equipoB.id)].sort().join("|");
-  return leftTeams === rightTeams;
-};
-
-const preserveCompatibleScores = (
-  base: Match[],
+const preserveScoresByMatchNumber = (
   payload: BracketSavePayload,
 ) => {
   const originalScores = payload.scorePredictions || {};
   const originalPenalties = payload.penaltyPredictions || {};
   const nextScores: ScorePredictionState = {};
   const nextPenalties: ScorePredictionState = {};
-  const sourceMaps =
-    Number(payload.version || 1) >= 4
-      ? { r16: currentR16Map, qf: currentQfMap, sf: legacySfMap }
-      : { r16: legacyR16Map, qf: legacyQfMap, sf: legacySfMap };
 
   Object.entries(originalScores).forEach(([key, value]) => {
-    if (!scoreMatchPattern.test(key) || key.startsWith("r32-")) nextScores[key] = value;
+    if (value) nextScores[key] = value;
   });
   Object.entries(originalPenalties).forEach(([key, value]) => {
-    if (!scoreMatchPattern.test(key) || key.startsWith("r32-")) nextPenalties[key] = value;
-  });
-
-  const legacy = buildRounds(base, {}, originalScores, originalPenalties, "full", sourceMaps);
-  const current = buildRounds(base, {}, nextScores, nextPenalties, "full", {
-    r16: currentR16Map,
-    qf: currentQfMap,
-    sf: currentSfMap,
-  });
-  const rounds: Array<keyof typeof legacy> = ["r16", "qf", "sf", "thirdPlace", "final"];
-
-  rounds.forEach((round) => {
-    legacy[round].forEach((legacyMatch) => {
-      const currentMatch = current[round].find((match) => match.id === legacyMatch.id);
-      if (!sameTeams(legacyMatch, currentMatch)) return;
-      if (originalScores[legacyMatch.id]) nextScores[legacyMatch.id] = originalScores[legacyMatch.id];
-      if (originalPenalties[legacyMatch.id]) nextPenalties[legacyMatch.id] = originalPenalties[legacyMatch.id];
-    });
+    if (value) nextPenalties[key] = value;
   });
 
   return { scorePredictions: nextScores, penaltyPredictions: nextPenalties };
@@ -387,7 +357,7 @@ export const migrateLegacyBracketPayload = (
   if (base.length === 0) return { ...payload, version: CURRENT_BRACKET_SAVE_VERSION };
 
   if (payload.gameMode === "full") {
-    const scores = preserveCompatibleScores(base, payload);
+    const scores = preserveScoresByMatchNumber(payload);
     return {
       ...payload,
       version: CURRENT_BRACKET_SAVE_VERSION,

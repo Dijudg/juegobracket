@@ -693,9 +693,9 @@ const isCompletedBracket = (payload: BracketSavePayload | null) => {
   if (!payload) return false;
   if (payload.gameMode === "full") {
     const scores = payload.scorePredictions || {};
-    const hasCompleteScore = (matchId: string) =>
-      typeof scores[matchId]?.home === "number" && typeof scores[matchId]?.away === "number";
-    return hasCompleteScore("third-103") && hasCompleteScore("final-104");
+    return Object.values(scores).some(
+      (score) => typeof score?.home === "number" && typeof score.away === "number",
+    );
   }
   const picks = payload.picks || {};
   return (
