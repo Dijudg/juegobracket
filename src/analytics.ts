@@ -22,6 +22,11 @@ const ensureTagManager = () => {
   if (typeof window.gtag !== "function") {
     window.gtag = (...args: unknown[]) => {
       window.dataLayer?.push(args);
+      const maybeParams = args[2] as { event_callback?: unknown } | undefined;
+      const callback = maybeParams?.event_callback;
+      if (typeof callback === "function") {
+        window.setTimeout(() => callback(), 0);
+      }
     };
   }
 

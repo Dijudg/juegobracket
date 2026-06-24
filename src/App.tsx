@@ -39,8 +39,7 @@ export default function App() {
       window.location.pathname !== nextPath &&
       typeof window.gtag_report_conversion === "function"
     ) {
-      window.gtag_report_conversion(nextPath);
-      return;
+      window.gtag_report_conversion();
     }
 
     setCurrentPage(page);
