@@ -395,8 +395,8 @@ const buildNextRounds = (
   );
 
   const sfMap = [
-    { id: "sf-101", label: "101", a: "qf-97", b: "qf-98" },
-    { id: "sf-102", label: "102", a: "qf-99", b: "qf-100" },
+    { id: "sf-101", label: "101", a: "qf-97", b: "qf-99" },
+    { id: "sf-102", label: "102", a: "qf-98", b: "qf-100" },
   ];
   const sf = attachWinners(
     sfMap.map((m) => ({

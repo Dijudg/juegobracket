@@ -535,8 +535,8 @@ const buildFinalMatchesForPodium = (base: Match[], payload: BracketSavePayload) 
   );
   const sf = attachWinners(
     [
-      { id: "sf-101", label: "101", a: "qf-97", b: "qf-98" },
-      { id: "sf-102", label: "102", a: "qf-99", b: "qf-100" },
+      { id: "sf-101", label: "101", a: "qf-97", b: "qf-99" },
+      { id: "sf-102", label: "102", a: "qf-98", b: "qf-100" },
     ].map((m) => ({ id: m.id, label: m.label, equipoA: winner(qf, m.a), equipoB: winner(qf, m.b) })),
   );
   const final = attachWinners([{ id: "final-104", label: "104", equipoA: winner(sf, "sf-101"), equipoB: winner(sf, "sf-102") }]);

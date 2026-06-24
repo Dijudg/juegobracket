@@ -911,8 +911,8 @@ const buildNextRounds = (
   );
 
   const sfMap = [
-    { id: "sf-101", label: "101", a: "qf-97", b: "qf-98" },
-    { id: "sf-102", label: "102", a: "qf-99", b: "qf-100" },
+    { id: "sf-101", label: "101", a: "qf-97", b: "qf-99" },
+    { id: "sf-102", label: "102", a: "qf-98", b: "qf-100" },
   ];
   const sf = attachWinners(
     sfMap.map((m) => ({
@@ -4860,8 +4860,8 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
       "qf-98": ["r16-93", "r16-94"],
       "qf-99": ["r16-91", "r16-92"],
       "qf-100": ["r16-95", "r16-96"],
-      "sf-101": ["qf-97", "qf-98"],
-      "sf-102": ["qf-99", "qf-100"],
+      "sf-101": ["qf-97", "qf-99"],
+      "sf-102": ["qf-98", "qf-100"],
       "third-103": ["sf-101", "sf-102"],
       "final-104": ["third-103"],
     };
