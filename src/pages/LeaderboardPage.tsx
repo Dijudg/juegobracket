@@ -689,7 +689,7 @@ const buildBestCard = (
   };
 };
 
-const isCompletedBracket = (payload: BracketSavePayload | null) => {
+const hasRankingPredictions = (payload: BracketSavePayload | null) => {
   if (!payload) return false;
   if (payload.gameMode === "full") {
     const scores = payload.scorePredictions || {};
@@ -698,12 +698,7 @@ const isCompletedBracket = (payload: BracketSavePayload | null) => {
     );
   }
   const picks = payload.picks || {};
-  return (
-    hasResolvedPick(picks["sf-101"]) &&
-    hasResolvedPick(picks["sf-102"]) &&
-    hasResolvedPick(picks["third-103"]) &&
-    hasResolvedPick(picks["final-104"])
-  );
+  return Object.values(picks).some((pick) => hasResolvedPick(pick));
 };
 
 const resolveGameMode = (payload: BracketSavePayload): RankingGameMode =>
@@ -829,7 +824,7 @@ export default function LeaderboardPage() {
           const parsedPayload = parsePayload(row.data);
           if (!parsedPayload) continue;
           const payload = migratePayloadForRanking(parsedPayload, teamIndex, deadlineFixtures);
-          if (!isCompletedBracket(payload)) continue;
+          if (!hasRankingPredictions(payload)) continue;
           const sharedUserId = (payload.sharedBy?.userId || "").toString().trim();
           const sharedIdentity = `${payload.sharedBy?.name || ""} ${payload.sharedBy?.alias || ""}`.toLowerCase();
           const isGuestShared =
