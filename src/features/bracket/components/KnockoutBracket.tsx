@@ -88,8 +88,27 @@ export const KnockoutBracket = ({
     connectorHeightSemis: 32,
   };
 
-  const octavos = r16;
-  const cuartos = qf;
+  const matchById = useMemo(() => {
+    const map = new Map<string, Match>();
+    [...r16, ...qf].forEach((match) => map.set(match.id, match));
+    return map;
+  }, [r16, qf]);
+  const octavosLeft = useMemo(
+    () => ["r16-89", "r16-90", "r16-91", "r16-92"].map((id) => matchById.get(id)).filter(Boolean) as Match[],
+    [matchById],
+  );
+  const octavosRight = useMemo(
+    () => ["r16-93", "r16-94", "r16-95", "r16-96"].map((id) => matchById.get(id)).filter(Boolean) as Match[],
+    [matchById],
+  );
+  const cuartosLeft = useMemo(
+    () => ["qf-97", "qf-99"].map((id) => matchById.get(id)).filter(Boolean) as Match[],
+    [matchById],
+  );
+  const cuartosRight = useMemo(
+    () => ["qf-98", "qf-100"].map((id) => matchById.get(id)).filter(Boolean) as Match[],
+    [matchById],
+  );
   const semiLeft = sf.find((m) => m.id === "sf-101");
   const semiRight = sf.find((m) => m.id === "sf-102");
   const semifinales = [semiLeft, semiRight];
@@ -254,46 +273,46 @@ export const KnockoutBracket = ({
 
       const next: Array<{ d: string; color: string }> = [];
       addBracket(
-        octavos[0]?.id,
-        octavos[1]?.id,
-        cuartos[0]?.id,
-        octavos[0]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
-        octavos[1]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavosLeft[0]?.id,
+        octavosLeft[1]?.id,
+        cuartosLeft[0]?.id,
+        octavosLeft[0]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavosLeft[1]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
       );
       addBracket(
-        octavos[2]?.id,
-        octavos[3]?.id,
-        cuartos[1]?.id,
-        octavos[2]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
-        octavos[3]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavosLeft[2]?.id,
+        octavosLeft[3]?.id,
+        cuartosLeft[1]?.id,
+        octavosLeft[2]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavosLeft[3]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
       );
       addBracket(
-        octavos[4]?.id,
-        octavos[5]?.id,
-        cuartos[2]?.id,
-        octavos[4]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
-        octavos[5]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavosRight[0]?.id,
+        octavosRight[1]?.id,
+        cuartosRight[0]?.id,
+        octavosRight[0]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavosRight[1]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
       );
       addBracket(
-        octavos[6]?.id,
-        octavos[7]?.id,
-        cuartos[3]?.id,
-        octavos[6]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
-        octavos[7]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavosRight[2]?.id,
+        octavosRight[3]?.id,
+        cuartosRight[1]?.id,
+        octavosRight[2]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        octavosRight[3]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
       );
       addBracket(
-        cuartos[0]?.id,
-        cuartos[1]?.id,
+        cuartosLeft[0]?.id,
+        cuartosLeft[1]?.id,
         semiLeft?.id,
-        cuartos[0]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
-        cuartos[1]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        cuartosLeft[0]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        cuartosLeft[1]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
       );
       addBracket(
-        cuartos[2]?.id,
-        cuartos[3]?.id,
+        cuartosRight[0]?.id,
+        cuartosRight[1]?.id,
         semiRight?.id,
-        cuartos[2]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
-        cuartos[3]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        cuartosRight[0]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
+        cuartosRight[1]?.ganador ? ACTIVE_CONNECTOR_COLOR : undefined,
       );
       addBracket(semiLeft?.id, semiRight?.id, finalMatch?.id, "#facc15", "#facc15");
 
@@ -304,7 +323,7 @@ export const KnockoutBracket = ({
     raf();
     window.addEventListener("resize", raf);
     return () => window.removeEventListener("resize", raf);
-  }, [ACTIVE_CONNECTOR_COLOR, hoverResetKey, octavos, cuartos, semiLeft, semiRight, finalMatch]);
+  }, [ACTIVE_CONNECTOR_COLOR, hoverResetKey, octavosLeft, octavosRight, cuartosLeft, cuartosRight, semiLeft, semiRight, finalMatch]);
 
   const resolveMatchNumber = (match?: Match) => {
     if (!match) return "";
@@ -563,7 +582,7 @@ export const KnockoutBracket = ({
                   className="flex flex-col justify-around"
                   style={{ height: columnHeight, width: r16ColumnWidth, alignItems: "flex-end" }}
                 >
-                  {octavos.slice(0, 4).map((match, idx) => (
+                  {octavosLeft.map((match, idx) => (
                     <div
                       key={match.id}
                       className="relative"
@@ -608,7 +627,7 @@ export const KnockoutBracket = ({
                 </div>
 
                 <div ref={refQFLeft} className="flex flex-col justify-around" style={{ height: columnHeight }}>
-                  {cuartos.slice(0,2).map((match, idx) => (
+                  {cuartosLeft.map((match, idx) => (
                     <div key={match.id} className="relative">
                       <MatchBox match={match} date={resolveMatchNumber(match)} />
                       <BracketConnector
@@ -680,7 +699,7 @@ export const KnockoutBracket = ({
                 </div>
 
                 <div ref={refQFRight} className="flex flex-col justify-around" style={{ height: columnHeight }}>
-                  {cuartos.slice(2, 4).map((match, idx) => (
+                  {cuartosRight.map((match, idx) => (
                     <div key={match.id} className="relative">
                       <MatchBox match={match} date={resolveMatchNumber(match)} />
                       <BracketConnector
@@ -700,7 +719,7 @@ export const KnockoutBracket = ({
                   className="flex flex-col justify-around"
                   style={{ height: columnHeight, width: r16ColumnWidth, alignItems: "flex-start" }}
                 >
-                  {octavos.slice(4, 8).map((match, idx) => (
+                  {octavosRight.map((match, idx) => (
                     <div
                       key={match.id}
                       className="relative"
@@ -764,10 +783,10 @@ export const KnockoutBracket = ({
                 />
               ))}
             </svg>
-            {octavos.length > 0 && (
+            {octavosLeft.length > 0 && (
               <div className="w-full max-w-md">
                 <div className="grid grid-cols-4 gap-2 place-items-center relative">
-                  {octavos.slice(0, 4).map((match, idx) => (
+                  {octavosLeft.map((match) => (
                     <div key={match.id} ref={setMobileMatchRef(match.id)} className="grid place-items-center relative">
                       <MatchBox match={match} date={resolveMatchNumber(match)} />
                     </div>
@@ -776,10 +795,10 @@ export const KnockoutBracket = ({
               </div>
             )}
 
-            {cuartos.length > 0 && (
+            {cuartosLeft.length > 0 && (
               <div className="w-full max-w-sm">
                 <div className="grid grid-cols-2 gap-8 place-items-center relative">
-                  {cuartos.slice(0, 2).map((match, idx) => (
+                  {cuartosLeft.map((match) => (
                     <div key={match.id} ref={setMobileMatchRef(match.id)} className="grid place-items-center relative">
                       <MatchBox match={match} date={resolveMatchNumber(match)} />
                     </div>
@@ -823,10 +842,10 @@ export const KnockoutBracket = ({
               </div>
             )}
 
-            {cuartos.length > 2 && (
+            {cuartosRight.length > 0 && (
               <div className="w-full max-w-sm">
                 <div className="grid grid-cols-2 gap-8 place-items-center relative">
-                  {cuartos.slice(2, 4).map((match, idx) => (
+                  {cuartosRight.map((match) => (
                     <div key={match.id} ref={setMobileMatchRef(match.id)} className="grid place-items-center relative">
                       <MatchBox match={match} date={resolveMatchNumber(match)} />
                     </div>
@@ -835,10 +854,10 @@ export const KnockoutBracket = ({
               </div>
             )}
 
-            {octavos.length > 4 && (
+            {octavosRight.length > 0 && (
               <div className="w-full max-w-md">
                 <div className="grid grid-cols-4 gap-2 place-items-center relative">
-                  {octavos.slice(4, 8).map((match, idx) => (
+                  {octavosRight.map((match) => (
                     <div key={match.id} ref={setMobileMatchRef(match.id)} className="grid place-items-center relative">
                       <MatchBox match={match} date={resolveMatchNumber(match)} />
                     </div>

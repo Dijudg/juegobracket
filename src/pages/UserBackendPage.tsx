@@ -25,6 +25,10 @@ import {
   resolveRepechajeCode,
 } from "../features/bracket/utils";
 import { useBracketScore, useFullBracketScore } from "../features/bracket/score";
+import {
+  buildThirdQualifiedGroupsForMigration,
+  migrateLegacyBracketPayload,
+} from "../features/bracket/bracketMigration";
 import { EmbeddedViewerMenu } from "../features/bracket/components/EmbeddedViewerMenu";
 import thirdLookup from "../data/third_lookup.json";
 import winnerCardBg from "../assets/final.jpg";
@@ -356,8 +360,8 @@ const buildNextRounds = (
   const findWinner = (id: string) => r32.find((m) => m.id === id)?.ganador;
 
   const r16map = [
-    { id: "r16-89", label: "89", a: "r32-73", b: "r32-75" },
-    { id: "r16-90", label: "90", a: "r32-74", b: "r32-77" },
+    { id: "r16-89", label: "89", a: "r32-74", b: "r32-77" },
+    { id: "r16-90", label: "90", a: "r32-73", b: "r32-75" },
     { id: "r16-91", label: "91", a: "r32-76", b: "r32-78" },
     { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
     { id: "r16-93", label: "93", a: "r32-83", b: "r32-84" },
@@ -962,19 +966,23 @@ export default function UserBackendPage() {
         .filter(Boolean)
         .map((team) => team!.grupo?.toUpperCase())
         .filter(Boolean) as string[];
-      const picks = payload.picks || {};
-      const championFallback = resolveTeamForGroup(picks["final-104"]);
-      const thirdFallback = resolveTeamForGroup(picks["third-103"]);
+      const migratedPayload = migrateLegacyBracketPayload(payload, {
+        seeds,
+        thirdsQualifiedGroups: buildThirdQualifiedGroupsForMigration(selections, bestThirdIds),
+      });
+      const migratedPicks = migratedPayload.picks || {};
+      const championFallback = resolveTeamForGroup(migratedPicks["final-104"]);
+      const thirdFallback = resolveTeamForGroup(migratedPicks["third-103"]);
       if (thirdsQualifiedGroups.length < MAX_THIRD) {
         return { champion: championFallback, runnerUp: undefined, third: thirdFallback };
       }
       const { matches } = buildRoundOf32(seeds, thirdsQualifiedGroups, thirdLookup as Record<string, Record<string, string>>);
       const { final, thirdPlace } = buildNextRounds(
         matches,
-        picks,
-        payload.scorePredictions || {},
-        payload.penaltyPredictions || {},
-        payload.gameMode,
+        migratedPicks,
+        migratedPayload.scorePredictions || {},
+        migratedPayload.penaltyPredictions || {},
+        migratedPayload.gameMode,
       );
       const finalMatch = final[0];
       const thirdMatch = thirdPlace[0];

@@ -13,6 +13,10 @@ import { computeBracketDeadlineState } from "../features/bracket/deadlines";
 import type { BracketSavePayload, Fixture, Match, ScorePredictionState, Seeds, Team } from "../features/bracket/types";
 import { computeBracketScore, computeFullBracketScore, loadScoreSheetData } from "../features/bracket/score";
 import type { ScoreTab } from "../features/bracket/score";
+import {
+  buildThirdQualifiedGroupsForMigration,
+  migrateLegacyBracketPayload,
+} from "../features/bracket/bracketMigration";
 import thirdLookup from "../data/third_lookup.json";
 import "../styles/globals.css";
 
@@ -394,6 +398,18 @@ const buildSeedsFromPayload = (payload: BracketSavePayload, teamIndex: Map<strin
   return { firsts, seconds, thirds };
 };
 
+const buildGroupSelectionsFromSeeds = (seeds: Seeds) => {
+  const selections: Record<string, { primero?: Team; segundo?: Team; tercero?: Team }> = {};
+  GROUP_LETTERS.forEach((group) => {
+    selections[group] = {
+      primero: seeds.firsts[group],
+      segundo: seeds.seconds[group],
+      tercero: seeds.thirds[group],
+    };
+  });
+  return selections;
+};
+
 const normalizeThirdGroups = (groups: string[]) =>
   Array.from(new Set(groups.map((g) => g.toUpperCase()).filter((g) => GROUP_LETTERS.includes(g))))
     .sort()
@@ -499,8 +515,8 @@ const buildFinalMatchesForPodium = (base: Match[], payload: BracketSavePayload) 
   const winner = (items: Match[], id: string) => items.find((m) => m.id === id)?.ganador;
   const r16 = attachWinners(
     [
-      { id: "r16-89", label: "89", a: "r32-73", b: "r32-75" },
-      { id: "r16-90", label: "90", a: "r32-74", b: "r32-77" },
+      { id: "r16-89", label: "89", a: "r32-74", b: "r32-77" },
+      { id: "r16-90", label: "90", a: "r32-73", b: "r32-75" },
       { id: "r16-91", label: "91", a: "r32-76", b: "r32-78" },
       { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
       { id: "r16-93", label: "93", a: "r32-83", b: "r32-84" },
@@ -566,6 +582,21 @@ const buildFullModeCardPodium = (payload: BracketSavePayload, teamIndex: Map<str
     runnerUp: teamToCard(final?.perdedor),
     third: teamToCard(thirdPlace?.ganador),
   };
+};
+
+const migratePayloadForRanking = (
+  payload: BracketSavePayload,
+  teamIndex: Map<string, TeamIndexValue>,
+  fixtures: Fixture[],
+) => {
+  const fullModeGroups = payload.gameMode === "full" ? buildFullModeGroupsFromScores(payload, teamIndex, fixtures) : null;
+  const seedPayload = fullModeGroups
+    ? { ...payload, selections: fullModeGroups.selections, bestThirdIds: fullModeGroups.bestThirdIds }
+    : payload;
+  const seeds = buildSeedsFromPayload(seedPayload, teamIndex);
+  const groupSelections = fullModeGroups?.groupSelections || buildGroupSelectionsFromSeeds(seeds);
+  const thirdsQualifiedGroups = buildThirdQualifiedGroupsForMigration(groupSelections, seedPayload.bestThirdIds || []);
+  return migrateLegacyBracketPayload(payload, { seeds, thirdsQualifiedGroups });
 };
 
 const loadFallbackTeamsFromCsv = async () => {
@@ -795,7 +826,9 @@ export default function LeaderboardPage() {
         for (const row of brackets) {
           const userId = (row.user_id || "").toString();
           if (!userId || userId === GUEST_USER_ID) continue;
-          const payload = parsePayload(row.data);
+          const parsedPayload = parsePayload(row.data);
+          if (!parsedPayload) continue;
+          const payload = migratePayloadForRanking(parsedPayload, teamIndex, deadlineFixtures);
           if (!isCompletedBracket(payload)) continue;
           const sharedUserId = (payload.sharedBy?.userId || "").toString().trim();
           const sharedIdentity = `${payload.sharedBy?.name || ""} ${payload.sharedBy?.alias || ""}`.toLowerCase();

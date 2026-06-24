@@ -68,6 +68,11 @@ import { RepechajeWinnerBadge } from "../features/bracket/components/RepechajeWi
 import { KnockoutBracket } from "../features/bracket/components/KnockoutBracket";
 import { loadScoreSheetData, useBracketScore, useFullBracketScore, type ScoreFixture, type ScoreSheetData } from "../features/bracket/score";
 import {
+  buildThirdQualifiedGroupsForMigration,
+  CURRENT_BRACKET_SAVE_VERSION,
+  migrateLegacyBracketPayload,
+} from "../features/bracket/bracketMigration";
+import {
   computeBracketDeadlineState,
   isFixtureLockedByPredictionDeadline,
   isMatchLockedByDeadline,
@@ -871,8 +876,8 @@ const buildNextRounds = (
   const findWinner = (id: string) => r32.find((m) => m.id === id)?.ganador;
 
   const r16map = [
-    { id: "r16-89", label: "89", a: "r32-73", b: "r32-75" },
-    { id: "r16-90", label: "90", a: "r32-74", b: "r32-77" },
+    { id: "r16-89", label: "89", a: "r32-74", b: "r32-77" },
+    { id: "r16-90", label: "90", a: "r32-73", b: "r32-75" },
     { id: "r16-91", label: "91", a: "r32-76", b: "r32-78" },
     { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
     { id: "r16-93", label: "93", a: "r32-83", b: "r32-84" },
@@ -1798,7 +1803,7 @@ export default function BracketGamePage() {
         }
       : undefined;
     return {
-      version: 3,
+      version: CURRENT_BRACKET_SAVE_VERSION,
       gameMode,
       selections: selectionPayload,
       bestThirdIds,
@@ -1823,17 +1828,23 @@ export default function BracketGamePage() {
           tercero: resolveTeamForGroup(pick.terceroId, group),
         };
       });
+      const migrationSeeds = buildSeedsFromSelections(nextSelections);
+      const migrationThirdGroups = buildThirdQualifiedGroupsForMigration(nextSelections, payload.bestThirdIds || []);
+      const migratedPayload = migrateLegacyBracketPayload(payload, {
+        seeds: migrationSeeds,
+        thirdsQualifiedGroups: migrationThirdGroups,
+      });
       setSelections(nextSelections);
-      setBestThirdIds(payload.bestThirdIds || []);
-      setPicks(payload.picks || {});
-      setGameMode(payload.gameMode === "full" ? "full" : "classic");
+      setBestThirdIds(migratedPayload.bestThirdIds || []);
+      setPicks(migratedPayload.picks || {});
+      setGameMode(migratedPayload.gameMode === "full" ? "full" : "classic");
       setHasSelectedGameMode(true);
-      setScorePredictions(payload.scorePredictions || {});
-      setPenaltyPredictions(payload.penaltyPredictions || {});
-      setIntercontinentalPicks(payload.intercontinentalPicks || {});
-      setUefaPicks(payload.uefaPicks || {});
-      setIsLocked(payload.isLocked ?? false);
-      setPhaseLocks(normalizePhaseLocks(payload.phaseLocks, payload.isLocked ?? false));
+      setScorePredictions(migratedPayload.scorePredictions || {});
+      setPenaltyPredictions(migratedPayload.penaltyPredictions || {});
+      setIntercontinentalPicks(migratedPayload.intercontinentalPicks || {});
+      setUefaPicks(migratedPayload.uefaPicks || {});
+      setIsLocked(migratedPayload.isLocked ?? false);
+      setPhaseLocks(normalizePhaseLocks(migratedPayload.phaseLocks, migratedPayload.isLocked ?? false));
     },
     [normalizePhaseLocks, resolveTeamForGroup],
   );
@@ -5438,10 +5449,37 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
   useEffect(() => {
     r32CompleteRef.current = r32Complete;
   }, [r32Complete]);
-  const r32Left = useMemo(() => r32.slice(0, 8), [r32]);
-  const r32Right = useMemo(() => r32.slice(8), [r32]);
-  const r16Left = useMemo(() => r16.slice(0, 4), [r16]);
-  const r16Right = useMemo(() => r16.slice(4), [r16]);
+  const matchById = useMemo(() => {
+    const map = new Map<string, Match>();
+    [...r32, ...r16, ...qf, ...sf, ...final, ...thirdPlace].forEach((match) => {
+      map.set(match.id, match);
+    });
+    return map;
+  }, [r32, r16, qf, sf, final, thirdPlace]);
+  const r32Left = useMemo(
+    () => ["r32-74", "r32-77", "r32-73", "r32-75", "r32-76", "r32-78", "r32-79", "r32-80"]
+      .map((id) => matchById.get(id))
+      .filter(Boolean) as Match[],
+    [matchById],
+  );
+  const r32Right = useMemo(
+    () => ["r32-83", "r32-84", "r32-81", "r32-82", "r32-86", "r32-88", "r32-85", "r32-87"]
+      .map((id) => matchById.get(id))
+      .filter(Boolean) as Match[],
+    [matchById],
+  );
+  const r16Left = useMemo(
+    () => ["r16-89", "r16-90", "r16-91", "r16-92"]
+      .map((id) => matchById.get(id))
+      .filter(Boolean) as Match[],
+    [matchById],
+  );
+  const r16Right = useMemo(
+    () => ["r16-93", "r16-94", "r16-95", "r16-96"]
+      .map((id) => matchById.get(id))
+      .filter(Boolean) as Match[],
+    [matchById],
+  );
   const r32LeftComplete = useMemo(
     () => r32Left.length > 0 && r32Left.every((m) => (gameMode === "full" ? !!m.ganador : !!picks[m.id])),
     [gameMode, r32Left, picks],
