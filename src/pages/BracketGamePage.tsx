@@ -94,7 +94,7 @@ import {
   storePendingConsent,
 } from "../utils/authConsent";
 import { sendConsentNotification } from "../utils/consentNotify";
-import { attachClickTracking, initAnalytics, trackEvent, trackPageView } from "../analytics";
+import { attachClickTracking, initAnalytics, trackEvent } from "../analytics";
 
 
 // Normaliza ids de partido para mapear contra el sheet (quita P/p y ceros a la izquierda)
@@ -994,7 +994,6 @@ export default function BracketGamePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     initAnalytics();
-    trackPageView(window.location.pathname, document.title);
     const platform =
       window.matchMedia && window.matchMedia("(max-width: 768px)").matches
         ? "mobile"

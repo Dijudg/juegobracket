@@ -1,6 +1,7 @@
 declare global {
   interface Window {
     dataLayer?: unknown[];
+    gtag?: (...args: unknown[]) => void;
   }
 }
 
@@ -17,11 +18,17 @@ const ensureTagManager = () => {
     return false;
   }
 
+  window.dataLayer = window.dataLayer || [];
+  if (typeof window.gtag !== "function") {
+    window.gtag = (...args: unknown[]) => {
+      window.dataLayer?.push(args);
+    };
+  }
+
   if (!GTM_CONTAINER_IDS.length) {
     return false;
   }
 
-  window.dataLayer = window.dataLayer || [];
   let initialized = false;
 
   GTM_CONTAINER_IDS.forEach((id) => {
@@ -61,6 +68,10 @@ export const trackPageView = (pagePath: string, pageTitle: string) => {
     page_title: pageTitle,
     page_location: window.location.href,
   });
+
+  if (typeof window.gtag === "function") {
+    window.gtag("event", "conversion_event_page_view", {});
+  }
 };
 
 export const attachClickTracking = () => {

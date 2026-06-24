@@ -8,6 +8,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { FlagValues } from "flags/react";
 import { flagValues } from "./flags";
+import { initAnalytics, trackPageView } from "./analytics";
 
 declare global {
   interface Window {
@@ -58,6 +59,12 @@ export default function App() {
     window.addEventListener("popstate", handlePop);
     return () => window.removeEventListener("popstate", handlePop);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    initAnalytics();
+    trackPageView(window.location.pathname, document.title);
+  }, [currentPage]);
 
   return (
     <NavigationProvider currentPage={currentPage} pageParams={pageParams} navigateTo={navigateTo}>
