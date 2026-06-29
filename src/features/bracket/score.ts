@@ -57,6 +57,7 @@ export type BracketScoreSummary = {
   uniqueExactCount?: number;
   penaltyExactCount?: number;
   groupPositionHitCount?: number;
+  groupQualifiedHitCount?: number;
   bestThirdHitCount?: number;
 };
 
@@ -91,6 +92,9 @@ const TELEGRAFO_MATCHES_URL = "https://especiales.eltelegrafo.com.ec/api/matches
 const TELEGRAFO_PLAYOFF_SNAPSHOTS_URL =
   "https://especiales.eltelegrafo.com.ec/api/playoff-match-snapshots.json";
 const POINTS_PER_HIT = 3;
+const GROUP_EXACT_POSITION_POINTS = 2;
+const GROUP_QUALIFIED_POINTS = 1;
+const GROUP_BEST_THIRD_POINTS = 1;
 const TEAM_ALIASES: Record<string, string> = {
   SWE: "SUE",
   NRL: "NIR",
@@ -881,6 +885,7 @@ export const computeBracketScore = (
   let hitCount = 0;
   let evaluatedCount = 0;
   let groupPositionHitCount = 0;
+  let groupQualifiedHitCount = 0;
   let bestThirdHitCount = 0;
   for (const { pickId, pickWinnerToken } of allPickEntries) {
     const fixtureId = resolveFixtureIdFromPick(pickId);
@@ -911,23 +916,38 @@ export const computeBracketScore = (
       ["terceroId", 2],
     ] as const;
     sheetData.groupStandings.forEach((standing, group) => {
+      const officialTopThree = new Set(
+        standing
+          .slice(0, 3)
+          .map((team) => resolveComparableSelection(team.teamId, sheetData.selectionByToken))
+          .filter(Boolean),
+      );
       slots.forEach(([slot, position]) => {
         const predicted = input.selections?.[group]?.[slot];
         const actual = standing[position]?.teamId;
         if (!predicted || !actual) return;
         evaluatedCount += 1;
-        if (
-          resolveComparableSelection(predicted, sheetData.selectionByToken) !==
-          resolveComparableSelection(actual, sheetData.selectionByToken)
-        ) {
+        const predictedComparable = resolveComparableSelection(predicted, sheetData.selectionByToken);
+        const actualComparable = resolveComparableSelection(actual, sheetData.selectionByToken);
+        if (!predictedComparable) return;
+
+        const key = `grupo-${group.toLowerCase()}-${slot.replace("Id", "")}`;
+        if (predictedComparable === actualComparable) {
+          pointsByTab.grupos += GROUP_EXACT_POSITION_POINTS;
+          pointsByMatchId[key] = GROUP_EXACT_POSITION_POINTS;
+          pointReasonsByMatchId[key] = ["Posición exacta"];
+          hitCount += 1;
+          groupPositionHitCount += 1;
           return;
         }
-        const key = `grupo-${group.toLowerCase()}-${slot.replace("Id", "")}`;
-        pointsByTab.grupos += POINTS_PER_HIT;
-        pointsByMatchId[key] = POINTS_PER_HIT;
-        pointReasonsByMatchId[key] = ["Posición de grupo"];
-        hitCount += 1;
-        groupPositionHitCount += 1;
+
+        if (officialTopThree.has(predictedComparable)) {
+          pointsByTab.grupos += GROUP_QUALIFIED_POINTS;
+          pointsByMatchId[key] = GROUP_QUALIFIED_POINTS;
+          pointReasonsByMatchId[key] = ["Equipo en top 3"];
+          hitCount += 1;
+          groupQualifiedHitCount += 1;
+        }
       });
     });
 
@@ -941,8 +961,8 @@ export const computeBracketScore = (
       const comparable = resolveComparableSelection(predicted, sheetData.selectionByToken);
       if (!comparable || !officialBestThirds.has(comparable)) return;
       const key = `mejor-tercero-${index + 1}`;
-      pointsByTab.grupos += POINTS_PER_HIT;
-      pointsByMatchId[key] = POINTS_PER_HIT;
+      pointsByTab.grupos += GROUP_BEST_THIRD_POINTS;
+      pointsByMatchId[key] = GROUP_BEST_THIRD_POINTS;
       pointReasonsByMatchId[key] = ["Mejor tercero"];
       hitCount += 1;
       bestThirdHitCount += 1;
@@ -958,6 +978,7 @@ export const computeBracketScore = (
     pointsByMatchId,
     pointReasonsByMatchId,
     groupPositionHitCount,
+    groupQualifiedHitCount,
     bestThirdHitCount,
   };
 };

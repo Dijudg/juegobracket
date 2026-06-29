@@ -5877,6 +5877,8 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
       { id: "dieciseisavos", label: "Eliminatorias", points: bracketScoreSummary?.pointsByTab.dieciseisavos || 0 },
       { id: "llaves", label: "Llaves finales", points: bracketScoreSummary?.pointsByTab.llaves || 0 },
     ];
+    const getGroupSlotScore = (grupo: string, slot: "primero" | "segundo" | "tercero") =>
+      showScoreSummary ? scoreByMatchId[`grupo-${grupo.toLowerCase()}-${slot}`] || 0 : 0;
     const anyModalOpen =
       showAuthModal ||
       registeredSavePopup ||
@@ -7109,7 +7111,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                   </div>
                   <p>
                     {bracketScoreSummary
-                      ? `${bracketScoreSummary.groupPositionHitCount || 0} posiciones exactas y ${bracketScoreSummary.bestThirdHitCount || 0} mejores terceros acertados.`
+                      ? `${bracketScoreSummary.groupPositionHitCount || 0} posiciones exactas, ${bracketScoreSummary.groupQualifiedHitCount || 0} equipos en top 3 y ${bracketScoreSummary.bestThirdHitCount || 0} mejores terceros acertados.`
                       : bracketScoreLoading
                         ? "Calculando con resultados oficiales..."
                         : "Aún no hay resultados oficiales suficientes para evaluar esta fase."}
@@ -7117,20 +7119,20 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                 </div>
                 <div className="group-score-rules__grid">
                   <div>
-                    <span>3 equipos en posición</span>
-                    <strong>+9 pts</strong>
+                    <span>Equipo y posición exacta</span>
+                    <strong>+2 pts</strong>
                   </div>
                   <div>
-                    <span>2 equipos en posición</span>
+                    <span>Equipo en el top 3</span>
+                    <strong>+1 pt</strong>
+                  </div>
+                  <div>
+                    <span>Top 3 perfecto del grupo</span>
                     <strong>+6 pts</strong>
                   </div>
                   <div>
-                    <span>1 equipo en posición</span>
-                    <strong>+3 pts</strong>
-                  </div>
-                  <div>
                     <span>Mejores terceros</span>
-                    <strong>+3 pts c/u</strong>
+                    <strong>+1 pt c/u</strong>
                   </div>
                 </div>
               </section>
@@ -7333,14 +7335,23 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                   {!isViewOnly && (openGroups[grupo] ?? true) ? (
                     <div className="flex flex-col gap-1 ">
                       {equipos.map((team) => {
-                      const picked =
+                      const pickedSlot =
                         selections[grupo]?.primero?.id === team.id
-                          ? "1ro"
+                          ? "primero"
                           : selections[grupo]?.segundo?.id === team.id
-                            ? "2do"
+                            ? "segundo"
                             : selections[grupo]?.tercero?.id === team.id
+                              ? "tercero"
+                              : null;
+                      const picked =
+                        pickedSlot === "primero"
+                          ? "1ro"
+                          : pickedSlot === "segundo"
+                            ? "2do"
+                            : pickedSlot === "tercero"
                               ? "3ro"
                               : null;
+                      const pickedPoints = pickedSlot ? getGroupSlotScore(grupo, pickedSlot) : 0;
 
                       return (
                         <button
@@ -7375,8 +7386,13 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                           </div>
                           <div className="flex items-center">
                             {picked ? (
-                              <span className="text-base text-[#c6f600] font-black bg-black px-2 py-1 rounded">
-                                {picked}
+                              <span className="inline-flex items-center gap-1 text-base text-[#c6f600] font-black bg-black px-2 py-1 rounded">
+                                <span>{picked}</span>
+                                {pickedPoints > 0 && (
+                                  <span className="group-pick-line__score">
+                                    +{pickedPoints} {pickedPoints === 1 ? "pt" : "pts"}
+                                  </span>
+                                )}
                               </span>
                             ) : (
                               <span className="text-xs text-gray-500"></span>
@@ -7387,10 +7403,29 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                       })}
                     </div>
                   ) : (
-                    <div className="text-lg text-gray-300 italic flex flex-wrap gap-2">
-                      <span >1ro: {selections[grupo]?.primero?.nombre || "Sin elegir"}</span>
-                      <span>2do: {selections[grupo]?.segundo?.nombre || "Sin elegir"}</span>
-                      <span  className="text-yellow-600">3ro: {selections[grupo]?.tercero?.nombre || "Sin elegir"}</span>
+                    <div className="group-pick-summary">
+                      {([
+                        ["primero", "1ro", selections[grupo]?.primero],
+                        ["segundo", "2do", selections[grupo]?.segundo],
+                        ["tercero", "3ro", selections[grupo]?.tercero],
+                      ] as const).map(([slot, label, team]) => {
+                        const points = getGroupSlotScore(grupo, slot);
+                        return (
+                          <span
+                            key={`${grupo}-${slot}`}
+                            className={`group-pick-line${slot === "tercero" ? " is-third" : ""}`}
+                          >
+                            <span className="group-pick-line__text">
+                              {label}: {team?.nombre || "Sin elegir"}
+                            </span>
+                            {points > 0 && (
+                              <strong className="group-pick-line__score">
+                                +{points} {points === 1 ? "pt" : "pts"}
+                              </strong>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

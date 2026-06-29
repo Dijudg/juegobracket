@@ -1393,6 +1393,47 @@ body{
   font-weight: 950;
 }
 
+.group-pick-summary{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #d1d5db;
+  font-size: 18px;
+  font-style: italic;
+}
+
+.group-pick-line{
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.group-pick-line.is-third .group-pick-line__text{
+  color: #d97706;
+}
+
+.group-pick-line__text{
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+.group-pick-line__score{
+  flex: 0 0 auto;
+  border: 1px solid rgba(198, 246, 0, 0.44);
+  border-radius: 999px;
+  background: rgba(198, 246, 0, 0.12);
+  color: #c6f600;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 @media (max-width: 640px){
   .phase-score-panel{
     padding: 12px;
