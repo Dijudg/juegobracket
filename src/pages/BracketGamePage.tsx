@@ -7111,7 +7111,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                   </div>
                   <p>
                     {bracketScoreSummary
-                      ? `${bracketScoreSummary.groupPositionHitCount || 0} posiciones exactas, ${bracketScoreSummary.groupQualifiedHitCount || 0} equipos en top 3 y ${bracketScoreSummary.bestThirdHitCount || 0} mejores terceros acertados.`
+                      ? `${bracketScoreSummary.groupPositionHitCount || 0} clasificados exactos, ${bracketScoreSummary.groupQualifiedHitCount || 0} clasificados en otra posición y ${bracketScoreSummary.bestThirdHitCount || 0} mejores terceros acertados.`
                       : bracketScoreLoading
                         ? "Calculando con resultados oficiales..."
                         : "Aún no hay resultados oficiales suficientes para evaluar esta fase."}
@@ -7123,12 +7123,12 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                     <strong>+2 pts</strong>
                   </div>
                   <div>
-                    <span>Equipo en el top 3</span>
+                    <span>Clasificado por API</span>
                     <strong>+1 pt</strong>
                   </div>
                   <div>
-                    <span>Top 3 perfecto del grupo</span>
-                    <strong>+6 pts</strong>
+                    <span>Tercero no clasificado</span>
+                    <strong>0 pts</strong>
                   </div>
                   <div>
                     <span>Mejores terceros</span>

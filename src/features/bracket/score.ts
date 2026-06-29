@@ -730,9 +730,7 @@ export const loadScoreSheetData = async (): Promise<ScoreSheetData> => {
     return {
       fixturesById,
       selectionByToken: merged.selectionByToken,
-      groupStandings: telegrafoData?.groupStandings.size
-        ? telegrafoData.groupStandings
-        : localTelegrafoData?.groupStandings || merged.groupStandings,
+      groupStandings: telegrafoData?.groupStandings.size ? telegrafoData.groupStandings : new Map(),
     };
   })().catch((error) => {
     scoreSheetCachePromise = null;
@@ -915,13 +913,22 @@ export const computeBracketScore = (
       ["segundoId", 1],
       ["terceroId", 2],
     ] as const;
+    const officialBestThirds = new Set(
+      resolveOfficialBestThirds(sheetData).map((team) =>
+        resolveComparableSelection(team.teamId, sheetData.selectionByToken),
+      ),
+    );
     sheetData.groupStandings.forEach((standing, group) => {
-      const officialTopThree = new Set(
+      const officialQualified = new Set(
         standing
-          .slice(0, 3)
+          .slice(0, 2)
           .map((team) => resolveComparableSelection(team.teamId, sheetData.selectionByToken))
           .filter(Boolean),
       );
+      const officialThird = resolveComparableSelection(standing[2]?.teamId, sheetData.selectionByToken);
+      if (officialThird && officialBestThirds.has(officialThird)) {
+        officialQualified.add(officialThird);
+      }
       slots.forEach(([slot, position]) => {
         const predicted = input.selections?.[group]?.[slot];
         const actual = standing[position]?.teamId;
@@ -932,30 +939,25 @@ export const computeBracketScore = (
         if (!predictedComparable) return;
 
         const key = `grupo-${group.toLowerCase()}-${slot.replace("Id", "")}`;
-        if (predictedComparable === actualComparable) {
+        if (predictedComparable === actualComparable && officialQualified.has(predictedComparable)) {
           pointsByTab.grupos += GROUP_EXACT_POSITION_POINTS;
           pointsByMatchId[key] = GROUP_EXACT_POSITION_POINTS;
-          pointReasonsByMatchId[key] = ["Posición exacta"];
+          pointReasonsByMatchId[key] = ["Clasificado exacto"];
           hitCount += 1;
           groupPositionHitCount += 1;
           return;
         }
 
-        if (officialTopThree.has(predictedComparable)) {
+        if (officialQualified.has(predictedComparable)) {
           pointsByTab.grupos += GROUP_QUALIFIED_POINTS;
           pointsByMatchId[key] = GROUP_QUALIFIED_POINTS;
-          pointReasonsByMatchId[key] = ["Equipo en top 3"];
+          pointReasonsByMatchId[key] = ["Clasificado por API"];
           hitCount += 1;
           groupQualifiedHitCount += 1;
         }
       });
     });
 
-    const officialBestThirds = new Set(
-      resolveOfficialBestThirds(sheetData).map((team) =>
-        resolveComparableSelection(team.teamId, sheetData.selectionByToken),
-      ),
-    );
     (input.bestThirdIds || []).slice(0, 8).forEach((predicted, index) => {
       evaluatedCount += 1;
       const comparable = resolveComparableSelection(predicted, sheetData.selectionByToken);
