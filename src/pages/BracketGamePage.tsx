@@ -1199,9 +1199,20 @@ export default function BracketGamePage() {
     }),
     [bracketScoreInput, scorePredictions, penaltyPredictions],
   );
-  const { summary: classicScoreSummary } = useBracketScore(bracketScoreInput, isViewOnly && gameMode !== "full");
-  const { summary: fullScoreSummary } = useFullBracketScore(fullScoreInput, isViewOnly && gameMode === "full");
+  const scoreEnabled = isViewOnly || hasSelectedGameMode;
+  const {
+    summary: classicScoreSummary,
+    loading: classicScoreLoading,
+    error: classicScoreError,
+  } = useBracketScore(bracketScoreInput, scoreEnabled && gameMode !== "full");
+  const {
+    summary: fullScoreSummary,
+    loading: fullScoreLoading,
+    error: fullScoreError,
+  } = useFullBracketScore(fullScoreInput, scoreEnabled && gameMode === "full");
   const bracketScoreSummary = gameMode === "full" ? fullScoreSummary : classicScoreSummary;
+  const bracketScoreLoading = gameMode === "full" ? fullScoreLoading : classicScoreLoading;
+  const bracketScoreError = gameMode === "full" ? fullScoreError : classicScoreError;
   const scoreByMatchId = bracketScoreSummary?.pointsByMatchId || {};
   const scoreReasonsByMatchId = bracketScoreSummary?.pointReasonsByMatchId || {};
   const phaseBlockBannerPick = useMemo(() => pickStopBanner(), [!!phaseBlock]);
@@ -5859,6 +5870,12 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
   }, [activeTab, isViewOnly, picks, sfComplete, showNewGamePrompt]);
 
     const showModeHome = !isViewOnly && !hasSelectedGameMode;
+    const phaseScoreItems = [
+      { id: "repechajes", label: "Repechajes", points: bracketScoreSummary?.pointsByTab.repechajes || 0 },
+      { id: "grupos", label: "Fase de grupos", points: bracketScoreSummary?.pointsByTab.grupos || 0 },
+      { id: "dieciseisavos", label: "Eliminatorias", points: bracketScoreSummary?.pointsByTab.dieciseisavos || 0 },
+      { id: "llaves", label: "Llaves finales", points: bracketScoreSummary?.pointsByTab.llaves || 0 },
+    ];
     const anyModalOpen =
       showAuthModal ||
       registeredSavePopup ||
@@ -6647,6 +6664,47 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                 )}
               </>
             )}
+
+          {!showModeHome && !showNewGamePrompt && (
+            <section className="phase-score-panel" aria-label="Puntaje por fase">
+              <div className="phase-score-panel__head">
+                <div className="min-w-0">
+                  <span className="phase-score-panel__eyebrow">
+                    {gameMode === "full" ? "Puntaje modo completo" : "Puntaje modo clásico"}
+                  </span>
+                  <h2>Tu puntaje</h2>
+                </div>
+                <div className="phase-score-panel__total">
+                  <strong>
+                    {bracketScoreLoading && !bracketScoreSummary ? "..." : bracketScoreSummary?.totalPoints || 0}
+                  </strong>
+                  <span>pts</span>
+                </div>
+              </div>
+
+              <div className="phase-score-grid">
+                {phaseScoreItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`phase-score-card${item.points > 0 ? " is-scored" : ""}`}
+                  >
+                    <span>{item.label}</span>
+                    <strong>{item.points} pts</strong>
+                  </div>
+                ))}
+              </div>
+
+              <p className="phase-score-panel__status">
+                {bracketScoreSummary
+                  ? bracketScoreSummary.evaluatedCount > 0
+                    ? `${bracketScoreSummary.hitCount} aciertos en ${bracketScoreSummary.evaluatedCount} pronósticos evaluados con resultados oficiales.`
+                    : "Aún no hay resultados oficiales suficientes para evaluar tus elecciones."
+                  : bracketScoreLoading
+                    ? "Calculando con resultados oficiales..."
+                    : bracketScoreError || "Los puntos aparecerán cuando existan resultados oficiales para comparar."}
+              </p>
+            </section>
+          )}
 
           {!showModeHome && !isEmbedded && (
             <div className="flex items-center mb-3 overflow-x-auto flex-nowrap scrollbar-hide">

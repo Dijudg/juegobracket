@@ -1199,6 +1199,136 @@ body{
     filter: drop-shadow(0 0 3px rgba(198, 246, 0, 0.25));
   }
 }
+
+.phase-score-panel{
+  width: 100%;
+  border: 1px solid rgba(198, 246, 0, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(198, 246, 0, 0.09), transparent 34%),
+    rgba(0, 0, 0, 0.58);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.22);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.phase-score-panel__head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.phase-score-panel__eyebrow{
+  display: block;
+  color: #c6f600;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.phase-score-panel h2{
+  margin: 2px 0 0;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.phase-score-panel__total{
+  min-width: 88px;
+  border: 1px solid rgba(198, 246, 0, 0.38);
+  border-radius: 8px;
+  background: rgba(198, 246, 0, 0.1);
+  color: #c6f600;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.phase-score-panel__total strong{
+  display: block;
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.phase-score-panel__total span{
+  display: block;
+  color: #c6f600;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.phase-score-grid{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.phase-score-card{
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(10, 10, 10, 0.68);
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.phase-score-card span{
+  min-width: 0;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.phase-score-card strong{
+  flex: 0 0 auto;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.phase-score-card.is-scored{
+  border-color: rgba(198, 246, 0, 0.48);
+  background: rgba(198, 246, 0, 0.09);
+}
+
+.phase-score-card.is-scored strong{
+  color: #c6f600;
+}
+
+.phase-score-panel__status{
+  margin: 0;
+  color: #9ca3af;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+@media (max-width: 640px){
+  .phase-score-panel{
+    padding: 12px;
+  }
+
+  .phase-score-grid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .phase-score-card{
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
 .matchWrap--blocked{
   cursor: pointer;
 }
