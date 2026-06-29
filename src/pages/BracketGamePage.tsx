@@ -1156,6 +1156,8 @@ export default function BracketGamePage() {
   const [guestSharePanel, setGuestSharePanel] = useState<{ code: string; url: string } | null>(null);
   const [viewSharedBy, setViewSharedBy] = useState<BracketSavePayload["sharedBy"] | null>(null);
   const [viewBracketMeta, setViewBracketMeta] = useState<{ name?: string; updatedAt?: string; shortCode?: string } | null>(null);
+  const [currentSaveId, setCurrentSaveId] = useState<string | null>(null);
+  const [hasLoadedBracketPayload, setHasLoadedBracketPayload] = useState(false);
   const [phaseBlock, setPhaseBlock] = useState<{ title: string; missing: string[] } | null>(null);
   const [officialScoreData, setOfficialScoreData] = useState<ScoreSheetData | null>(null);
   useEffect(() => {
@@ -1199,7 +1201,8 @@ export default function BracketGamePage() {
     }),
     [bracketScoreInput, scorePredictions, penaltyPredictions],
   );
-  const scoreEnabled = isViewOnly || hasSelectedGameMode;
+  const showScoreSummary = isViewOnly || (!!currentSaveId && hasLoadedBracketPayload);
+  const scoreEnabled = showScoreSummary;
   const {
     summary: classicScoreSummary,
     loading: classicScoreLoading,
@@ -1213,8 +1216,8 @@ export default function BracketGamePage() {
   const bracketScoreSummary = gameMode === "full" ? fullScoreSummary : classicScoreSummary;
   const bracketScoreLoading = gameMode === "full" ? fullScoreLoading : classicScoreLoading;
   const bracketScoreError = gameMode === "full" ? fullScoreError : classicScoreError;
-  const scoreByMatchId = bracketScoreSummary?.pointsByMatchId || {};
-  const scoreReasonsByMatchId = bracketScoreSummary?.pointReasonsByMatchId || {};
+  const scoreByMatchId = showScoreSummary ? bracketScoreSummary?.pointsByMatchId || {} : {};
+  const scoreReasonsByMatchId = showScoreSummary ? bracketScoreSummary?.pointReasonsByMatchId || {} : {};
   const phaseBlockBannerPick = useMemo(() => pickStopBanner(), [!!phaseBlock]);
   const r32BannerPick = useMemo(() => pickStopBanner(), [showR32Warning]);
   const bracketCaptureRef = useRef<HTMLDivElement>(null);
@@ -1582,9 +1585,7 @@ export default function BracketGamePage() {
   const [homeLoadBusyId, setHomeLoadBusyId] = useState<string | null>(null);
   const [homeDeleteBusyId, setHomeDeleteBusyId] = useState<string | null>(null);
   const [selectedOverwriteId, setSelectedOverwriteId] = useState<string | null>(null);
-  const [currentSaveId, setCurrentSaveId] = useState<string | null>(null);
   const [currentSaveName, setCurrentSaveName] = useState<string>("Mi bracket");
-  const [hasLoadedBracketPayload, setHasLoadedBracketPayload] = useState(false);
   const [useOfficialRoundOf32Fixtures, setUseOfficialRoundOf32Fixtures] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -6665,7 +6666,7 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
               </>
             )}
 
-          {!showModeHome && !showNewGamePrompt && (
+          {!showModeHome && !showNewGamePrompt && showScoreSummary && (
             <section className="phase-score-panel" aria-label="Puntaje por fase">
               <div className="phase-score-panel__head">
                 <div className="min-w-0">
@@ -7097,6 +7098,42 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
                   </div>
                 </div>
               </div>
+            )}
+
+            {showScoreSummary && gameMode !== "full" && (
+              <section className="group-score-rules" aria-label="Puntaje de fase de grupos">
+                <div className="group-score-rules__head">
+                  <div>
+                    <span>Puntaje de grupos</span>
+                    <strong>{bracketScoreSummary?.pointsByTab.grupos || 0} pts</strong>
+                  </div>
+                  <p>
+                    {bracketScoreSummary
+                      ? `${bracketScoreSummary.groupPositionHitCount || 0} posiciones exactas y ${bracketScoreSummary.bestThirdHitCount || 0} mejores terceros acertados.`
+                      : bracketScoreLoading
+                        ? "Calculando con resultados oficiales..."
+                        : "Aún no hay resultados oficiales suficientes para evaluar esta fase."}
+                  </p>
+                </div>
+                <div className="group-score-rules__grid">
+                  <div>
+                    <span>3 equipos en posición</span>
+                    <strong>+9 pts</strong>
+                  </div>
+                  <div>
+                    <span>2 equipos en posición</span>
+                    <strong>+6 pts</strong>
+                  </div>
+                  <div>
+                    <span>1 equipo en posición</span>
+                    <strong>+3 pts</strong>
+                  </div>
+                  <div>
+                    <span>Mejores terceros</span>
+                    <strong>+3 pts c/u</strong>
+                  </div>
+                </div>
+              </section>
             )}
 
             {gameMode === "full" ? (
