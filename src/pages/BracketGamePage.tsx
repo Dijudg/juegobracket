@@ -13,6 +13,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Confetti from "react-confetti";
 import { useWindowSize } from "react-use";
 import thirdLookup from "../data/third_lookup.json";
+import localOfficialMatches from "../data/matches.json";
 import finalOverlay from "../assets/juego-ganador.png";
 import rulesBanner from "../assets/reglas.png";
 import phaseBlockBanner from "../assets/stop.jpg";
@@ -72,6 +73,16 @@ import {
   CURRENT_BRACKET_SAVE_VERSION,
   migrateLegacyBracketPayload,
 } from "../features/bracket/bracketMigration";
+import {
+  QUARTER_FINAL_MAP,
+  ROUND_OF_16_LEFT_DISPLAY_IDS,
+  ROUND_OF_16_MAP,
+  ROUND_OF_16_RIGHT_DISPLAY_IDS,
+  ROUND_OF_32_BASE,
+  ROUND_OF_32_LEFT_DISPLAY_IDS,
+  ROUND_OF_32_RIGHT_DISPLAY_IDS,
+  SEMI_FINAL_MAP,
+} from "../features/bracket/officialBracket";
 import {
   computeBracketDeadlineState,
   isFixtureLockedByPredictionDeadline,
@@ -136,6 +147,13 @@ const resolvePredictionIdFromOfficialFixture = (fixtureId?: string) => {
   return `P${num}`;
 };
 
+const normalizeFixtureIdForGame = (rawId: unknown, index: number) => {
+  const value = rawId === undefined || rawId === null ? "" : `${rawId}`.trim();
+  const numeric = Number.parseInt(value.replace(/^P/i, ""), 10);
+  if (Number.isFinite(numeric) && numeric >= 1 && numeric <= 104) return `${numeric}`;
+  return `${index + 1}`;
+};
+
 const formatViewDate = (value?: string) => {
   if (!value) return "--";
   const date = new Date(value);
@@ -171,6 +189,7 @@ const seleccionesUrl =
 
 const fixturesUrl =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vRi2qMMbibzuc4bjv38DBJYnfY24e4Mt0c20CqpDDFzgBn_aJ6NR0HcrXjdbKLhAEsy3zJUdvr3npRU/pub?gid=171585554&single=true&output=tsv";
+const officialMatchesUrl = "https://especiales.eltelegrafo.com.ec/api/matches.json";
 
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
 const MAX_THIRD = 8;
@@ -352,6 +371,8 @@ const hasScorePrediction = (prediction?: { home?: number | null; away?: number |
 
 const CLOSED_SCORE_PLACEHOLDER = { home: 0, away: 0 } as const;
 const CLOSED_PENALTY_PLACEHOLDER = { home: 1, away: 0 } as const;
+const isClosedScorePlaceholder = (score?: { home?: number | null; away?: number | null }) =>
+  score?.home === CLOSED_SCORE_PLACEHOLDER.home && score.away === CLOSED_SCORE_PLACEHOLDER.away;
 
 const scoreWinnerSide = (prediction?: { home?: number | null; away?: number | null }) => {
   if (!hasScorePrediction(prediction)) return null;
@@ -729,25 +750,6 @@ const buildSeedsFromSelections = (selections: GroupSelections): Seeds => {
   return { firsts, seconds, thirds };
 };
 
-const roundOf32Base = [
-  { id: "73", home: "A2", away: "B2" },
-  { id: "74", home: "E1", away: "LKP_E1" },
-  { id: "75", home: "F1", away: "C2" },
-  { id: "76", home: "C1", away: "F2" },
-  { id: "77", home: "I1", away: "LKP_I1" },
-  { id: "78", home: "E2", away: "I2" },
-  { id: "79", home: "A1", away: "LKP_A1" },
-  { id: "80", home: "L1", away: "LKP_L1" },
-  { id: "81", home: "D1", away: "LKP_D1" },
-  { id: "82", home: "G1", away: "LKP_G1" },
-  { id: "83", home: "K2", away: "L2" },
-  { id: "84", home: "H1", away: "J2" },
-  { id: "85", home: "B1", away: "LKP_B1" },
-  { id: "86", home: "J1", away: "H2" },
-  { id: "87", home: "K1", away: "LKP_K1" },
-  { id: "88", home: "D2", away: "G2" },
-] as const;
-
 const LKP_SEED_ORDER = ["A1", "B1", "D1", "E1", "G1", "I1", "K1", "L1"] as const;
 
 const LKP_ALLOWED_GROUPS: Record<string, string[]> = {
@@ -827,7 +829,7 @@ const buildRoundOf32 = (
     return seeds.thirds[group];
   };
 
-  const matches: Match[] = roundOf32Base.map((cfg) => {
+  const matches: Match[] = ROUND_OF_32_BASE.map((cfg) => {
     const home = cfg.home.startsWith("LKP_") ? thirdSeedToTeam(entry[cfg.home.slice(4)]) : slotTeam(cfg.home);
     const away = cfg.away.startsWith("LKP_") ? thirdSeedToTeam(entry[cfg.away.slice(4)]) : slotTeam(cfg.away);
     return {
@@ -875,19 +877,8 @@ const buildNextRounds = (
 
   const findWinner = (id: string) => r32.find((m) => m.id === id)?.ganador;
 
-  const r16map = [
-    { id: "r16-89", label: "89", a: "r32-74", b: "r32-77" },
-    { id: "r16-90", label: "90", a: "r32-73", b: "r32-75" },
-    { id: "r16-91", label: "91", a: "r32-76", b: "r32-78" },
-    { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
-    { id: "r16-93", label: "93", a: "r32-83", b: "r32-84" },
-    { id: "r16-94", label: "94", a: "r32-81", b: "r32-82" },
-    { id: "r16-95", label: "95", a: "r32-86", b: "r32-88" },
-    { id: "r16-96", label: "96", a: "r32-85", b: "r32-87" },
-  ];
-
   const r16 = attachWinners(
-    r16map.map((m) => ({
+    ROUND_OF_16_MAP.map((m) => ({
       id: m.id,
       label: m.label,
       equipoA: findWinner(m.a),
@@ -895,14 +886,8 @@ const buildNextRounds = (
     })),
   );
 
-  const qfMap = [
-    { id: "qf-97", label: "97", a: "r16-89", b: "r16-90" },
-    { id: "qf-98", label: "98", a: "r16-93", b: "r16-94" },
-    { id: "qf-99", label: "99", a: "r16-91", b: "r16-92" },
-    { id: "qf-100", label: "100", a: "r16-95", b: "r16-96" },
-  ];
   const qf = attachWinners(
-    qfMap.map((m) => ({
+    QUARTER_FINAL_MAP.map((m) => ({
       id: m.id,
       label: m.label,
       equipoA: r16.find((x) => x.id === m.a)?.ganador,
@@ -910,12 +895,8 @@ const buildNextRounds = (
     })),
   );
 
-  const sfMap = [
-    { id: "sf-101", label: "101", a: "qf-97", b: "qf-99" },
-    { id: "sf-102", label: "102", a: "qf-98", b: "qf-100" },
-  ];
   const sf = attachWinners(
-    sfMap.map((m) => ({
+    SEMI_FINAL_MAP.map((m) => ({
       id: m.id,
       label: m.label,
       equipoA: qf.find((x) => x.id === m.a)?.ganador,
@@ -942,6 +923,47 @@ const buildNextRounds = (
   ]);
 
   return { r32, r16, qf, sf, final, thirdPlace };
+};
+
+const isRoundOf32FixtureNumber = (value?: string) => {
+  const num = Number.parseInt(normalizeMatchKey(value), 10);
+  return Number.isFinite(num) && num >= 73 && num <= 88;
+};
+
+type OfficialMatchRow = Record<string, unknown>;
+
+const unwrapOfficialMatches = (payload: unknown): OfficialMatchRow[] => {
+  if (Array.isArray(payload)) return payload as OfficialMatchRow[];
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  const candidates = [record.matches, record.fixtures, record.data, record.items];
+  const match = candidates.find(Array.isArray);
+  return (match || []) as OfficialMatchRow[];
+};
+
+const readOfficialToken = (row: OfficialMatchRow, keys: string[]) => {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && `${value}`.trim()) return `${value}`.trim();
+  }
+  return "";
+};
+
+const isPlaceholderTeamLabel = (value?: string) =>
+  !value ||
+  /\bgrupo\b/i.test(value) ||
+  /\bganador\b/i.test(value) ||
+  /\bperdedor\b/i.test(value) ||
+  /por\s+definir/i.test(value);
+
+const resolveOfficialRoundOf32Number = (row: OfficialMatchRow, index: number) => {
+  const explicit = readOfficialToken(row, ["id_partido", "fixtureId", "fixture_id", "matchNumber", "partido"]);
+  const explicitNum = Number.parseInt(explicit.replace(/^P/i, ""), 10);
+  if (Number.isFinite(explicitNum) && explicitNum >= 73 && explicitNum <= 88) return `${explicitNum}`;
+
+  const inferredNum = index + 1;
+  if (inferredNum >= 73 && inferredNum <= 88) return `${inferredNum}`;
+  return "";
 };
 
 export default function BracketGamePage() {
@@ -1100,6 +1122,7 @@ export default function BracketGamePage() {
   const [intercontinentalPicks, setIntercontinentalPicks] = useState<PlayoffPickState>({});
   const [uefaPicks, setUefaPicks] = useState<PlayoffPickState>({});
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
+  const [officialMatches, setOfficialMatches] = useState<OfficialMatchRow[]>(() => unwrapOfficialMatches(localOfficialMatches));
   const [nowTs, setNowTs] = useState(() => Date.now());
   const [showFixturesGroup, setShowFixturesGroup] = useState<string | undefined>(undefined);
   const [bracketError, setBracketError] = useState<string | undefined>(undefined);
@@ -1550,6 +1573,8 @@ export default function BracketGamePage() {
   const [selectedOverwriteId, setSelectedOverwriteId] = useState<string | null>(null);
   const [currentSaveId, setCurrentSaveId] = useState<string | null>(null);
   const [currentSaveName, setCurrentSaveName] = useState<string>("Mi bracket");
+  const [hasLoadedBracketPayload, setHasLoadedBracketPayload] = useState(false);
+  const [useOfficialRoundOf32Fixtures, setUseOfficialRoundOf32Fixtures] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const bracketId = shareAsset?.bracketId || viewBracketId || currentSaveId;
@@ -1667,6 +1692,8 @@ export default function BracketGamePage() {
     setShowChampionModal(false);
     setIsLocked(false);
     setPhaseLocks(EMPTY_PHASE_LOCKS);
+    setHasLoadedBracketPayload(false);
+    setUseOfficialRoundOf32Fixtures(false);
   };
 
   const trackPick = (context: string, matchId: string, teamCode: string) => {
@@ -1809,13 +1836,14 @@ export default function BracketGamePage() {
       picks,
       scorePredictions,
       penaltyPredictions,
+      useOfficialRoundOf32Fixtures,
       intercontinentalPicks,
       uefaPicks,
       isLocked,
       phaseLocks,
       sharedBy,
     };
-  }, [selections, bestThirdIds, picks, scorePredictions, penaltyPredictions, intercontinentalPicks, uefaPicks, isLocked, phaseLocks, authUser, gameMode]);
+  }, [selections, bestThirdIds, picks, scorePredictions, penaltyPredictions, useOfficialRoundOf32Fixtures, intercontinentalPicks, uefaPicks, isLocked, phaseLocks, authUser, gameMode]);
 
   const applySavedBracket = useCallback(
     (payload: BracketSavePayload) => {
@@ -1840,6 +1868,8 @@ export default function BracketGamePage() {
       setHasSelectedGameMode(true);
       setScorePredictions(migratedPayload.scorePredictions || {});
       setPenaltyPredictions(migratedPayload.penaltyPredictions || {});
+      setUseOfficialRoundOf32Fixtures(!!migratedPayload.useOfficialRoundOf32Fixtures);
+      setHasLoadedBracketPayload(true);
       setIntercontinentalPicks(migratedPayload.intercontinentalPicks || {});
       setUefaPicks(migratedPayload.uefaPicks || {});
       setIsLocked(migratedPayload.isLocked ?? false);
@@ -2919,6 +2949,25 @@ export default function BracketGamePage() {
   }, [saveNotice]);
 
   useEffect(() => {
+    let cancelled = false;
+    const loadOfficialMatches = async () => {
+      try {
+        const response = await fetch(officialMatchesUrl);
+        if (!response.ok) return;
+        const payload = await response.json();
+        const rows = unwrapOfficialMatches(payload);
+        if (!cancelled && rows.length > 0) setOfficialMatches(rows);
+      } catch {
+        // keep bundled fallback
+      }
+    };
+    void loadOfficialMatches();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const load = async () => {
       setLoading(true);
       setError(null);
@@ -2943,7 +2992,7 @@ export default function BracketGamePage() {
           if (apiData.fixtures?.length) {
             const parsedFixtures: Fixture[] = apiData.fixtures.map(
               (fixture, idx) => ({
-                id: fixture.id_partido || `fx-${idx + 1}`,
+                id: normalizeFixtureIdForGame(fixture.id_partido, idx),
                 fecha: fixture.fecha?.toString(),
                 hora: fixture.hora?.toString(),
                 fase: fixture.fase?.toString(),
@@ -4459,20 +4508,28 @@ const scorePredictionsForBracket = useMemo(() => {
   if (gameMode !== "full") return scorePredictions;
   const next: ScorePredictionState = { ...scorePredictions };
   fixtures.forEach((fixture) => {
+    const matchKey = normalizeMatchKey(fixture.id);
     const fixtureId = resolveFixtureIdFromMatchId(fixture.id) || `P${normalizeMatchKey(fixture.id)}`;
     const predictionId = resolvePredictionIdFromOfficialFixture(fixtureId);
-    if (!predictionId || hasScorePrediction(next[predictionId])) return;
+    if (!predictionId) return;
     if (!isFixtureLockedByPredictionDeadline(fixture, new Date(nowTs))) return;
     const official = readOfficialScorePrediction(predictionId, fixture.id);
-    next[predictionId] = official || CLOSED_SCORE_PLACEHOLDER;
+    const current = next[predictionId] || (matchKey ? next[matchKey] : undefined);
+    if (hasScorePrediction(current) && (!official || isViewOnly || !isClosedScorePlaceholder(current))) return;
+    const resolved = official || current || CLOSED_SCORE_PLACEHOLDER;
+    next[predictionId] = resolved;
+    if (matchKey && matchKey !== predictionId && !hasScorePrediction(next[matchKey])) {
+      next[matchKey] = resolved;
+    }
   });
   return next;
-}, [fixtures, gameMode, nowTs, readOfficialScorePrediction, scorePredictions]);
+}, [fixtures, gameMode, isViewOnly, nowTs, readOfficialScorePrediction, scorePredictions]);
 
 const penaltyPredictionsForBracket = useMemo(() => {
   if (gameMode !== "full") return penaltyPredictions;
   const next: ScorePredictionState = { ...penaltyPredictions };
   fixtures.forEach((fixture) => {
+    const matchKey = normalizeMatchKey(fixture.id);
     const fixtureId = resolveFixtureIdFromMatchId(fixture.id) || `P${normalizeMatchKey(fixture.id)}`;
     const predictionId = resolvePredictionIdFromOfficialFixture(fixtureId);
     if (!predictionId || hasScorePrediction(next[predictionId])) return;
@@ -4480,6 +4537,9 @@ const penaltyPredictionsForBracket = useMemo(() => {
     const official = readOfficialPenaltyPrediction(predictionId, fixture.id);
     if (official) {
       next[predictionId] = official;
+      if (matchKey && matchKey !== predictionId && !hasScorePrediction(next[matchKey])) {
+        next[matchKey] = official;
+      }
       return;
     }
     if (!officialFixtureRequiresWinner(fixtureId)) return;
@@ -4507,6 +4567,61 @@ const picksForBracket = useMemo(() => {
   });
   return next;
 }, [findOfficialFixtureForMatch, fixtures, gameMode, nowTs, picks]);
+
+const officialRoundOf32FixtureMap = useMemo(() => {
+  const map = new Map<string, Match>();
+  officialMatches.forEach((row, index) => {
+    const label = resolveOfficialRoundOf32Number(row, index);
+    if (!isRoundOf32FixtureNumber(label)) return;
+
+    const homeName = readOfficialToken(row, ["homeTeamName", "homeTeamShortName", "local", "home"]);
+    const awayName = readOfficialToken(row, ["awayTeamName", "awayTeamShortName", "visita", "away"]);
+    if (isPlaceholderTeamLabel(homeName) || isPlaceholderTeamLabel(awayName)) return;
+
+    const homeToken = readOfficialToken(row, ["homeTeamCode", "homeTeamId", "local_id", "home_id"]);
+    const awayToken = readOfficialToken(row, ["awayTeamCode", "awayTeamId", "visita_id", "away_id"]);
+    const officialHome = resolveAnyTeam(homeToken) || resolveAnyTeam(homeName);
+    const officialAway = resolveAnyTeam(awayToken) || resolveAnyTeam(awayName);
+    if (!officialHome || !officialAway) return;
+
+    map.set(`r32-${label}`, {
+      id: `r32-${label}`,
+      label,
+      equipoA: officialHome,
+      equipoB: officialAway,
+    });
+  });
+
+  return map;
+}, [officialMatches, resolveAnyTeam]);
+
+const hasExistingKnockoutPredictions = useMemo(
+  () =>
+    [picks, scorePredictions, penaltyPredictions].some((state) =>
+      Object.keys(state).some((id) => /^(r32|r16|qf|sf|third|final)-/i.test(id)),
+    ),
+  [penaltyPredictions, picks, scorePredictions],
+);
+
+useEffect(() => {
+  if (useOfficialRoundOf32Fixtures) return;
+  if (isViewOnly || showNewGamePrompt) return;
+  if (hasLoadedBracketPayload || hasExistingKnockoutPredictions) return;
+  if (!phaseDeadlineLocked.grupos) return;
+  setUseOfficialRoundOf32Fixtures(true);
+}, [
+  hasExistingKnockoutPredictions,
+  hasLoadedBracketPayload,
+  isViewOnly,
+  phaseDeadlineLocked.grupos,
+  showNewGamePrompt,
+  useOfficialRoundOf32Fixtures,
+]);
+
+const officialRoundOf32Matches = useMemo(
+  () => (useOfficialRoundOf32Fixtures ? officialRoundOf32FixtureMap : new Map<string, Match>()),
+  [officialRoundOf32FixtureMap, useOfficialRoundOf32Fixtures],
+);
 
 const handleScorePredictionChange = useCallback(
   (matchId: string, side: "home" | "away", value: number | null) => {
@@ -4595,6 +4710,15 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
 };
 
   const { r32, r16, qf, sf, final, thirdPlace } = useMemo(() => {
+    if (useOfficialRoundOf32Fixtures) {
+      const officialMatches = ROUND_OF_32_BASE
+        .map((cfg) => officialRoundOf32Matches.get(`r32-${cfg.id}`) || {
+          id: `r32-${cfg.id}`,
+          label: cfg.id,
+        });
+      setBracketError(undefined);
+      return buildNextRounds(officialMatches, picksForBracket, scorePredictionsForBracket, penaltyPredictionsForBracket, gameMode);
+    }
     if (bracketBestThirdIds.length < MAX_THIRD) return { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] };
     const { matches, error, warning } = buildRoundOf32(seeds, thirdsQualifiedGroups, thirdLookup as any);
     if (error) {
@@ -4603,8 +4727,11 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
     }
     // Ocultamos advertencias de asignacion generada por defecto; solo mostramos errores reales.
     setBracketError(undefined);
-    return buildNextRounds(matches, picksForBracket, scorePredictionsForBracket, penaltyPredictionsForBracket, gameMode);
-  }, [seeds, thirdsQualifiedGroups, picksForBracket, bracketBestThirdIds.length, scorePredictionsForBracket, penaltyPredictionsForBracket, gameMode]);
+    const officialMatches = officialRoundOf32Matches.size
+      ? matches.map((match) => officialRoundOf32Matches.get(match.id) || match)
+      : matches;
+    return buildNextRounds(officialMatches, picksForBracket, scorePredictionsForBracket, penaltyPredictionsForBracket, gameMode);
+  }, [seeds, thirdsQualifiedGroups, picksForBracket, bracketBestThirdIds.length, scorePredictionsForBracket, penaltyPredictionsForBracket, gameMode, officialRoundOf32Matches, useOfficialRoundOf32Fixtures]);
   useEffect(() => {
     r32Ref.current = r32;
   }, [r32]);
@@ -5456,25 +5583,25 @@ const renderPenaltyPicker = (match: Match, side: "home" | "away", label: string,
     return map;
   }, [r32, r16, qf, sf, final, thirdPlace]);
   const r32Left = useMemo(
-    () => ["r32-74", "r32-77", "r32-73", "r32-75", "r32-76", "r32-78", "r32-79", "r32-80"]
+    () => ROUND_OF_32_LEFT_DISPLAY_IDS
       .map((id) => matchById.get(id))
       .filter(Boolean) as Match[],
     [matchById],
   );
   const r32Right = useMemo(
-    () => ["r32-83", "r32-84", "r32-81", "r32-82", "r32-86", "r32-88", "r32-85", "r32-87"]
+    () => ROUND_OF_32_RIGHT_DISPLAY_IDS
       .map((id) => matchById.get(id))
       .filter(Boolean) as Match[],
     [matchById],
   );
   const r16Left = useMemo(
-    () => ["r16-89", "r16-90", "r16-91", "r16-92"]
+    () => ROUND_OF_16_LEFT_DISPLAY_IDS
       .map((id) => matchById.get(id))
       .filter(Boolean) as Match[],
     [matchById],
   );
   const r16Right = useMemo(
-    () => ["r16-93", "r16-94", "r16-95", "r16-96"]
+    () => ROUND_OF_16_RIGHT_DISPLAY_IDS
       .map((id) => matchById.get(id))
       .filter(Boolean) as Match[],
     [matchById],

@@ -13,6 +13,7 @@ import {
 import type { Match, MatchSchedule, ScorePrediction, Team } from "../types";
 import { getTeamEscudo } from "../utils";
 import { BracketConnector } from "./BracketConnector";
+import { ROUND_OF_16_LEFT_DISPLAY_IDS, ROUND_OF_16_RIGHT_DISPLAY_IDS } from "../officialBracket";
 
 export const KnockoutBracket = ({
   r32,
@@ -94,11 +95,11 @@ export const KnockoutBracket = ({
     return map;
   }, [r16, qf]);
   const octavosLeft = useMemo(
-    () => ["r16-89", "r16-90", "r16-91", "r16-92"].map((id) => matchById.get(id)).filter(Boolean) as Match[],
+    () => ROUND_OF_16_LEFT_DISPLAY_IDS.map((id) => matchById.get(id)).filter(Boolean) as Match[],
     [matchById],
   );
   const octavosRight = useMemo(
-    () => ["r16-93", "r16-94", "r16-95", "r16-96"].map((id) => matchById.get(id)).filter(Boolean) as Match[],
+    () => ROUND_OF_16_RIGHT_DISPLAY_IDS.map((id) => matchById.get(id)).filter(Boolean) as Match[],
     [matchById],
   );
   const cuartosLeft = useMemo(

@@ -89,6 +89,7 @@ export type BracketSavePayload = {
   picks: Record<string, string | undefined>;
   scorePredictions?: ScorePredictionState;
   penaltyPredictions?: ScorePredictionState;
+  useOfficialRoundOf32Fixtures?: boolean;
   intercontinentalPicks: PlayoffPickState;
   uefaPicks: PlayoffPickState;
   isLocked: boolean;

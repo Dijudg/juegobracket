@@ -1,28 +1,10 @@
 import type { BracketSavePayload, GroupSelections, Match, ScorePredictionState, Seeds, Team } from "./types";
+import { QUARTER_FINAL_MAP, ROUND_OF_16_MAP, ROUND_OF_32_BASE, SEMI_FINAL_MAP } from "./officialBracket";
 
 export const CURRENT_BRACKET_SAVE_VERSION = 6;
 
 const MAX_THIRD = 8;
 const GROUP_LETTERS = "ABCDEFGHIJKL".split("");
-
-const roundOf32Base = [
-  { id: "73", home: "A2", away: "B2" },
-  { id: "74", home: "E1", away: "LKP_E1" },
-  { id: "75", home: "F1", away: "C2" },
-  { id: "76", home: "C1", away: "F2" },
-  { id: "77", home: "I1", away: "LKP_I1" },
-  { id: "78", home: "E2", away: "I2" },
-  { id: "79", home: "A1", away: "LKP_A1" },
-  { id: "80", home: "L1", away: "LKP_L1" },
-  { id: "81", home: "D1", away: "LKP_D1" },
-  { id: "82", home: "G1", away: "LKP_G1" },
-  { id: "83", home: "K2", away: "L2" },
-  { id: "84", home: "H1", away: "J2" },
-  { id: "85", home: "B1", away: "LKP_B1" },
-  { id: "86", home: "J1", away: "H2" },
-  { id: "87", home: "K1", away: "LKP_K1" },
-  { id: "88", home: "D2", away: "G2" },
-] as const;
 
 const legacyR16Map = [
   { id: "r16-89", label: "89", a: "r32-73", b: "r32-74" },
@@ -35,17 +17,6 @@ const legacyR16Map = [
   { id: "r16-96", label: "96", a: "r32-87", b: "r32-88" },
 ] as const;
 
-const currentR16Map = [
-  { id: "r16-89", label: "89", a: "r32-74", b: "r32-77" },
-  { id: "r16-90", label: "90", a: "r32-73", b: "r32-75" },
-  { id: "r16-91", label: "91", a: "r32-76", b: "r32-78" },
-  { id: "r16-92", label: "92", a: "r32-79", b: "r32-80" },
-  { id: "r16-93", label: "93", a: "r32-83", b: "r32-84" },
-  { id: "r16-94", label: "94", a: "r32-81", b: "r32-82" },
-  { id: "r16-95", label: "95", a: "r32-86", b: "r32-88" },
-  { id: "r16-96", label: "96", a: "r32-85", b: "r32-87" },
-] as const;
-
 const legacyQfMap = [
   { id: "qf-97", label: "97", a: "r16-89", b: "r16-90" },
   { id: "qf-98", label: "98", a: "r16-91", b: "r16-92" },
@@ -53,21 +24,9 @@ const legacyQfMap = [
   { id: "qf-100", label: "100", a: "r16-95", b: "r16-96" },
 ] as const;
 
-const currentQfMap = [
-  { id: "qf-97", label: "97", a: "r16-89", b: "r16-90" },
-  { id: "qf-98", label: "98", a: "r16-93", b: "r16-94" },
-  { id: "qf-99", label: "99", a: "r16-91", b: "r16-92" },
-  { id: "qf-100", label: "100", a: "r16-95", b: "r16-96" },
-] as const;
-
 const legacySfMap = [
   { id: "sf-101", label: "101", a: "qf-97", b: "qf-98" },
   { id: "sf-102", label: "102", a: "qf-99", b: "qf-100" },
-] as const;
-
-const currentSfMap = [
-  { id: "sf-101", label: "101", a: "qf-97", b: "qf-99" },
-  { id: "sf-102", label: "102", a: "qf-98", b: "qf-100" },
 ] as const;
 
 const LKP_SEED_ORDER = ["A1", "B1", "D1", "E1", "G1", "I1", "K1", "L1"] as const;
@@ -141,7 +100,7 @@ const buildRoundOf32 = (seeds: Seeds, thirdsQualifiedGroups: string[]): Match[] 
     return group ? seeds.thirds[group] : undefined;
   };
 
-  return roundOf32Base.map((cfg) => ({
+  return ROUND_OF_32_BASE.map((cfg) => ({
     id: `r32-${cfg.id}`,
     label: cfg.id,
     equipoA: cfg.home.startsWith("LKP_") ? thirdSeedToTeam(cfg.home.slice(4)) : slotTeam(cfg.home),
@@ -175,9 +134,9 @@ const buildRounds = (
   penaltyPredictions: ScorePredictionState,
   gameMode: BracketSavePayload["gameMode"] = "classic",
   maps: {
-    r16: typeof legacyR16Map | typeof currentR16Map;
-    qf: typeof legacyQfMap | typeof currentQfMap;
-    sf: typeof legacySfMap | typeof currentSfMap;
+    r16: typeof legacyR16Map | typeof ROUND_OF_16_MAP;
+    qf: typeof legacyQfMap | typeof QUARTER_FINAL_MAP;
+    sf: typeof legacySfMap | typeof SEMI_FINAL_MAP;
   },
 ) => {
   const pickWinner = (match: Match): Team | undefined => {
@@ -270,7 +229,7 @@ const migrateClassicPicks = (
   const migratedPicks = stripPostR32Picks(originalPicks);
   const sourceMaps =
     Number(payload.version || 1) >= 4
-      ? { r16: currentR16Map, qf: currentQfMap, sf: legacySfMap }
+      ? { r16: ROUND_OF_16_MAP, qf: QUARTER_FINAL_MAP, sf: legacySfMap }
       : { r16: legacyR16Map, qf: legacyQfMap, sf: legacySfMap };
   const legacyRounds = buildRounds(
     base,
@@ -293,16 +252,16 @@ const migrateClassicPicks = (
     });
   };
 
-  let currentRounds = buildRounds(base, migratedPicks, {}, {}, "classic", { r16: currentR16Map, qf: currentQfMap, sf: currentSfMap });
+  let currentRounds = buildRounds(base, migratedPicks, {}, {}, "classic", { r16: ROUND_OF_16_MAP, qf: QUARTER_FINAL_MAP, sf: SEMI_FINAL_MAP });
   migrateRound(legacyRounds.r16, currentRounds.r16);
 
-  currentRounds = buildRounds(base, migratedPicks, {}, {}, "classic", { r16: currentR16Map, qf: currentQfMap, sf: currentSfMap });
+  currentRounds = buildRounds(base, migratedPicks, {}, {}, "classic", { r16: ROUND_OF_16_MAP, qf: QUARTER_FINAL_MAP, sf: SEMI_FINAL_MAP });
   migrateRound(legacyRounds.qf, currentRounds.qf);
 
-  currentRounds = buildRounds(base, migratedPicks, {}, {}, "classic", { r16: currentR16Map, qf: currentQfMap, sf: currentSfMap });
+  currentRounds = buildRounds(base, migratedPicks, {}, {}, "classic", { r16: ROUND_OF_16_MAP, qf: QUARTER_FINAL_MAP, sf: SEMI_FINAL_MAP });
   migrateRound(legacyRounds.sf, currentRounds.sf);
 
-  currentRounds = buildRounds(base, migratedPicks, {}, {}, "classic", { r16: currentR16Map, qf: currentQfMap, sf: currentSfMap });
+  currentRounds = buildRounds(base, migratedPicks, {}, {}, "classic", { r16: ROUND_OF_16_MAP, qf: QUARTER_FINAL_MAP, sf: SEMI_FINAL_MAP });
   migrateRound(legacyRounds.thirdPlace, currentRounds.thirdPlace);
   migrateRound(legacyRounds.final, currentRounds.final);
 
@@ -313,9 +272,9 @@ const countValidClassicPostR32Picks = (
   base: Match[],
   payload: BracketSavePayload,
   maps: {
-    r16: typeof legacyR16Map | typeof currentR16Map;
-    qf: typeof legacyQfMap | typeof currentQfMap;
-    sf: typeof legacySfMap | typeof currentSfMap;
+    r16: typeof legacyR16Map | typeof ROUND_OF_16_MAP;
+    qf: typeof legacyQfMap | typeof QUARTER_FINAL_MAP;
+    sf: typeof legacySfMap | typeof SEMI_FINAL_MAP;
   },
 ) => {
   const picks = payload.picks || {};
@@ -367,13 +326,13 @@ export const migrateLegacyBracketPayload = (
   }
 
   const currentValidPicks = countValidClassicPostR32Picks(base, payload, {
-    r16: currentR16Map,
-    qf: currentQfMap,
-    sf: currentSfMap,
+    r16: ROUND_OF_16_MAP,
+    qf: QUARTER_FINAL_MAP,
+    sf: SEMI_FINAL_MAP,
   });
   const legacyValidPicks = countValidClassicPostR32Picks(base, payload, {
-    r16: Number(payload.version || 1) >= 4 ? currentR16Map : legacyR16Map,
-    qf: Number(payload.version || 1) >= 4 ? currentQfMap : legacyQfMap,
+    r16: Number(payload.version || 1) >= 4 ? ROUND_OF_16_MAP : legacyR16Map,
+    qf: Number(payload.version || 1) >= 4 ? QUARTER_FINAL_MAP : legacyQfMap,
     sf: legacySfMap,
   });
   if (currentValidPicks >= legacyValidPicks) {
